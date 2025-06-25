@@ -2,8 +2,8 @@ import base64
 import json
 import os
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtCore import Qt
 
 from Logger import logger
 
@@ -14,7 +14,9 @@ class SettingsManager:
         self.config_path = config_path
         self.settings = {}
         self.load_settings()
-        SettingsManager.instance = self
+        # Set the singleton instance. This should only happen once.
+        if SettingsManager.instance is None:
+            SettingsManager.instance = self
 
     def load_settings(self):
         try:
@@ -29,166 +31,92 @@ class SettingsManager:
 
     def save_settings(self):
         try:
-            json_data = json.dumps(self.settings, ensure_ascii=False)
+            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+            json_data = json.dumps(self.settings, ensure_ascii=False, indent=4)
             encoded = base64.b64encode(json_data.encode("utf-8"))
             with open(self.config_path, "wb") as f:
                 f.write(encoded)
         except Exception as e:
             logger.error(f"Error saving settings: {e}")
 
-    def get(self, key, default=None):
-        return self.settings.get(key, default)
-
-    def set(self, key, value):
-        self.settings[key] = value
+    # The static methods provide the global access point for the entire application.
+    # They operate on the singleton `instance`.
 
     @staticmethod
     def get(key, default=None):
-        return SettingsManager.instance.settings.get(key, default)
+        if SettingsManager.instance:
+            # Directly access the 'settings' dictionary of the instance
+            return SettingsManager.instance.settings.get(key, default)
+        
+        logger.warning("SettingsManager.get() called before instance was created.")
+        return default
 
     @staticmethod
     def set(key, value):
-        SettingsManager.instance.settings[key] = value
+        if SettingsManager.instance:
+            # Directly access the 'settings' dictionary of the instance
+            SettingsManager.instance.settings[key] = value
+        else:
+            logger.error("SettingsManager.set() called before instance was created. Cannot set value.")
 
 
-class CollapsibleSection(ttk.Frame):
-    def __init__(self, parent, title, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.parent = parent
-        self.title = title
-        self.is_collapsed = False
-        self.content_frame = None
-        self.init_ui()
+class CollapsibleSection(QWidget):
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.is_collapsed = True
+        self.init_ui(title)
 
-    def init_ui(self):
-        # Setup styles
-        style = ttk.Style()
+    def init_ui(self, title):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self.header = QWidget()
+        self.header.setObjectName("CollapsibleHeader")
+        header_layout = QHBoxLayout(self.header)
+        header_layout.setContentsMargins(5, 3, 5, 3)
+
+        self.arrow_label = QLabel("▶")
+        self.arrow_label.setObjectName("CollapsibleArrow")
+        self.arrow_label.setFixedWidth(15)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("CollapsibleTitle")
         
-        # Adjusted color scheme for better contrast
-        bg_color = "#1e1e1e"  # Main background
-        fg_color = "#ffffff"  # Text color
-        header_bg = "#333333"  # Header background (slightly lighter than content)
-        content_bg = "#202020"  # Content background (darker than header)
-        input_bg = "#202020"  # Фон комбобокса (сделаем темнее)
-        border_color = "#000000"  # Border color for inputs
-        
-        # Base application theme - use 'alt' as a better starting point for dark themes
-        style.theme_use('alt')
-        
-        # Configure base styles
-        style.configure("Dark.TFrame", background=bg_color)
-        style.configure("Dark.TLabel", background=bg_color, foreground=fg_color)
-        
-        # Header styles - slightly lighter than content
-        style.configure("Header.TFrame", background=header_bg)
-        style.configure("Header.TLabel", background=header_bg, foreground=fg_color)
-        
-        # Content area style - darker than header
-        style.configure("Content.TFrame", background=content_bg)
-        style.configure("Content.TLabel", background="#1e1e1e", foreground=fg_color)
-        
-        # Entry field style - with dark background and visible borders
-        style.configure("Dark.TEntry", 
-                    fieldbackground=input_bg,
-                    foreground=fg_color,
-                    bordercolor=border_color,
-                    lightcolor=border_color,
-                    darkcolor=border_color)
-        
-        # Настраиваем глобальный стиль для всех комбобоксов
-        style.configure("TCombobox", 
-                    background=input_bg,
-                    fieldbackground=input_bg,
-                    foreground=fg_color,
-                    arrowcolor=fg_color,
-                    selectbackground=input_bg,
-                    selectforeground=fg_color)
-        
-        # Глобальные состояния для комбобокса
-        style.map("TCombobox",
-                fieldbackground=[("readonly", input_bg), ("disabled", "#303030")],
-                selectbackground=[("readonly", input_bg)],
-                selectforeground=[("readonly", fg_color)],
-                background=[("readonly", input_bg), ("disabled", "#303030")],
-                foreground=[("readonly", fg_color), ("disabled", "#888888")])
-        
-        # Глобальные настройки выпадающего списка
-        try:
-            self.master.option_add('*TCombobox*Listbox.background', input_bg)
-            self.master.option_add('*TCombobox*Listbox.foreground', fg_color)
-            self.master.option_add('*TCombobox*Listbox.selectBackground', "#404040")
-            self.master.option_add('*TCombobox*Listbox.selectForeground', fg_color)
-            self.master.tk.eval("""
-                set myFont [font create -family "Segoe UI" -size 9]
-                option add *TCombobox*Listbox.font $myFont
-                option add *TCombobox*Listbox.relief solid
-                option add *TCombobox*Listbox.highlightThickness 0
-            """)
-        except Exception as e:
-            logger.info(f"Ошибка при настройке выпадающего списка: {e}")
-        
-        # Checkbox styling
-        style.configure("Dark.TCheckbutton", 
-                    background=content_bg,
-                    foreground=fg_color)
-        
-        # Create header
-        self.header = ttk.Frame(self, style="Header.TFrame")
-        self.header.pack(fill=tk.X)
-        
-        # Collapse indicator
-        self.arrow_label = ttk.Label(
-            self.header,
-            text="▼",
-            style="Header.TLabel"
-        )
-        self.arrow_label.pack(side=tk.LEFT, padx=5, pady=3)
-        
-        # Header text
-        self.title_label = ttk.Label(
-            self.header,
-            text=self.title,
-            font=("Arial", 10, "bold"),
-            style="Header.TLabel"
-        )
-        self.title_label.pack(side=tk.LEFT, pady=3)
-        
-        # Content area - now using Content style
-        self.content_frame = ttk.Frame(self, style="Content.TFrame")
-        self.content_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
-        
-        # Bind events
-        self.header.bind("<Button-1>", self.toggle)
-        self.arrow_label.bind("<Button-1>", self.toggle)
-        self.title_label.bind("<Button-1>", self.toggle)
-        
-        # Apply style to main frame
-        self.configure(style="Dark.TFrame")
+        self.warning_label = QLabel("⚠️")
+        self.warning_label.setObjectName("WarningIcon")
+        self.warning_label.setVisible(False)
+        # The translation function might not be available here, so using a plain string.
+        self.warning_label.setToolTip("Model not initialized or not installed.")
+
+        header_layout.addWidget(self.arrow_label)
+        header_layout.addWidget(self.warning_label)
+        header_layout.addWidget(self.title_label)
+        header_layout.addStretch()
+
+        self.content_frame = QWidget()
+        self.content_frame.setObjectName("CollapsibleContent")
+        self.content_layout = QVBoxLayout(self.content_frame)
+        self.content_layout.setContentsMargins(10, 5, 10, 5)
+        self.content_frame.setVisible(False)
+
+        main_layout.addWidget(self.header)
+        main_layout.addWidget(self.content_frame)
+
+        self.header.mousePressEvent = self.toggle
 
     def toggle(self, event=None):
-        if self.is_collapsed:
-            self.collapse()
-        else:
-            self.expand()
         self.is_collapsed = not self.is_collapsed
+        self.arrow_label.setText("▶" if self.is_collapsed else "▼")
+        self.content_frame.setVisible(not self.is_collapsed)
 
     def collapse(self):
-        self.arrow_label.config(text="▶")
-        self.content_frame.pack_forget()
+        if not self.is_collapsed:
+            self.toggle()
 
     def expand(self):
-        self.arrow_label.config(text="▼")
-        self.content_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
-
+        if self.is_collapsed:
+            self.toggle()
+            
     def add_widget(self, widget):
-        # Применение стилей в зависимости от типа виджета
-        if isinstance(widget, ttk.Combobox):
-            widget.configure(state="readonly")
-        elif isinstance(widget, ttk.Entry):
-            widget.configure(style="Dark.TEntry")
-        elif isinstance(widget, ttk.Checkbutton):
-            widget.configure(style="Dark.TCheckbutton")
-        elif isinstance(widget, ttk.Label):
-            widget.configure(style="Dark.TLabel")
-        
-        widget.pack(in_=self.content_frame, fill=tk.X, pady=2, padx=10)
+        self.content_layout.addWidget(widget)

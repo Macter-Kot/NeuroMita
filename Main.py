@@ -1,6 +1,6 @@
 ### main.py
 
-
+from PyQt6.QtWidgets import QApplication
 import pydantic.fields
 import uvicorn
 from gui import ChatGUI
@@ -46,7 +46,7 @@ import modulefinder
 import sunau
 import xml.etree
 import xml.etree.ElementTree
-
+#import onnxruntime
 import os
 
 # os.environ["TEST_AS_AMD"] = "TRUE"
@@ -213,21 +213,20 @@ ensure_project_root()
 
 import threading
 
-import onnxruntime
+
 
 def main():
+    app = QApplication(sys.argv)
 
-    # TODO Вернуть воск
-    # server_thread = threading.Thread(
-    #     target=lambda: uvicorn.run("web.server:app", host="0.0.0.0", port=8000),
-    #     daemon=True
-    # )
-    # server_thread.start()
-    
-    # Запуск GUI в основном потоке
-    gui = ChatGUI()
-    gui.run()
+    if sys.platform == 'win32':
+        import ctypes
+        # Желательно заменить myappid на что-то уникальное для вашего приложения
+        myappid = 'mycompany.myproduct.subproduct.version' 
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
+    main_win = ChatGUI()
+    main_win.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

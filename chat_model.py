@@ -1216,7 +1216,7 @@ class ChatModel:
             combined_messages.extend(event_system_infos)
 
         # 4. Текущий ввод пользователя (если есть)
-        user_input_from_gui = self.gui.user_entry.get("1.0", "end-1c").strip()
+        user_input_from_gui = self.gui.user_entry.toPlainText().strip()
         if user_input_from_gui:
             combined_messages.append({"role": "user", "content": user_input_from_gui})
 

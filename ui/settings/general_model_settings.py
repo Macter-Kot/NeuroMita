@@ -1,4 +1,4 @@
-import tkinter as tk
+
 from utils import getTranslationVariant as _
 
 def setup_general_settings_control(self, parent):

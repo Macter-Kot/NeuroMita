@@ -1,50 +1,38 @@
-import tkinter as tk
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QCheckBox
+from PyQt6.QtCore import Qt
 from utils import _
 
+def create_status_indicators(gui, parent_layout):
+    status_frame = QWidget()
+    status_layout = QHBoxLayout(status_frame)
+    status_layout.setContentsMargins(0, 0, 0, 0)
+    status_layout.setSpacing(15) # Увеличим расстояние между индикаторами
+    status_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-def create_status_indicators(gui, parent):
-    """Создает индикаторы статуса в родительском виджете."""
-    status_frame = tk.Frame(parent, bg="#2c2c2c")
-    status_frame.pack(fill=tk.X, padx=10, pady=5)
+    def create_indicator(text):
+        checkbox = QCheckBox(text)
+        checkbox.setObjectName("StatusIndicator")
+        checkbox.setEnabled(False) # Нельзя кликать
+        checkbox.setStyleSheet("color: #ffffff; spacing: 5px;") # Уменьшим расстояние между галкой и текстом
+        return checkbox
 
-    # Стиль для чекбоксов
-    style = {"bg": "#2c2c2c", "fg": "#ffffff", "selectcolor": "#2c2c2c", "activebackground": "#2c2c2c",
-             "activeforeground": "#ffffff", "font": ("Arial", 10)}
+    gui.game_status_checkbox = create_indicator(_('Игра', 'Game'))
+    status_layout.addWidget(gui.game_status_checkbox)
 
-    # Индикатор подключения к игре
-    gui.game_status_checkbox = tk.Checkbutton(
-        status_frame, text=_('Игра', 'Game'), variable=gui.game_connected_checkbox_var,
-        state=tk.DISABLED, **style
-    )
-    gui.game_status_checkbox.pack(side=tk.LEFT, padx=5)
+    gui.silero_status_checkbox = create_indicator(_('Телеграм', 'Telegram'))
+    status_layout.addWidget(gui.silero_status_checkbox)
 
-    # Индикатор подключения к Телеграм (TG)
-    gui.silero_status_checkbox = tk.Checkbutton(
-        status_frame, text=_('Телеграм', 'Telegram'), variable=gui.silero_connected,
-        state=tk.DISABLED, **style
-    )
-    gui.silero_status_checkbox.pack(side=tk.LEFT, padx=5)
+    gui.mic_status_checkbox = create_indicator(_('Распознавание', 'Recognition'))
+    status_layout.addWidget(gui.mic_status_checkbox)
 
-    # Индикатор распознавания речи
-    gui.mic_status_checkbox = tk.Checkbutton(
-        status_frame, text=_('Распознавание', 'Recognition'), variable=gui.mic_recognition_active,
-        state=tk.DISABLED, **style
-    )
-    gui.mic_status_checkbox.pack(side=tk.LEFT, padx=5)
+    gui.screen_capture_status_checkbox = create_indicator(_('Захват экрана', 'Screen'))
+    status_layout.addWidget(gui.screen_capture_status_checkbox)
 
-    # Индикатор захвата экрана
-    gui.screen_capture_status_checkbox = tk.Checkbutton(
-        status_frame, text=_('Захват экрана', 'Screen'), variable=gui.screen_capture_active,
-        state=tk.DISABLED, **style
-    )
-    gui.screen_capture_status_checkbox.pack(side=tk.LEFT, padx=5)
+    gui.camera_capture_status_checkbox = create_indicator(_('Камера', 'Camera'))
+    status_layout.addWidget(gui.camera_capture_status_checkbox)
+    
+    status_layout.addStretch() # Добавляем растяжение, чтобы индикаторы не занимали всю ширину
 
-    # Индикатор захвата камеры
-    gui.camera_capture_status_checkbox = tk.Checkbutton(
-        status_frame, text=_('Камера', 'Camera'), variable=gui.camera_capture_active,
-        state=tk.DISABLED, **style
-    )
-    gui.camera_capture_status_checkbox.pack(side=tk.LEFT, padx=5)
-
-    # Первоначальное обновление цветов
+    parent_layout.addWidget(status_frame)
+    
     gui.update_status_colors()

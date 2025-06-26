@@ -1,19 +1,23 @@
 # voice_model_settings.py
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+                             QFrame, QScrollArea, QLineEdit, QComboBox, QCheckBox,
+                             QSizePolicy, QMessageBox, QApplication, QToolTip)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QEvent, QPoint
+from PyQt6.QtGui import QFont, QCursor
+
 import os
 import platform
 import time
 import copy
 import json
-import threading 
-import tkinter.messagebox
+import threading
 from docs import DocsManager
 from Logger import logger
 import traceback
 
 from SettingsManager import SettingsManager
+from pyqt_styles.styles import get_stylesheet
 
 def getTranslationVariant(ru_str, en_str=""):
     if en_str and SettingsManager.get("LANGUAGE") == "EN":
@@ -39,7 +43,6 @@ model_descriptions_en = {
     "medium+low": "Combination of Fish Speech+ and RVC for high-quality voice conversion.",
     "f5_tts": "Best emotional model. A diffusion model, therefore the most GPU-demanding."
 }
-
 
 setting_descriptions = {
     "device": "Устройство для вычислений (GPU или CPU). 'cuda:0' - первая GPU NVIDIA, 'cpu' - центральный процессор, 'mps:0' - GPU Apple Silicon.",
@@ -96,7 +99,6 @@ setting_descriptions = {
     "verbose": "Включить вывод подробной отладочной информации в консоль для диагностики проблем.",
     "cuda_toolkit": "Наличие установленного CUDA Toolkit от NVIDIA. Необходимо для некоторых функций (например, torch.compile) и работы с GPU NVIDIA.",
     "windows_sdk": "Наличие установленного Windows SDK. Может требоваться для компиляции некоторых зависимостей Python.",
-    
 }
 
 setting_descriptions_en = {
@@ -166,267 +168,240 @@ except ImportError:
     def check_gpu_provider(): return None
     def get_cuda_devices(): return []
 
-class Tooltip:
-    """
-    Creates a tooltip for a given widget.
-    """
-    def __init__(self, widget, text, delay=500, wraplength=250):
-        self.widget = widget
-        self.text = text
-        self.delay = delay
-        self.wraplength = wraplength 
-        self.tipwindow = None
-        self.id = None
-        self.x = self.y = 0
-        self._id_var = tk.StringVar() 
+from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer, Qt
+class _InstallWorker(QObject):
+    progress = pyqtSignal(int)
+    status   = pyqtSignal(str)
+    log      = pyqtSignal(str)
+    finished = pyqtSignal(bool)
 
-        self.widget.bind("<Enter>", self.enter)
-        self.widget.bind("<Leave>", self.leave)
-        self.widget.bind("<ButtonPress>", self.leave)
+    def __init__(self, local_voice, model_id):
+        super().__init__()
+        self.local_voice = local_voice
+        self.model_id    = model_id
 
-    def enter(self, event=None):
-        self.schedule()
+    # --------------------------------------------------------
+    def run(self):
+        self.log.emit("[DEBUG] worker.run() стартовал")
+        try:
+            ok = self.local_voice.download_model(
+                self.model_id,
+                progress_cb=self.progress.emit,
+                status_cb=self.status.emit,
+                log_cb=self.log.emit
+            )
+        except Exception as e:
+            import traceback, io
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            self.log.emit("[EXCEPTION]\n" + buf.getvalue())
+            ok = False
+        self.finished.emit(ok)
 
-    def leave(self, event=None):
-        self.unschedule()
-        self.hidetip()
-
-    def schedule(self):
-        self.unschedule()
-        self._id_var.set(self.widget.after(self.delay, self.showtip))
-
-    def unschedule(self):
-        scheduled_id = self._id_var.get()
-        if scheduled_id:
-            self.widget.after_cancel(scheduled_id)
-            self._id_var.set('')
-
-    def showtip(self, event=None):
-        self.hidetip()
-        if not self.widget.winfo_exists(): 
-             return
-        # Calculate position
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
-
-        self.tipwindow = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        tw.wm_attributes("-topmost", True)
-
-        label = tk.Label(tw, text=self.text, justify=tk.LEFT,
-                       background="#ffffe0", relief=tk.SOLID, borderwidth=1,
-                       wraplength=self.wraplength, font=("Segoe UI", 8),
-                       padx=4, pady=2)
-        label.pack(ipadx=1)
-
-    def hidetip(self):
-        tw = self.tipwindow
-        self.tipwindow = None
-        if tw:
-            try:
-                if tw.winfo_exists():
-                    tw.destroy()
-            except tk.TclError:
-                pass
-
-
-class VoiceCollapsibleSection(ttk.Frame): # Используем ttk.Frame для стиля
-    def __init__(self, parent, title, collapsed=False, update_scrollregion_func=None, clear_description_func=None, **kwargs):
-        super().__init__(parent, **kwargs)
-
-        self.configure(style='Collapsible.TFrame')
+class VoiceCollapsibleSection(QFrame):
+    def __init__(self, parent, title, collapsed=False, update_scrollregion_func=None, clear_description_func=None):
+        super().__init__(parent)
+        
         self.update_scrollregion = update_scrollregion_func
         self.clear_description = clear_description_func or (lambda event=None: None)
-
-        self.border_frame = tk.Frame(self, bg="#1e1e1e") 
-        self.border_frame.pack(fill=tk.X, expand=True, pady=(0, 1))
-        self.header_frame = tk.Frame(self.border_frame, bg="#252525")
-        self.header_frame.pack(fill=tk.X, side=tk.TOP, anchor="nw", pady=(2, 1))
-        self.arrow = tk.Label(self.header_frame, text=("▶" if collapsed else "▼"), bg="#252525", fg="white", width=2, font=("Segoe UI", 8)) # Шрифт для стрелки
-        self.arrow.pack(side=tk.LEFT, padx=(5, 5))
-        self.title_label = tk.Label(self.header_frame, text=title, bg="#252525", fg="white", font=("Segoe UI", 9, "bold")) # Жирный шрифт
-        self.title_label.pack(side=tk.LEFT, pady=2)
-
-        # Контентный фрейм - tk, т.к. внутри него grid
-        self.content_frame = tk.Frame(self.border_frame, bg="#1e1e1e")
-        self.content_frame.columnconfigure(0, weight=4, uniform="group1", minsize=150)
-        self.content_frame.columnconfigure(1, weight=5, uniform="group1", minsize=150)
-
-        for widget in [self.arrow, self.title_label, self.header_frame]:
-            widget.bind("<Button-1>", self.toggle)
-            widget.bind("<Leave>", self.clear_description)
-
+        
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 1)
+        main_layout.setSpacing(0)
+        
+        # Header
+        self.header_frame = QFrame()
+        self.header_frame.setObjectName("VoiceCollapsibleHeader")
+        header_layout = QHBoxLayout(self.header_frame)
+        header_layout.setContentsMargins(5, 2, 5, 2)
+        
+        self.arrow = QLabel("▶" if collapsed else "▼")
+        self.arrow.setFixedWidth(15)
+        self.arrow.setStyleSheet("color: white; font-size: 8pt;")
+        
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet("color: white; font-weight: bold; font-size: 9pt;")
+        
+        header_layout.addWidget(self.arrow)
+        header_layout.addWidget(self.title_label)
+        header_layout.addStretch()
+        
+        # Content frame
+        self.content_frame = QFrame()
+        self.content_frame.setObjectName("VoiceCollapsibleContent")
+        self.content_layout = QVBoxLayout(self.content_frame)
+        self.content_layout.setContentsMargins(1, 0, 1, 1)
+        
+        main_layout.addWidget(self.header_frame)
+        main_layout.addWidget(self.content_frame)
+        
+        # Click handlers
+        self.header_frame.mousePressEvent = self.toggle
+        self.arrow.mousePressEvent = self.toggle
+        self.title_label.mousePressEvent = self.toggle
+        
         self.is_collapsed = collapsed
         self.row_count = 0
-        self.widgets = {} # Словарь для хранения виджетов и их переменных
-
-        if self.is_collapsed: self.collapse(update_scroll=False)
-        else: self.expand(update_scroll=False)
+        self.widgets = {}
+        
+        if self.is_collapsed:
+            self.collapse(update_scroll=False)
+        else:
+            self.expand(update_scroll=False)
 
     def toggle(self, event=None):
-        if self.is_collapsed: self.expand()
-        else: self.collapse()
+        if self.is_collapsed:
+            self.expand()
+        else:
+            self.collapse()
         self.is_collapsed = not self.is_collapsed
-        if self.update_scrollregion: self.after(10, self.update_scrollregion)
+        if self.update_scrollregion:
+            QTimer.singleShot(10, self.update_scrollregion)
 
     def collapse(self, update_scroll=True):
-        self.arrow.config(text="▶")
-        self.content_frame.pack_forget()
-        if update_scroll and self.update_scrollregion: self.after(10, self.update_scrollregion)
+        self.arrow.setText("▶")
+        self.content_frame.setVisible(False)
+        if update_scroll and self.update_scrollregion:
+            QTimer.singleShot(10, self.update_scrollregion)
 
     def expand(self, update_scroll=True):
-        self.arrow.config(text="▼")
-        self.content_frame.pack(fill=tk.X, side=tk.TOP, padx=1, pady=(0, 1))
-        if update_scroll and self.update_scrollregion: self.after(10, self.update_scrollregion)
+        self.arrow.setText("▼")
+        self.content_frame.setVisible(True)
+        if update_scroll and self.update_scrollregion:
+            QTimer.singleShot(10, self.update_scrollregion)
 
     def add_row(self, key, label_text, widget_type, options, setting_info, show_setting_description=None):
         row_height = 28
         is_locked = setting_info.get("locked", False)
-        label_fg_color = "#888888" if is_locked else "white"
-        # Состояния для виджетов
-        widget_state_tk = tk.DISABLED if is_locked else tk.NORMAL
-        widget_state_ttk = "disabled" if is_locked else "normal"
-        combobox_state_ttk = "disabled" if is_locked else "readonly"
-
-        # Контейнеры и метка (tk)
-        label_container = tk.Frame(self.content_frame, bg="#252525", height=row_height)
-        label_container.grid(row=self.row_count, column=0, sticky="nsew", pady=(1, 0))
-        label_container.pack_propagate(False)
-        label = tk.Label(label_container, text=label_text, bg="#252525", fg=label_fg_color, anchor="w", font=("Segoe UI", 9))
-        label.pack(fill=tk.BOTH, expand=True, padx=10, pady=3)
-
-        widget_container = tk.Frame(self.content_frame, bg="#1e1e1e", height=row_height)
-        widget_container.grid(row=self.row_count, column=1, sticky="nsew", pady=(1, 0))
-        widget_container.pack_propagate(False)
-
+        
+        # Create horizontal layout for the row
+        row_layout = QHBoxLayout()
+        row_layout.setContentsMargins(0, 1, 0, 0)
+        
+        # Label
+        label_container = QFrame()
+        label_container.setObjectName("VoiceSettingLabel")
+        label_container.setFixedHeight(row_height)
+        label_layout = QHBoxLayout(label_container)
+        label_layout.setContentsMargins(10, 3, 10, 3)
+        
+        label = QLabel(label_text)
+        label.setStyleSheet(f"color: {'#888888' if is_locked else 'white'}; font-size: 9pt;")
+        label_layout.addWidget(label)
+        
+        # Widget container
+        widget_container = QFrame()
+        widget_container.setObjectName("VoiceSettingWidget")
+        widget_container.setFixedHeight(row_height)
+        widget_layout = QHBoxLayout(widget_container)
+        widget_layout.setContentsMargins(5, 2, 5, 2)
+        
         widget = None
-        widget_var = None 
-        container_padx = 5
-        container_pady = 2
-        entry_bg = "#3c3c3c"
-        widget_fg = "white"
-        disabled_fg = "#888888"
-        disabled_bg = "#303030"
-
+        widget_var = None
         current_value = options.get("default")
-
+        
         if widget_type == "entry":
-            entry_var = tk.StringVar()
-            entry = tk.Entry(widget_container, textvariable=entry_var, bg=entry_bg, fg=widget_fg,
-                           disabledbackground=disabled_bg, disabledforeground=disabled_fg,
-                           insertbackground=widget_fg,
-                           relief="solid", bd=1, highlightthickness=0, state=widget_state_tk, font=("Segoe UI", 9))
-            entry.pack(fill=tk.X, expand=True, padx=container_padx, pady=container_pady, ipady=2)
+            widget = QLineEdit()
+            widget.setEnabled(not is_locked)
             if current_value is not None:
-                entry_var.set(str(current_value))
-            widget = entry
-            widget_var = entry_var
-
+                widget.setText(str(current_value))
+            widget_var = widget
+            widget_layout.addWidget(widget)
+            
         elif widget_type == "combobox":
-            combo_var = tk.StringVar()
+            widget = QComboBox()
             values_list = options.get("values", [])
-            if not isinstance(values_list, (list, tuple)): values_list = []
-
-            # Используем ttk.Combobox с кастомным стилем
-            combo = ttk.Combobox(
-                widget_container,
-                textvariable=combo_var,
-                values=values_list,
-                state=combobox_state_ttk,
-                style='CustomDark.TCombobox', # Применяем наш стиль
-                font=("Segoe UI", 9)
-            )
-            combo.pack(fill=tk.X, expand=True, padx=container_padx, pady=container_pady, ipady=1)
-
-            # Функция установки начального значения
-            def set_initial_combo_value(target_widget, possible_values, value_to_set):
-                if not target_widget.winfo_exists(): return
-                if value_to_set is not None:
-                    str_value_to_set = str(value_to_set)
-                    str_possible_values = [str(v) for v in possible_values]
-                    try:
-                        value_index = str_possible_values.index(str_value_to_set)
-                        target_widget.current(value_index)
-                        return
-                    except ValueError: pass
-                    except tk.TclError: pass
-
-                if possible_values:
-                    try: target_widget.current(0)
-                    except tk.TclError: pass
-
-            combo.after_idle(lambda w=combo, v=values_list[:], cv=current_value: set_initial_combo_value(w, v, cv))
-
-            widget = combo
-            widget_var = combo_var
-
+            if not isinstance(values_list, (list, tuple)):
+                values_list = []
+            
+            widget.addItems([str(v) for v in values_list])
+            widget.setEnabled(not is_locked)
+            
+            if current_value is not None and values_list:
+                str_value = str(current_value)
+                str_values = [str(v) for v in values_list]
+                try:
+                    index = str_values.index(str_value)
+                    widget.setCurrentIndex(index)
+                except ValueError:
+                    if values_list:
+                        widget.setCurrentIndex(0)
+            
+            widget_var = widget
+            widget_layout.addWidget(widget)
+            
         elif widget_type == "checkbutton":
-            var = tk.BooleanVar()
+            widget = QCheckBox()
+            widget.setEnabled(not is_locked)
+            
             bool_value = False
             if isinstance(current_value, str):
                 bool_value = current_value.lower() == 'true'
             elif current_value is not None:
                 bool_value = bool(current_value)
-            var.set(bool_value)
-
-            # Используем ttk.Checkbutton с кастомным стилем
-            check = ttk.Checkbutton(
-                widget_container, variable=var,
-                style='CustomDark.TCheckbutton',
-                state=widget_state_ttk,
-                takefocus=False
-            )
-            check.pack(side=tk.RIGHT, padx=container_padx + 10, pady=container_pady)
-            widget = check
-            widget_var = var
-
+            
+            widget.setChecked(bool_value)
+            widget_var = widget
+            widget_layout.addWidget(widget)
+            widget_layout.addStretch()
+        
         if widget:
-            # Сохраняем виджет и его переменную
             self.widgets[key] = {'widget': widget, 'variable': widget_var}
+            
             if show_setting_description:
-                elements_to_bind = [label_container, label, widget_container, widget]
-                for w in elements_to_bind:
-                     if w:
-                         w.bind("<Enter>", lambda event, k=key: show_setting_description(k), '+')
-                         w.bind("<Leave>", self.clear_description, '+')
-
+                for w in [label_container, label, widget_container, widget]:
+                    w.enterEvent = lambda e, k=key: show_setting_description(k)
+                    w.leaveEvent = lambda e: self.clear_description()
+        
+        # Add row to content
+        row_layout.addWidget(label_container, 4)
+        row_layout.addWidget(widget_container, 5)
+        
+        self.content_layout.addLayout(row_layout)
         self.row_count += 1
+        
         return widget
 
     def get_values(self):
         values = {}
         for key, data in self.widgets.items():
             widget = data.get('widget')
-            variable = data.get('variable')
             value = None
             try:
-                if isinstance(widget, ttk.Combobox):
-                    value = widget.get()
-                elif isinstance(widget, tk.Entry) and variable:
-                    value = variable.get()
-                elif isinstance(widget, ttk.Checkbutton) and variable:
-                    value = variable.get()
-                elif variable:
-                     value = variable.get()
-                elif isinstance(widget, tk.Entry):
-                     value = widget.get()
+                if isinstance(widget, QComboBox):
+                    value = widget.currentText()
+                elif isinstance(widget, QLineEdit):
+                    value = widget.text()
+                elif isinstance(widget, QCheckBox):
+                    value = widget.isChecked()
                 values[key] = value
             except Exception as e:
                 logger.info(f"{_('Ошибка получения значения для', 'Error getting value for')} {key}: {e}")
                 values[key] = None
         return values
 
-class VoiceModelSettingsWindow:
-    _ttk_styles_initialized = False # Флаг для однократной инициализации стилей
+
+class VoiceModelSettingsWindow(QWidget):
+
+    def _on_progress(self, value: int):
+        """
+        Получает процент (0-100) из воркера.
+        Здесь можно обновлять полоску прогресса,
+        статус-бар или просто выводить в лог.
+        """
+        print(f"F5-TTS install progress: {value}%")
 
     def __init__(self, master=None, config_dir=None, on_save_callback=None, local_voice=None, check_installed_func=None):
-        self.master = master or tk.Tk()
-        self.master.title(_("Настройки и Установка Локальных Моделей", "Settings and Installation of Local Models"))
-        self.master.minsize(750, 500)
-        self.master.geometry("875x800")
-        self.master.configure(bg="#1e1e1e")
-
+        super().__init__(master)
+        
+        self.setWindowTitle(_("Настройки и Установка Локальных Моделей", "Settings and Installation of Local Models"))
+        self.setMinimumSize(750, 500)
+        self.resize(875, 800)
+        
+        # Apply stylesheet
+        self.setStyleSheet(get_stylesheet())
+        
         self.local_voice = local_voice
         self.check_installed_func = check_installed_func
         self.config_dir = config_dir or os.path.dirname(os.path.abspath(__file__))
@@ -440,12 +415,11 @@ class VoiceModelSettingsWindow:
 
         self.detected_gpu_vendor = check_gpu_provider()
         self.detected_cuda_devices = []
-        self.gpu_name = None # Инициализируем имя GPU
+        self.gpu_name = None
 
         if self.detected_gpu_vendor == "NVIDIA":
             self.detected_cuda_devices = get_cuda_devices()
             if self.detected_cuda_devices:
-                # Пытаемся получить имя первой CUDA видеокарты
                 try:
                     first_device_id = self.detected_cuda_devices[0]
                     self.gpu_name = get_gpu_name_by_id(first_device_id)
@@ -473,130 +447,13 @@ class VoiceModelSettingsWindow:
         
         self.docs_manager = DocsManager()
         self._check_system_dependencies()
-
-        self._initialize_custom_ttk_styles()
+        
         self._initialize_layout()
         self._create_model_panels()
         self.display_installed_models_settings()
 
-        self.master.after(100, self._update_settings_scrollregion)
-        self.master.after(100, self._update_models_scrollregion)
-
-    def _initialize_custom_ttk_styles(self):
-        if VoiceModelSettingsWindow._ttk_styles_initialized:
-            return
-
-        style = ttk.Style()
-
-        # Цвета
-        frame_bg = "#1e1e1e"
-        widget_bg = "#3c3c3c"
-        widget_fg = "white"
-        border_color = "#6b6b6b"
-        darker_border_color = "#444444"
-        select_bg = "#005f87"
-        disabled_fg = "#888888"
-        disabled_bg = "#303030"
-        arrow_color = widget_fg
-        arrow_active_bg = "#4f4f4f"
-        # Цвета для Scrollbar
-        scrollbar_trough_color = frame_bg 
-        scrollbar_thumb_color = "#555555"
-        scrollbar_thumb_active_color = "#6a6a6a"
-        scrollbar_border_color = darker_border_color 
-
-        # --- Стиль Combobox (CustomDark.TCombobox) ---
-        style.element_create("CustomDarkCombobox.field", "from", "default")
-        style.element_create("CustomDarkCombobox.downarrow", "from", "default")
-        style.layout("CustomDark.TCombobox", [(
-            'CustomDarkCombobox.field', {'sticky': 'nswe', 'border': '1', 'children': [(
-                    'CustomDarkCombobox.textarea', {'sticky': 'nswe'}
-            )]}) , (
-            'CustomDarkCombobox.downarrow', {'side': 'right', 'sticky': 'ns'}
-        )])
-        style.configure("CustomDark.TCombobox",
-                        background=widget_bg, fieldbackground=widget_bg, foreground=widget_fg,
-                        bordercolor=darker_border_color, arrowcolor=arrow_color, arrowsize=12,
-                        borderwidth=1, padding=(5, 4), relief="solid", insertcolor=widget_fg)
-        style.map("CustomDark.TCombobox",
-                  foreground=[('disabled', disabled_fg)],
-                  fieldbackground=[('disabled', disabled_bg)],
-                  bordercolor=[('disabled', darker_border_color), ('focus', select_bg), ('hover', border_color)],
-                  arrowcolor=[('disabled', disabled_fg), ('pressed', arrow_color), ('hover', arrow_color)])
-
-        # --- Стиль Listbox внутри Combobox (через option_add) ---
-        self.master.option_add('*TCombobox*Listbox.background', widget_bg)
-        self.master.option_add('*TCombobox*Listbox.foreground', widget_fg)
-        self.master.option_add('*TCombobox*Listbox.selectBackground', select_bg)
-        self.master.option_add('*TCombobox*Listbox.selectForeground', widget_fg)
-        self.master.option_add('*TCombobox*Listbox.font', ("Segoe UI", 9))
-        self.master.option_add('*TCombobox*Listbox.borderWidth', 1)
-        self.master.option_add('*TCombobox*Listbox.borderColor', darker_border_color)
-        self.master.option_add('*TCombobox*Listbox.relief', 'solid')
-        self.master.option_add('*TCombobox*Listbox.highlightThickness', 0)
-
-        # --- Стиль Checkbutton (CustomDark.TCheckbutton) ---
-        style.configure('CustomDark.TCheckbutton',
-                        background=frame_bg, foreground=widget_fg, indicatorcolor=widget_bg,
-                        indicatorrelief='solid', indicatormargin=2, indicatordiameter=12,
-                        padding=5, relief='flat', font=("Segoe UI", 9))
-        style.map('CustomDark.TCheckbutton',
-                  indicatorcolor=[('selected', select_bg), ('active', '#555555')])
-
-
-        style.configure('Collapsible.TFrame', background=frame_bg)
-
-        style.element_create("CustomScrollbar.trough", "from", "default") 
-        style.element_create("CustomScrollbar.thumb", "from", "default") 
-
-        style.layout('CustomDark.Vertical.TScrollbar', [(
-            'CustomScrollbar.trough', {'sticky': 'ns', 'children': [(
-                'CustomScrollbar.thumb', {'expand': '1', 'sticky': 'nswe'}
-            )]}
-        )])
-        # Убираем стрелки, если они есть в базовой теме
-        style.layout('CustomDark.Horizontal.TScrollbar', [(
-            'CustomScrollbar.trough', {'sticky': 'ew', 'children': [(
-                'CustomScrollbar.thumb', {'expand': '1', 'sticky': 'nswe'}
-            )]}
-        )])
-
-
-        style.configure('CustomDark.Vertical.TScrollbar',
-                        relief='flat',
-                        borderwidth=0,
-                        background=scrollbar_trough_color,
-                        troughrelief='flat',
-                        troughborderwidth=0,
-                        troughcolor=scrollbar_trough_color
-                        )
-        style.configure('CustomDark.Horizontal.TScrollbar', # На всякий случай, если понадобится
-                        relief='flat',
-                        borderwidth=0,
-                        background=scrollbar_trough_color,
-                        troughrelief='flat',
-                        troughborderwidth=0,
-                        troughcolor=scrollbar_trough_color
-                        )
-
-        # Настройка ручки (thumb)
-        style.configure('CustomDark.Vertical.TScrollbar',   thumbrelief='flat', thumbborderwidth=0, background=scrollbar_thumb_color, bordercolor=scrollbar_border_color)
-        style.configure('CustomDark.Horizontal.TScrollbar', thumbrelief='flat', thumbborderwidth=0, background=scrollbar_thumb_color, bordercolor=scrollbar_border_color)
-
-        # Настройка ручки при наведении/нажатии
-        style.map('CustomDark.Vertical.TScrollbar',
-                  background=[('active', scrollbar_thumb_active_color), # Цвет ручки при наведении/нажатии
-                              ('disabled', scrollbar_trough_color)], # Цвет ручки, если скроллбар неактивен
-                  troughcolor=[('disabled', scrollbar_trough_color)]
-                 )
-        style.map('CustomDark.Horizontal.TScrollbar',
-                  background=[('active', scrollbar_thumb_active_color),
-                              ('disabled', scrollbar_trough_color)],
-                  troughcolor=[('disabled', scrollbar_trough_color)]
-                 )
-
-
-        VoiceModelSettingsWindow._ttk_styles_initialized = True
+        QTimer.singleShot(100, self._update_settings_scrollregion)
+        QTimer.singleShot(100, self._update_models_scrollregion)
 
     def get_default_model_structure(self):
         return [
@@ -612,7 +469,6 @@ class VoiceModelSettingsWindow:
                     {"key": "index_rate", "label": _("Соотношение индекса RVC", "RVC Index Rate"), "type": "entry", "options": {"default": "0.75"}},
                     {"key": "protect", "label": _("Защита согласных (RVC)", "Consonant Protection (RVC)"), "type": "entry", "options": {"default": "0.33"}},
                     {"key": "tts_rate", "label": _("Скорость TTS (%)", "TTS Speed (%)"), "type": "entry", "options": {"default": "0"}},
-                    # {"key": "output_gain", "label": _("Громкость RVC (gain)", "RVC Volume (gain)"), "type": "entry", "options": {"default": "0.75"}},
                     {"key": "filter_radius", "label": _("Радиус фильтра F0 (RVC)", "F0 Filter Radius (RVC)"), "type": "entry", "options": {"default": "3"}},
                     {"key": "rms_mix_rate", "label": _("Смешивание RMS (RVC)", "RMS Mixing (RVC)"), "type": "entry", "options": {"default": "0.5"}},
                 ]
@@ -682,7 +538,6 @@ class VoiceModelSettingsWindow:
                     {"key": "fsprvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}},
                     {"key": "fsprvc_index_rate", "label": _("[RVC] Соотн. индекса", "[RVC] Index Rate"), "type": "entry", "options": {"default": "0.75"}},
                     {"key": "fsprvc_protect", "label": _("[RVC] Защита согласных", "[RVC] Consonant Protection"), "type": "entry", "options": {"default": "0.33"}},
-                    # {"key": "fsprvc_output_gain", "label": _("[RVC] Громкость (gain)", "[RVC] Volume (gain)"), "type": "entry", "options": {"default": "0.75"}},
                     {"key": "fsprvc_filter_radius", "label": _("[RVC] Радиус фильтра F0", "[RVC] F0 Filter Radius"), "type": "entry", "options": {"default": "3"}},
                     {"key": "fsprvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}}
                 ]
@@ -701,61 +556,6 @@ class VoiceModelSettingsWindow:
                 ]
             }
         ]
-
-    # def load_settings(self):
-    #     self.installed_models = set()
-    #     if self.local_voice and self.check_installed_func:
-    #         for model_data in self.get_default_model_structure():
-    #             model_id = model_data.get("id")
-    #             if model_id:
-    #                 if model_id == "low" and self.check_installed_func("tts_with_rvc"): self.installed_models.add(model_id)
-    #                 elif model_id == "low+" and self.check_installed_func("tts_with_rvc"): self.installed_models.add(model_id)
-    #                 elif model_id == "medium" and self.check_installed_func("fish_speech_lib"): self.installed_models.add(model_id)
-    #                 elif model_id == "medium+" and self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton"): self.installed_models.add(model_id)
-    #                 elif model_id == "medium+low" and self.check_installed_func("tts_with_rvc") and self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton"): self.installed_models.add(model_id)
-
-    #     else:
-    #         try:
-    #             if os.path.exists(self.installed_models_file):
-    #                 with open(self.installed_models_file, "r", encoding="utf-8") as f:
-    #                     self.installed_models.update(line.strip() for line in f if line.strip())
-    #         except Exception as e:
-    #             logger.info(f"Ошибка загрузки состояния установленных моделей из {self.installed_models_file}: {e}")
-
-    #     # 2. Получение базовой структуры по умолчанию
-    #     default_model_structure = self.get_default_model_structure()
-
-    #     # 3. Адаптация базовой структуры под окружение (GPU/OS) перед загрузкой сохраненных значений
-    #     adapted_default_structure = self.finalize_model_settings(
-    #         default_model_structure, self.detected_gpu_vendor, self.detected_cuda_devices
-    #     )
-
-    #     # 4. Загрузка сохраненных пользовательских значений из JSON
-    #     saved_values = {}
-    #     try:
-    #         if os.path.exists(self.settings_values_file):
-    #             with open(self.settings_values_file, "r", encoding="utf-8") as f:
-    #                 saved_values = json.load(f)
-    #     except Exception as e:
-    #         logger.info(f"Ошибка загрузки сохраненных значений из {self.settings_values_file}: {e}")
-    #         saved_values = {}
-
-    #     # 5. Создание финальной структуры: начинаем с адаптированных дефолтов
-    #     merged_model_structure = copy.deepcopy(adapted_default_structure)
-
-    #     # 6. Наложение сохраненных значений поверх адаптированных дефолтов
-    #     for model_data in merged_model_structure:
-    #         model_id = model_data.get("id")
-    #         if model_id in saved_values:
-    #             model_saved_values = saved_values[model_id]
-    #             if isinstance(model_saved_values, dict):
-    #                 for setting in model_data.get("settings", []):
-    #                     setting_key = setting.get("key")
-    #                     if setting_key in model_saved_values:
-    #                         setting.setdefault("options", {})["default"] = model_saved_values[setting_key]
-
-    #     self.local_voice_models = merged_model_structure
-    #     logger.info("Загрузка и адаптация настроек завершена.") 
 
     def load_settings(self):
         default_model_structure = self.get_default_model_structure()
@@ -786,7 +586,6 @@ class VoiceModelSettingsWindow:
     def load_installed_models_state(self):
         """Загружает список установленных моделей из файла."""
         self.installed_models = set()
-        # Загружаем из файла только для инициализации, если check_installed_func недоступен
         if not self.local_voice or not self.check_installed_func:
             try:
                 if os.path.exists(self.installed_models_file):
@@ -797,7 +596,7 @@ class VoiceModelSettingsWindow:
                 logger.info(f"{_('Ошибка загрузки состояния из', 'Error loading state from')} {self.installed_models_file}: {e}")
         else:
             logger.info(_("Проверка установленных моделей через check_installed_func...", "Checking installed models via check_installed_func..."))
-            for model_data in self.get_default_model_structure(): # Используем дефолтную структуру для перебора ID
+            for model_data in self.get_default_model_structure():
                 model_id = model_data.get("id")
                 if model_id:
                     is_installed = False
@@ -815,7 +614,7 @@ class VoiceModelSettingsWindow:
     def save_settings(self):
         settings_to_save = {}
         for model_id, section in self.settings_sections.items():
-            if model_id in self.installed_models and section.winfo_exists():
+            if model_id in self.installed_models and section:
                 try:
                     settings_to_save[model_id] = section.get_values()
                 except Exception as e:
@@ -826,7 +625,6 @@ class VoiceModelSettingsWindow:
                     json.dump(settings_to_save, f, indent=4, ensure_ascii=False)
             except Exception as e:
                 logger.info(f"{_('Ошибка сохранения значений настроек в', 'Error saving settings values to')} {self.settings_values_file}: {e}")
-        # Вызываем колбэк только если он есть
         if self.on_save_callback:
             callback_data = {
                  "installed_models": list(self.installed_models),
@@ -853,7 +651,6 @@ class VoiceModelSettingsWindow:
         elif detected_vendor == "AMD":
             force_fp32 = True
 
-
         for model in final_models:
             model_vendors = model.get("gpu_vendor", [])
             vendor_to_adapt_for = None
@@ -867,7 +664,7 @@ class VoiceModelSettingsWindow:
                 setting_key = setting.get("key")
                 widget_type = setting.get("type")
                 is_device_setting = "device" in str(setting_key).lower()
-                is_half_setting = setting_key in ["is_half", "fsprvc_is_half", "half", "fsprvc_fsp_half"] # Включаем все варианты half
+                is_half_setting = setting_key in ["is_half", "fsprvc_is_half", "half", "fsprvc_fsp_half"]
 
                 final_values_list = None
                 adapt_key_suffix = ""
@@ -897,10 +694,9 @@ class VoiceModelSettingsWindow:
                 keys_to_remove = [k for k in options if k.startswith("values_") or k.startswith("default_")]
                 for key_to_remove in keys_to_remove: options.pop(key_to_remove, None)
 
-                # Применяем принудительное FP32 и блокировку
                 if force_fp32 and is_half_setting:
-                    options["default"] = "False" # Принудительно ставим False
-                    setting["locked"] = True     # Блокируем настройку
+                    options["default"] = "False"
+                    setting["locked"] = True
                     logger.info(f"  - {_('Принудительно', 'Forcing')} '{setting_key}' = False {_('и заблокировано.', 'and locked.')}")
                 elif is_half_setting:
                     logger.info(f"  - '{setting_key}' = True - Доступен.")
@@ -930,202 +726,226 @@ class VoiceModelSettingsWindow:
             logger.info(f"{_('Ошибка чтения файла настроек', 'Error reading settings file')} {settings_file}: {e}")
         return parameters
 
-    # --- ИСПРАВЛЕННЫЙ МЕТОД ИНИЦИАЛИЗАЦИИ ---
     def _initialize_layout(self):
-        main_app_frame = tk.Frame(self.master, bg="#1e1e1e")
-        main_app_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # Главный layout устанавливаем сразу на self
+        main_widget_layout = QVBoxLayout(self)
+        main_widget_layout.setContentsMargins(0, 0, 0, 0)
         
-        # --- Левая панель ---
-        left_panel_frame = tk.Frame(main_app_frame, bg="#1e1e1e", width=280)
-        left_panel_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 5), pady=10)
-        left_panel_frame.pack_propagate(False)
-        # ... (код описания и списка моделей остается прежним) ...
-        description_frame = tk.Frame(left_panel_frame, bg="#252525", bd=1, relief=tk.SOLID, height=135, highlightbackground="#444", highlightthickness=1)
-        description_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 10))
-        description_frame.pack_propagate(False)
-        description_title = tk.Label(description_frame, text=_("Описание:","Description"), font=("Segoe UI", 9, "bold"), anchor="nw", bg="#252525", fg="white")
-        description_title.pack(padx=10, pady=(5,2), anchor="nw")
-        self.description_label_widget = tk.Label(description_frame, text=self.default_description_text, font=("Segoe UI", 9), anchor="nw", justify="left", wraplength=250, bg="#252525", fg="#cccccc")
-        self.description_label_widget.pack(padx=10, pady=(0, 10), fill=tk.BOTH, expand=True)
-
-        models_title = tk.Label(left_panel_frame, text=_("Доступные Модели:","Available models"), font=("Segoe UI", 10, "bold"), anchor="nw", bg="#1e1e1e", fg="white")
-        models_title.pack(fill=tk.X, pady=(0, 5))
+        # Создаем контейнер для основного содержимого
+        content_widget = QWidget()
+        main_layout = QHBoxLayout(content_widget)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
-        models_canvas_frame = tk.Frame(left_panel_frame, bg="#1e1e1e")
-        models_canvas_frame.pack(fill=tk.BOTH, expand=True)
-        self.models_canvas = tk.Canvas(models_canvas_frame, bg="#1e1e1e", highlightthickness=0)
-        models_scrollbar = ttk.Scrollbar(models_canvas_frame, orient="vertical", command=self.models_canvas.yview, style='CustomDark.Vertical.TScrollbar')
-        self.models_canvas.configure(yscrollcommand=models_scrollbar.set)
-        models_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.models_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.models_scrollable_area = tk.Frame(self.models_canvas, bg="#1e1e1e")
-        models_canvas_window_id = self.models_canvas.create_window((0, 0), window=self.models_scrollable_area, anchor="nw")
+        # Left panel
+        left_panel = QWidget()
+        left_panel.setFixedWidth(280)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setSpacing(10)
         
-        self.models_scrollable_area.bind("<Configure>", self._update_models_scrollregion)
-        self.models_canvas.bind("<Configure>", lambda e, cw=models_canvas_window_id: self.models_canvas.itemconfig(cw, width=e.width))
+        # Description frame
+        description_frame = QFrame()
+        description_frame.setObjectName("DescriptionFrame")
+        description_frame.setFixedHeight(135)
+        desc_layout = QVBoxLayout(description_frame)
+        desc_layout.setContentsMargins(10, 5, 10, 10)
         
-        self._bind_mousewheel(self.models_canvas, lambda e: self._handle_mousewheel(self.models_canvas, e))
-        self._bind_mousewheel(self.models_scrollable_area, lambda e: self._handle_mousewheel(self.models_canvas, e))
-
-        # --- Правая панель ---
-        right_settings_frame = tk.Frame(main_app_frame, bg="#1e1e1e")
-        right_settings_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 10), pady=10)
+        desc_title = QLabel(_("Описание:", "Description"))
+        desc_title.setStyleSheet("font-weight: bold; font-size: 9pt;")
+        desc_layout.addWidget(desc_title)
         
-        self.settings_canvas = tk.Canvas(right_settings_frame, bg="#1e1e1e", highlightthickness=0)
-        settings_scrollbar = ttk.Scrollbar(right_settings_frame, orient=tk.VERTICAL, command=self.settings_canvas.yview, style='CustomDark.Vertical.TScrollbar')
-        self.settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
-        settings_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.settings_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.scrollable_frame_settings = tk.Frame(self.settings_canvas, bg="#1e1e1e")
-        settings_canvas_window_id = self.settings_canvas.create_window((0, 0), window=self.scrollable_frame_settings, anchor="nw")
+        self.description_label_widget = QLabel(self.default_description_text)
+        self.description_label_widget.setWordWrap(True)
+        self.description_label_widget.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        self.description_label_widget.setAlignment(Qt.AlignmentFlag.AlignTop)
+        desc_layout.addWidget(self.description_label_widget)
+        desc_layout.addStretch()
         
-        self.scrollable_frame_settings.bind("<Configure>", self._update_settings_scrollregion)
-        self.settings_canvas.bind("<Configure>", lambda e, cw=settings_canvas_window_id: self.settings_canvas.itemconfig(cw, width=e.width))
+        left_layout.addWidget(description_frame)
         
-        self._bind_mousewheel(self.settings_canvas, lambda e: self._handle_mousewheel(self.settings_canvas, e))
-        self._bind_mousewheel(self.scrollable_frame_settings, lambda e: self._handle_mousewheel(self.settings_canvas, e))
+        # Models list
+        models_title = QLabel(_("Доступные Модели:", "Available models"))
+        models_title.setStyleSheet("font-weight: bold; font-size: 10pt;")
+        left_layout.addWidget(models_title)
+        
+        # Models scroll area
+        self.models_canvas = QScrollArea()
+        self.models_canvas.setWidgetResizable(True)
+        self.models_canvas.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        self.models_scrollable_area = QWidget()
+        self.models_layout = QVBoxLayout(self.models_scrollable_area)
+        self.models_layout.setContentsMargins(0, 0, 0, 0)
+        self.models_layout.setSpacing(4)
+        
+        self.models_canvas.setWidget(self.models_scrollable_area)
+        left_layout.addWidget(self.models_canvas)
+        
+        main_layout.addWidget(left_panel)
+        
+        # Right panel
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Settings scroll area
+        self.settings_canvas = QScrollArea()
+        self.settings_canvas.setWidgetResizable(True)
+        self.settings_canvas.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        self.scrollable_frame_settings = QWidget()
+        self.settings_layout = QVBoxLayout(self.scrollable_frame_settings)
+        self.settings_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Top frame for dependencies status
+        self.top_frame_settings = QFrame()
+        top_layout = QVBoxLayout(self.top_frame_settings)
+        top_layout.setContentsMargins(0, 0, 0, 5)
+        
+        self._check_and_display_dependencies_status(top_layout)
+        
+        self.settings_layout.addWidget(self.top_frame_settings)
+        
+        self.settings_canvas.setWidget(self.scrollable_frame_settings)
+        right_layout.addWidget(self.settings_canvas)
+        
+        main_layout.addWidget(right_panel, 1)
+        
+        # Bottom buttons
+        bottom_widget = QWidget()
+        bottom_layout = QHBoxLayout(bottom_widget)
+        bottom_layout.setContentsMargins(10, 10, 10, 10)
+        
+        close_button = QPushButton(_("Закрыть", "Close"))
+        close_button.clicked.connect(self.save_and_quit)
+        
+        save_button = QPushButton(_("Сохранить", "Save"))
+        save_button.clicked.connect(self.save_and_continue)
+        save_button.setObjectName("PrimaryButton")
+        
+        bottom_layout.addStretch()
+        bottom_layout.addWidget(close_button)
+        bottom_layout.addWidget(save_button)
+        
+        # Добавляем виджеты в главный layout
+        main_widget_layout.addWidget(content_widget, 1)
+        main_widget_layout.addWidget(bottom_widget)
 
-
-        # --- Отображение статуса зависимостей (Внутри правой панели) ---
-        self.top_frame_settings = tk.Frame(self.scrollable_frame_settings, bg="#1e1e1e")
-        self.top_frame_settings.pack(fill=tk.X, padx=10, pady=(10, 5), anchor='nw')
-
-        status_font = ("Segoe UI", 9)
-        warning_font = ("Segoe UI", 9, "bold")
-        status_label_color = "white"
-        status_found_color = "lightgreen"
-        status_notfound_color = "#FF6A6A" 
-        link_color = "#81d4fa" 
-        warning_color = "orange"
-        bg_color = "#1e1e1e"
-
-        # Фрейм для ГОРИЗОНТАЛЬНОЙ строки статусов компонентов
-        status_items_display_frame = tk.Frame(self.top_frame_settings, bg=bg_color)
-        status_items_display_frame.pack(anchor='w', fill=tk.X) # Заполняет ширину
-
-        # Фрейм для строки предупреждения и ссылки (под статусами)
-        warning_link_frame = None 
-
+    def _check_and_display_dependencies_status(self, layout):
+        """Check and display system dependencies status"""
         if platform.system() == "Windows":
-            if self.triton_installed:
-                if self.triton_checks_performed:
-                    items = [
-                        ("CUDA Toolkit:", self.cuda_found),
-                        ("Windows SDK:", self.winsdk_found),
-                        ("MSVC:", self.msvc_found)
-                    ]
+            if self.triton_installed and self.triton_checks_performed:
+                status_layout = QHBoxLayout()
+                
+                items = [
+                    ("CUDA Toolkit:", self.cuda_found),
+                    ("Windows SDK:", self.winsdk_found),
+                    ("MSVC:", self.msvc_found)
+                ]
+                
+                for text, found in items:
+                    item_layout = QHBoxLayout()
+                    item_layout.setSpacing(3)
                     
-                    for text, found in items:
-                        item_frame = tk.Frame(status_items_display_frame, bg=bg_color)
-                        item_frame.pack(side=tk.LEFT, padx=(0, 15)) 
-
-                        label = tk.Label(item_frame, text=text, font=status_font, bg=bg_color, fg=status_label_color)
-                        label.pack(side=tk.LEFT) 
-
-                        status_text = _("Найден", "Found") if found else _("Не найден", "Not Found")
-                        status_color = status_found_color if found else status_notfound_color
-                        status_label = tk.Label(item_frame, text=status_text, font=status_font, bg=bg_color, fg=status_color)
-                        status_label.pack(side=tk.LEFT, padx=(3, 0)) # Небольшой отступ слева от статуса
-
-                    # Проверка необходимости предупреждения (ПОСЛЕ статусов)
-                    if not (self.cuda_found and self.winsdk_found and self.msvc_found):
-                        # Создаем и пакуем фрейм для предупреждения/ссылки под статусами
-                        warning_link_frame = tk.Frame(self.top_frame_settings, bg=bg_color)
-                        warning_link_frame.pack(side=tk.TOP, fill=tk.X, pady=(5, 0), anchor='w') 
-
-                        warning_text = _("⚠️ Для моделей Fish Speech+ / +RVC могут потребоваться все компоненты.", "⚠️ Fish Speech+ / +RVC models may require all components.")
-                        warning_label = tk.Label(warning_link_frame, text=warning_text, bg=bg_color, fg=warning_color, font=warning_font)
-                        warning_label.pack(side=tk.LEFT, padx=(0, 5)) 
-
-                        doc_link_label = tk.Label(warning_link_frame, text=_("[Документация]", "[Documentation]"), bg=bg_color, fg=link_color, font=warning_font, cursor="hand2")
-                        doc_link_label.pack(side=tk.LEFT) 
-                        doc_link_label.bind("<Button-1>", lambda event: self.docs_manager.open_doc("installation_guide.html"))
-
-                else: # Ошибка проверки
-                    tk.Label(status_items_display_frame, text=_("⚠️ Ошибка проверки зависимостей Triton.", "⚠️ Error checking Triton dependencies."), font=status_font, bg=bg_color, fg=warning_color).pack(anchor='w')
-
-            else: # Triton не установлен
-                warning_link_frame = tk.Frame(self.top_frame_settings, bg=bg_color)
-                warning_link_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 0), anchor='w') 
-
-                tk.Label(warning_link_frame, text=_("Triton не установлен (необходим для Fish Speech+ / +RVC).", "Triton not installed (required for Fish Speech+ / +RVC)."), font=status_font, bg=bg_color, fg=warning_color).pack(side=tk.LEFT, padx=(0, 5))
-
-                #  doc_link_label_triton = tk.Label(warning_link_frame, text="[Инструкция]", bg=bg_color, fg=link_color, font=status_font, cursor="hand2")
-                #  doc_link_label_triton.pack(side=tk.LEFT)
-                #  doc_link_label_triton.bind("<Button-1>", lambda event: self.docs_manager.open_doc("installation_guide.html"))
-
-        else: # Не Windows
-            tk.Label(status_items_display_frame, text=_("Проверка зависимостей Triton доступна только в Windows.", "Triton dependency check is only available on Windows."), font=status_font, bg=bg_color, fg="#aaaaaa").pack(anchor='w')
-
-        bottom_frame = tk.Frame(self.master, bg="#1e1e1e", height=50)
-        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 10), padx=10)
-        bottom_frame.pack_propagate(False) 
-        
-        save_button = tk.Button(bottom_frame, text=_("Сохранить", "Save"), command=self.save_and_continue, bg="#3c3cac", fg="white", activebackground="#4a4acb", activeforeground="white", relief="flat", bd=0, padx=20, pady=5, font=("Segoe UI", 9))
-        save_button.pack(side=tk.RIGHT, pady=5, padx=(5, 0))
-        
-        close_button = tk.Button(bottom_frame, text=_("Закрыть", "Close"), command=self.save_and_quit, bg="#3c3c3c", fg="white", activebackground="#555555", activeforeground="white", relief="flat", bd=0, padx=20, pady=5, font=("Segoe UI", 9))
-        close_button.pack(side=tk.RIGHT, pady=5, padx=(0, 0)) 
-
-    def _bind_mousewheel(self, widget, command):
-         widget.bind("<MouseWheel>", command, '+')
-         if platform.system() == "Linux":
-             widget.bind("<Button-4>", command, '+')
-             widget.bind("<Button-5>", command, '+')
-
-    def _handle_mousewheel(self, canvas, event):
-        if not canvas or not canvas.winfo_exists(): return
-        canvas.update_idletasks()
-        bbox = canvas.bbox("all")
-        if not bbox or (bbox[3] - bbox[1]) <= canvas.winfo_height(): return
-        delta = 0
-        system = platform.system()
-        if system == "Windows": delta = -1 * (event.delta // 120)
-        elif system == "Darwin": delta = -1 * event.delta
-        else: delta = -1 if event.num == 4 else (1 if event.num == 5 else 0)
-        if delta != 0: canvas.yview_scroll(delta, "units")
+                    label = QLabel(text)
+                    label.setStyleSheet("font-size: 9pt;")
+                    item_layout.addWidget(label)
+                    
+                    status_text = _("Найден", "Found") if found else _("Не найден", "Not Found")
+                    status_color = "lightgreen" if found else "#FF6A6A"
+                    status_label = QLabel(status_text)
+                    status_label.setStyleSheet(f"font-size: 9pt; color: {status_color};")
+                    item_layout.addWidget(status_label)
+                    
+                    status_layout.addLayout(item_layout)
+                    status_layout.addSpacing(15)
+                
+                status_layout.addStretch()
+                layout.addLayout(status_layout)
+                
+                if not (self.cuda_found and self.winsdk_found and self.msvc_found):
+                    warning_layout = QHBoxLayout()
+                    warning_text = _("⚠️ Для моделей Fish Speech+ / +RVC могут потребоваться все компоненты.", 
+                                   "⚠️ Fish Speech+ / +RVC models may require all components.")
+                    warning_label = QLabel(warning_text)
+                    warning_label.setStyleSheet("color: orange; font-weight: bold; font-size: 9pt;")
+                    warning_layout.addWidget(warning_label)
+                    
+                    doc_link = QLabel(_("[Документация]", "[Documentation]"))
+                    doc_link.setStyleSheet("color: #81d4fa; font-weight: bold; font-size: 9pt; text-decoration: underline;")
+                    doc_link.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                    doc_link.mousePressEvent = lambda e: self.docs_manager.open_doc("installation_guide.html")
+                    warning_layout.addWidget(doc_link)
+                    
+                    warning_layout.addStretch()
+                    layout.addLayout(warning_layout)
+            
+            elif not self.triton_installed:
+                warning_label = QLabel(_("Triton не установлен (необходим для Fish Speech+ / +RVC).", 
+                                       "Triton not installed (required for Fish Speech+ / +RVC)."))
+                warning_label.setStyleSheet("color: orange; font-size: 9pt;")
+                layout.addWidget(warning_label)
+        else:
+            info_label = QLabel(_("Проверка зависимостей Triton доступна только в Windows.", 
+                                "Triton dependency check is only available on Windows."))
+            info_label.setStyleSheet("color: #aaaaaa; font-size: 9pt;")
+            layout.addWidget(info_label)
 
     def _create_model_panels(self):
-        if not self.models_scrollable_area: return
-        for widget in self.models_scrollable_area.winfo_children(): widget.destroy()
+        if not self.models_scrollable_area:
+            return
+            
+        # Clear existing panels
+        while self.models_layout.count():
+            item = self.models_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
         self.download_buttons = {}
+        
         for model_info in self.local_voice_models:
             panel = self.create_model_panel(self.models_scrollable_area, model_info)
-            panel.pack(pady=4, padx=2, fill=tk.X)
-        self.master.after(50, self._update_models_scrollregion)
+            self.models_layout.addWidget(panel)
+            
+        self.models_layout.addStretch()
+        QTimer.singleShot(50, self._update_models_scrollregion)
 
     def display_installed_models_settings(self):
-        """Отображает настройки для установленных моделей БЕЗ дополнительной плашки RTX в настройках."""
-        if not self.scrollable_frame_settings or not self.scrollable_frame_settings.winfo_exists():
+        """Display settings for installed models"""
+        if not self.scrollable_frame_settings:
             return
-
-        widgets_to_manage = [w for w in self.scrollable_frame_settings.winfo_children() if w != self.top_frame_settings]
-        for widget in widgets_to_manage:
-            widget.destroy()
-
+            
+        # Clear existing settings (except top frame)
+        for i in reversed(range(self.settings_layout.count())):
+            item = self.settings_layout.itemAt(i)
+            if item.widget() and item.widget() != self.top_frame_settings:
+                item.widget().deleteLater()
+                
         self.settings_sections.clear()
-
-        if self.placeholder_label_settings and self.placeholder_label_settings.winfo_exists():
-            self.placeholder_label_settings.pack_forget()
-
+        
+        # Re-add top frame first
+        self.settings_layout.addWidget(self.top_frame_settings)
+        
         if not self.installed_models:
-            if self.placeholder_label_settings is None or not self.placeholder_label_settings.winfo_exists():
-                self.placeholder_label_settings = tk.Label(self.scrollable_frame_settings, text=_("Модели не установлены.\n\nНажмите 'Установить' слева для установки модели,\nее настройки появятся здесь.", "Models not installed.\n\nClick 'Install' on the left to install a model,\nits settings will appear here."), font=("Segoe UI", 10), bg="#1e1e1e", fg="#aaa", justify="center", wraplength=350)
-            self.placeholder_label_settings.pack(pady=30, padx=10, fill=tk.BOTH, expand=True, after=self.top_frame_settings)
+            self.placeholder_label_settings = QLabel(
+                _("Модели не установлены.\n\nНажмите 'Установить' слева для установки модели,\nее настройки появятся здесь.", 
+                  "Models not installed.\n\nClick 'Install' on the left to install a model,\nits settings will appear here.")
+            )
+            self.placeholder_label_settings.setStyleSheet("color: #aaa; font-size: 10pt;")
+            self.placeholder_label_settings.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.placeholder_label_settings.setWordWrap(True)
+            self.settings_layout.addWidget(self.placeholder_label_settings)
+            self.settings_layout.addStretch()
         else:
             any_settings_shown = False
-            last_packed_widget = self.top_frame_settings
-
+            
             for model_data in self.local_voice_models:
                 model_id = model_data.get("id")
                 if not model_id or model_id not in self.installed_models:
                     continue
-
+                    
                 any_settings_shown = True
                 model_name = model_data.get('name', model_id)
-
+                
                 section_title = f"{_('Настройки:', 'Settings:')} {model_name}"
                 start_collapsed = len(self.installed_models) > 2
                 section = VoiceCollapsibleSection(
@@ -1136,10 +956,8 @@ class VoiceModelSettingsWindow:
                     clear_description_func=self.clear_description
                 )
                 self.settings_sections[model_id] = section
-
-                # Добавление строк настроек
+                
                 model_settings = model_data.get("settings", [])
-                current_row_index = 0 # Начинаем с 0 строки внутри секции
                 if model_settings:
                     for setting_info in model_settings:
                         key = setting_info.get("key")
@@ -1152,26 +970,27 @@ class VoiceModelSettingsWindow:
                                 show_setting_description=self.show_setting_description
                             )
                 else:
-                    no_settings_label = tk.Label(section.content_frame, text=_("Специфические настройки отсутствуют.", "Specific settings are missing."), bg="#1e1e1e", fg="#ccc", font=("Segoe UI", 9))
+                    no_settings_label = QLabel(_("Специфические настройки отсутствуют.", "Specific settings are missing."))
+                    no_settings_label.setStyleSheet("color: #ccc; font-size: 9pt;")
+                    section.content_layout.addWidget(no_settings_label)
+                    
+                self.settings_layout.addWidget(section)
+                
+            if not any_settings_shown:
+                self.placeholder_label_settings = QLabel(
+                    _("Не удалось отобразить настройки для установленных моделей.", 
+                      "Could not display settings for installed models.")
+                )
+                self.placeholder_label_settings.setStyleSheet("color: #aaa; font-size: 10pt;")
+                self.placeholder_label_settings.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.settings_layout.addWidget(self.placeholder_label_settings)
+                
+            self.settings_layout.addStretch()
+            
+        QTimer.singleShot(50, self._update_settings_scrollregion)
 
-                    no_settings_label.grid(row=0, column=0, columnspan=2, pady=10, padx=10)
-                    section.row_count = 1
-
-
-                section.pack(fill=tk.X, padx=10, pady=(5,0), anchor='nw', after=last_packed_widget)
-                last_packed_widget = section
-
-            if self.installed_models and not any_settings_shown:
-                if self.placeholder_label_settings is None or not self.placeholder_label_settings.winfo_exists():
-                    self.placeholder_label_settings = tk.Label(self.scrollable_frame_settings, text=_("Не удалось отобразить настройки для установленных моделей.", "Could not display settings for installed models."), font=("Segoe UI", 10), bg="#1e1e1e", fg="#aaa", justify="center", wraplength=350)
-                self.placeholder_label_settings.pack(pady=30, padx=10, fill=tk.BOTH, expand=True, after=self.top_frame_settings)
-
-
-        self.master.after(50, self._update_settings_scrollregion)
-
-        
     def _check_system_dependencies(self):
-        """Проверяет наличие CUDA, Windows SDK и MSVC с помощью triton (исправлено)."""
+        """Check system dependencies"""
         self.cuda_found = False
         self.winsdk_found = False
         self.msvc_found = False
@@ -1186,7 +1005,6 @@ class VoiceModelSettingsWindow:
             from triton.windows_utils import find_cuda, find_winsdk, find_msvc
             self.triton_installed = True
 
-            # --- Проверка CUDA ---
             cuda_result = find_cuda()
             logger.info(f"CUDA find_cuda() result: {cuda_result}")
             if isinstance(cuda_result, (tuple, list)) and len(cuda_result) >= 1:
@@ -1196,7 +1014,6 @@ class VoiceModelSettingsWindow:
                 self.cuda_found = False
             logger.info(f"CUDA Check: Found={self.cuda_found}")
 
-            # --- Проверка WinSDK ---
             winsdk_result = find_winsdk(False)
             logger.info(f"WinSDK find_winsdk() result: {winsdk_result}") 
             if isinstance(winsdk_result, (tuple, list)) and len(winsdk_result) >= 1:
@@ -1206,7 +1023,6 @@ class VoiceModelSettingsWindow:
                 self.winsdk_found = False
             logger.info(f"WinSDK Check: Found={self.winsdk_found}")
 
-            # --- Проверка MSVC ---
             msvc_result = find_msvc(False)
             logger.info(f"MSVC find_msvc() result: {msvc_result}")
             if isinstance(msvc_result, (tuple, list)) and len(msvc_result) >= 1:
@@ -1224,42 +1040,34 @@ class VoiceModelSettingsWindow:
         except Exception as e:
             logger.info(f"{_('Ошибка при проверке зависимостей Triton:', 'Error checking Triton dependencies:')} {e}")
 
-    # Адаптированный метод create_model_panel
     def create_model_panel(self, parent, model_data):
-        panel_bg = "#2a2a2e"; text_color = "#b0b0b0"; title_color = "#ffffff"
-        border_color = "#444444"; button_fg = "white"
-        install_button_bg = "#555555"; install_button_active_bg = "#666666"
-        uninstall_button_bg = "#ac3939"; uninstall_button_active_bg = "#bf4a4a" # Красный для удаления
-        button_disabled_fg = "#999999"
-        warning_color_amd = "#FF6A6A"; rtx_warning_color = "orange"; rtx_ok_color = "lightgreen"
-        medium_warning_color = "orange" # Цвет для иконки предупреждения medium
-
         model_id = model_data["id"]
         model_name = model_data["name"]
         supported_vendors = model_data.get('gpu_vendor', [])
         requires_rtx30plus = model_data.get("rtx30plus", False)
-
-        panel = tk.Frame(parent, bg=panel_bg, bd=1, relief=tk.SOLID, highlightbackground=border_color, highlightthickness=1)
-        panel.bind("<Enter>", lambda e, k=model_id: self.show_model_description(k))
-        panel.bind("<Leave>", self.clear_description)
-
-        # --- Title Frame ---
-        title_frame = tk.Frame(panel, bg=panel_bg)
-        title_frame.pack(pady=(5, 2), padx=10, fill=tk.X)
-        title_label = tk.Label(title_frame, text=model_name, font=("Segoe UI", 10, "bold"), bg=panel_bg, fg=title_color, anchor='w')
-        title_label.pack(side=tk.LEFT, anchor='w')
-        title_label.bind("<Enter>", lambda e, k=model_id: self.show_model_description(k)) # Bind title too
-        title_label.bind("<Leave>", self.clear_description)
-
-        # --- Warning Icon for "medium" model with Tooltip ---
+        
+        panel = QFrame()
+        panel.setObjectName("ModelPanel")
+        panel.enterEvent = lambda e: self.show_model_description(model_id)
+        panel.leaveEvent = lambda e: self.clear_description()
+        
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(10, 5, 10, 6)
+        panel_layout.setSpacing(2)
+        
+        # Title row
+        title_layout = QHBoxLayout()
+        title_label = QLabel(model_name)
+        title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
+        title_label.enterEvent = lambda e: self.show_model_description(model_id)
+        title_label.leaveEvent = lambda e: self.clear_description()
+        title_layout.addWidget(title_label)
+        
+        # Warning icon for medium model
         if model_id == "medium":
-            warning_icon_medium = tk.Label(
-                title_frame, text="⚠️",
-                font=("Segoe UI", 9), # Slightly smaller than title
-                bg=panel_bg, fg=medium_warning_color, anchor='w',
-                cursor="question_arrow" # Indicate interactivity
-            )
-            warning_icon_medium.pack(side=tk.LEFT, padx=(3, 0), anchor='w')
+            warning_icon = QLabel("⚠️")
+            warning_icon.setStyleSheet("color: orange; font-size: 9pt;")
+            warning_icon.setCursor(QCursor(Qt.CursorShape.WhatsThisCursor))
             medium_tooltip_text = _(
                 "Модель 'Fish Speech' не рекомендуется для большинства пользователей.\n\n"
                 "Для стабильной скорости генерации требуется мощная видеокарта, "
@@ -1274,90 +1082,71 @@ class VoiceModelSettingsWindow:
                 "RTX30+ owners are recommended to use \"Fish Speech+\" models, "
                 "others are recommended to use the \"Silero + RVC\" model"
             )
-            Tooltip(warning_icon_medium, medium_tooltip_text, wraplength=300) # Create tooltip for the icon
-
-        # --- RTX 30+ Icon (if needed) ---
+            warning_icon.setToolTip(medium_tooltip_text)
+            title_layout.addWidget(warning_icon)
+        
+        # RTX 30+ indicator
         if requires_rtx30plus:
             gpu_meets_requirement = self.is_gpu_rtx30_or_40()
-            icon_color = rtx_ok_color if gpu_meets_requirement else rtx_warning_color
-            rtx_icon_label = tk.Label(title_frame, text="RTX 30+", font=("Segoe UI", 7, "bold"), bg=panel_bg, fg=icon_color, anchor='w')
-            rtx_icon_label.pack(side=tk.LEFT, padx=(5, 0), anchor='w')
-            # Optional: Add tooltip for RTX icon too
-            rtx_tooltip_text = _("Требуется GPU NVIDIA RTX 30xx/40xx для оптимальной производительности.", "Requires NVIDIA RTX 30xx/40xx GPU for optimal performance.") if not gpu_meets_requirement else _("Ваша GPU подходит для этой модели.", "Your GPU is suitable for this model.")
-            Tooltip(rtx_icon_label, rtx_tooltip_text)
-
-        # --- Info Label (VRAM, GPU Support) ---
+            icon_color = "lightgreen" if gpu_meets_requirement else "orange"
+            rtx_label = QLabel("RTX 30+")
+            rtx_label.setStyleSheet(f"color: {icon_color}; font-size: 7pt; font-weight: bold;")
+            rtx_tooltip_text = _("Требуется GPU NVIDIA RTX 30xx/40xx для оптимальной производительности.", 
+                               "Requires NVIDIA RTX 30xx/40xx GPU for optimal performance.") if not gpu_meets_requirement else _("Ваша GPU подходит для этой модели.", "Your GPU is suitable for this model.")
+            rtx_label.setToolTip(rtx_tooltip_text)
+            title_layout.addWidget(rtx_label)
+        
+        title_layout.addStretch()
+        panel_layout.addLayout(title_layout)
+        
+        # Info row
         vram_text = f"VRAM: {model_data.get('min_vram', '?')}GB - {model_data.get('rec_vram', '?')}GB"
         gpu_req_text = f"GPU: {', '.join(supported_vendors)}" if supported_vendors else "GPU: Any"
-        info_label = tk.Label(panel, text=f"{vram_text} | {gpu_req_text}", font=("Segoe UI", 8), bg=panel_bg, fg=text_color, anchor='w')
-        info_label.pack(pady=(0, 5), padx=10, fill=tk.X)
-        # Bind info label to general model description as well
-        info_label.bind("<Enter>", lambda e, k=model_id: self.show_model_description(k))
-        info_label.bind("<Leave>", self.clear_description)
-
-        # --- AMD Warning (if needed) ---
+        info_label = QLabel(f"{vram_text} | {gpu_req_text}")
+        info_label.setStyleSheet("color: #b0b0b0; font-size: 8pt;")
+        info_label.enterEvent = lambda e: self.show_model_description(model_id)
+        info_label.leaveEvent = lambda e: self.clear_description()
+        panel_layout.addWidget(info_label)
+        
+        # AMD warning if needed
         allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
         is_amd_user = self.detected_gpu_vendor == "AMD"
         is_amd_supported = "AMD" in supported_vendors
         is_gpu_unsupported_amd = is_amd_user and not is_amd_supported
         show_warning_amd = allow_unsupported_gpu and is_gpu_unsupported_amd
-
+        
         if show_warning_amd:
-            warning_label_amd = tk.Label(panel, text=_("Может не работать на AMD!", "May not work on AMD!"), font=("Segoe UI", 8, "bold"), bg=panel_bg, fg=warning_color_amd, anchor='w')
-            warning_label_amd.pack(pady=(0, 5), padx=10, fill=tk.X)
-
-        # --- Install/Uninstall Button ---
-        button_frame = tk.Frame(panel, bg=panel_bg)
-        button_frame.pack(pady=(2, 6), padx=10, fill=tk.X)
-        button_frame.columnconfigure(0, weight=1)
-
+            warning_label = QLabel(_("Может не работать на AMD!", "May not work on AMD!"))
+            warning_label.setStyleSheet("color: #FF6A6A; font-size: 8pt; font-weight: bold;")
+            panel_layout.addWidget(warning_label)
+        
+        # Action button
         is_installed = model_id in self.installed_models
-        action_button = None
-
+        
         if is_installed:
-            action_button = tk.Button(
-                button_frame, text=_("Удалить", "Uninstall"),
-                command=lambda mid=model_id, mname=model_name: self.confirm_and_start_uninstall(mid, mname),
-                bg=uninstall_button_bg, fg=button_fg,
-                activebackground=uninstall_button_active_bg, activeforeground=button_fg,
-                relief="flat", bd=0,
-                font=("Segoe UI", 8, "bold"),
-                padx=5, pady=5, state=tk.NORMAL
-            )
+            action_button = QPushButton(_("Удалить", "Uninstall"))
+            action_button.setObjectName("DangerButton")
+            action_button.clicked.connect(lambda: self.confirm_and_start_uninstall(model_id, model_name))
         else:
             install_text = _("Установить", "Install")
             can_install = True
             if is_gpu_unsupported_amd and not allow_unsupported_gpu:
                 can_install = False
                 install_text = _("Несовместимо с AMD", "Incompatible with AMD")
-
-            install_state_tk = tk.NORMAL if can_install else tk.DISABLED
-            action_button = tk.Button(
-                button_frame, text=install_text,
-                state=install_state_tk,
-                bg=install_button_bg, fg=button_fg,
-                activebackground=install_button_active_bg, activeforeground=button_fg,
-                disabledforeground=button_disabled_fg,
-                relief="flat", bd=0,
-                font=("Segoe UI", 8, "bold"),
-                padx=5, pady=5
-            )
+            
+            action_button = QPushButton(install_text)
+            action_button.setObjectName("SecondaryButton")
+            action_button.setEnabled(can_install)
             if can_install:
-                action_button.configure(command=lambda mid=model_id, btn=action_button, mdata=model_data: self.confirm_and_start_download(mid, btn, mdata))
-
-        if action_button:
-            self.model_action_buttons[model_id] = action_button
-            action_button.grid(row=0, column=0, sticky="ew")
-
+                action_button.clicked.connect(lambda: self.confirm_and_start_download(model_id, action_button, model_data))
+        
+        self.model_action_buttons[model_id] = action_button
+        panel_layout.addWidget(action_button)
+        
         return panel
 
     def is_gpu_rtx30_or_40(self):
-        """
-        Проверяет, является ли обнаруженная GPU NVIDIA RTX 30xx или 40xx,
-        учитывая флаг окружения RTX_FORCE_UNSUPPORTED.
-        """
-
-        # Проверяем флаг принудительного неподдерживаемого статуса
+        """Check if GPU is RTX 30xx or 40xx"""
         force_unsupported_str = os.environ.get("RTX_FORCE_UNSUPPORTED", "0")
         force_unsupported = force_unsupported_str.lower() in ['true', '1', 't', 'y', 'yes']
 
@@ -1369,7 +1158,6 @@ class VoiceModelSettingsWindow:
             return False
 
         name_upper = self.gpu_name.upper()
-        # Проверяем наличие "RTX" и цифр "30" или "40" в начале серии
         if "RTX" in name_upper:
             if any(f" {gen}" in name_upper or name_upper.endswith(gen) or f"-{gen}" in name_upper for gen in ["3050", "3060", "3070", "3080", "3090"]):
                 return True
@@ -1378,66 +1166,70 @@ class VoiceModelSettingsWindow:
         return False
 
     def confirm_and_start_download(self, model_id, button_widget, model_data):
-        """
-        Показывает предупреждение для моделей rtx30plus, если GPU не соответствует,
-        и затем запускает загрузку, если пользователь согласен.
-        """
+        """Show warning for rtx30plus models if GPU doesn't meet requirements"""
         requires_rtx30plus = model_data.get("rtx30plus", False)
-        proceed_to_download = True # По умолчанию продолжаем
+        proceed_to_download = True
 
-        if requires_rtx30plus:
-            if not self.is_gpu_rtx30_or_40():
-                gpu_info = self.gpu_name if self.gpu_name else "не определена"
-                if self.detected_gpu_vendor and self.detected_gpu_vendor != "NVIDIA":
-                    gpu_info = f"{self.detected_gpu_vendor} GPU"
+        if requires_rtx30plus and not self.is_gpu_rtx30_or_40():
+            gpu_info = self.gpu_name if self.gpu_name else "не определена"
+            if self.detected_gpu_vendor and self.detected_gpu_vendor != "NVIDIA":
+                gpu_info = f"{self.detected_gpu_vendor} GPU"
 
-                model_name = model_data.get("name", model_id)
-                title = f"Предупреждение для модели '{model_name}'"
-                message = _(
-                    f"Эта модель ('{model_name}') оптимизирована для видеокарт NVIDIA RTX 30xx/40xx.\n\n"
-                    f"Ваша видеокарта ({gpu_info}) может не обеспечить достаточной производительности, "
-                    "что может привести к медленной работе или нестабильности.\n\n"
-                    "Продолжить установку?",
-                    f"This model ('{model_name}') is optimized for NVIDIA RTX 30xx/40xx graphics cards.\n\n"
-                    f"Your graphics card ({gpu_info}) may not provide sufficient performance, "
-                    "which could lead to slow operation or instability.\n\n"
-                    "Continue installation?"
-                )
-                # Спрашиваем пользователя
-                proceed_to_download = tkinter.messagebox.askokcancel(title, message, icon='warning', parent=self.master)
+            model_name = model_data.get("name", model_id)
+            message = _(
+                f"Эта модель ('{model_name}') оптимизирована для видеокарт NVIDIA RTX 30xx/40xx.\n\n"
+                f"Ваша видеокарта ({gpu_info}) может не обеспечить достаточной производительности, "
+                "что может привести к медленной работе или нестабильности.\n\n"
+                "Продолжить установку?",
+                f"This model ('{model_name}') is optimized for NVIDIA RTX 30xx/40xx graphics cards.\n\n"
+                f"Your graphics card ({gpu_info}) may not provide sufficient performance, "
+                "which could lead to slow operation or instability.\n\n"
+                "Continue installation?"
+            )
+            
+            reply = QMessageBox.warning(
+                self,
+                _("Предупреждение", "Warning"),
+                message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            proceed_to_download = reply == QMessageBox.StandardButton.Yes
 
         if proceed_to_download:
             self.start_download(model_id, button_widget)
 
     def confirm_and_start_uninstall(self, model_id, model_name):
-        """Запрашивает подтверждение и проверяет инициализацию перед удалением."""
+        """Request confirmation before uninstalling"""
         if not self.local_voice:
             logger.error(_("LocalVoice не инициализирован, удаление невозможно.", "LocalVoice not initialized, uninstallation impossible."))
-            tkinter.messagebox.showerror(_("Ошибка", "Error"), _("Компонент LocalVoice не доступен.", "LocalVoice component is not available."), parent=self.master)
+            QMessageBox.critical(self, _("Ошибка", "Error"), 
+                               _("Компонент LocalVoice не доступен.", "LocalVoice component is not available."))
             return
 
-        # Проверка, инициализирована ли модель
         try:
             if hasattr(self.local_voice, 'is_model_initialized') and self.local_voice.is_model_initialized(model_id):
                 logger.warning(f"Попытка удаления инициализированной модели: {model_id}")
-                tkinter.messagebox.showerror(
+                QMessageBox.critical(
+                    self,
                     _("Модель Активна", "Model Active"),
                     _(f"Модель '{model_name}' сейчас используется или инициализирована.\n\n"
                       "Пожалуйста, перезапустите приложение полностью, чтобы освободить ресурсы, "
                       "прежде чем удалять эту модель.",
                       f"Model '{model_name}' is currently in use or initialized.\n\n"
                       "Please restart the application completely to free up resources "
-                      "before uninstalling this model."),
-                    parent=self.master
+                      "before uninstalling this model.")
                 )
                 return 
         except Exception as e:
             logger.error(f"{_('Ошибка при проверке инициализации модели', 'Error checking model initialization')} {model_id}: {e}")
-            tkinter.messagebox.showerror(_("Ошибка Проверки", "Check Error"), _(f"Не удалось проверить статус модели '{model_name}'. Удаление отменено.", f"Could not check status of model '{model_name}'. Uninstallation cancelled."), parent=self.master)
+            QMessageBox.critical(self, _("Ошибка Проверки", "Check Error"), 
+                               _(f"Не удалось проверить статус модели '{model_name}'. Удаление отменено.", 
+                                 f"Could not check status of model '{model_name}'. Uninstallation cancelled."))
             return
 
-        # Запрос подтверждения
-        confirm = tkinter.messagebox.askyesno(
+        reply = QMessageBox.warning(
+            self,
             _("Подтверждение Удаления", "Confirm Uninstallation"),
             _(f"Вы уверены, что хотите удалить модель '{model_name}'?\n\n"
               "Будут удалены основной пакет модели и все зависимости, которые больше не используются другими установленными моделями (кроме g4f).\n\n"
@@ -1445,42 +1237,80 @@ class VoiceModelSettingsWindow:
               f"Are you sure you want to uninstall the model '{model_name}'?\n\n"
               "The main model package and all dependencies no longer used by other installed models (except g4f) will be removed.\n\n"
               "This action is irreversible!"),
-            icon='warning', parent=self.master
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
 
-        if confirm:
+        if reply == QMessageBox.StandardButton.Yes:
             self.start_uninstall(model_id)
 
+    # =========================================================
+    #   ЗАПУСК УСТАНОВКИ  (однопоточный, без statusBar)
+    # =========================================================
     def start_download(self, model_id, button_widget):
-        if button_widget and button_widget.winfo_exists():
-            # Используем состояние tk.DISABLED
-            button_widget.config(text=_("Загрузка...", "Downloading..."), state=tk.DISABLED)
+        """
+        Упрощённый синхронный запуск установки.
 
-        if self.local_voice and hasattr(self.local_voice, 'download_model'):
-            def install_thread_func():
-                success = False
-                try:
-                    success = self.local_voice.download_model(model_id)
-                except Exception as e:
-                    logger.info(f"{_('Ошибка в потоке загрузки для', 'Error in download thread for')} {model_id}: {e}")
-                finally:
-                    if self.master.winfo_exists():
-                        self.master.after(0, lambda: self.handle_download_result(success, model_id))
+        1.  Создаём окно прогресса (GUI-поток).
+        2.  Передаём его функции (update_progress / update_status / update_log)
+            прямо в LocalVoice.download_model().
+        3.  Запускаем установку в этом же потоке.
+        Благодаря QApplication.processEvents() в PipInstaller интерфейс
+        продолжает обновляться, приложение не зависает.
+        4.  После завершения – обновляем кнопку и закрываем окно.
+        """
+        # 1) создаём окно
+        gui = self.local_voice._create_installation_window(
+            title=_("Установка модели", "Installing model"),
+            initial_status=_("Подготовка...", "Preparing...")
+        )
+        if not gui:
+            logger.error("Не удалось создать окно установки.")
+            return
 
-            install_thread = threading.Thread(target=install_thread_func, daemon=True)
-            install_thread.start()
-        else:
-            logger.info(_("Внимание: LocalVoice не доступен, используется имитация установки", "Warning: LocalVoice not available, simulating installation"))
-            self.master.after(2000 + hash(model_id)%1000, lambda: self.handle_download_result(True, model_id))
+        progress_window = gui["window"]
+        update_progress = gui["update_progress"]
+        update_status   = gui["update_status"]
+        update_log      = gui["update_log"]
+
+        # 2) подготавливаем кнопку
+        if button_widget:
+            button_widget.setText(_("Загрузка...", "Downloading..."))
+            button_widget.setEnabled(False)
+
+        # 3) запускаем установку (GUI-поток)
+        success = False
+        try:
+            success = self.local_voice.download_model(
+                model_id,
+                progress_cb=update_progress,
+                status_cb=update_status,
+                log_cb=update_log
+            )
+        except Exception as e:
+            import traceback, io
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            logger.error(buf.getvalue())
+            update_log("[EXCEPTION]\n" + buf.getvalue())
+            success = False
+
+        # 4) обновляем результат и кнопку
+        self.handle_download_result(success, model_id)
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(3000, progress_window.close)
 
     def start_uninstall(self, model_id):
         button_widget = self.model_action_buttons.get(model_id)
-        if button_widget and button_widget.winfo_exists():
-            button_widget.config(text=_("Удаление...", "Uninstalling..."), state=tk.DISABLED)
+        if button_widget:
+            button_widget.setText(_("Удаление...", "Uninstalling..."))
+            button_widget.setEnabled(False)
 
         if not self.local_voice:
             logger.error(f"{_('Неизвестный model_id для удаления:', 'Unknown model_id for uninstallation:')} {model_id}")
-            if button_widget and button_widget.winfo_exists(): button_widget.config(text=_("Ошибка", "Error"), state=tk.NORMAL)
+            if button_widget:
+                button_widget.setText(_("Ошибка", "Error"))
+                button_widget.setEnabled(True)
             return
 
         target_uninstall_func = None
@@ -1494,41 +1324,42 @@ class VoiceModelSettingsWindow:
             target_uninstall_func = self.local_voice.uninstall_f5_tts
         else:
             logger.error(f"Неизвестный model_id для удаления: {model_id}")
-            if button_widget and button_widget.winfo_exists(): button_widget.config(text="Ошибка", state=tk.NORMAL)
+            if button_widget:
+                button_widget.setText(_("Ошибка", "Error"))
+                button_widget.setEnabled(True)
             return
 
         if not hasattr(self.local_voice, target_uninstall_func.__name__):
             logger.error(f"{_('Метод', 'Method')} {target_uninstall_func.__name__} {_('не найден в LocalVoice.', 'not found in LocalVoice.')}")
-            if button_widget and button_widget.winfo_exists(): button_widget.config(text=_("Ошибка", "Error"), state=tk.NORMAL)
+            if button_widget:
+                button_widget.setText(_("Ошибка", "Error"))
+                button_widget.setEnabled(True)
             return
 
-        # Запускаем выбранную функцию удаления в потоке
         def uninstall_thread_func():
             success = False
             try:
-                success = target_uninstall_func() # Вызываем нужную функцию
+                success = target_uninstall_func()
             except Exception as e:
                 logger.error(f"{_('Ошибка в потоке удаления для', 'Error in uninstall thread for')} {model_id}: {e}")
                 logger.error(traceback.format_exc())
             finally:
-                if self.master.winfo_exists():
-                    self.master.after(0, lambda: self.handle_uninstall_result(success, model_id))
+                QTimer.singleShot(0, lambda: self.handle_uninstall_result(success, model_id))
 
         uninstall_thread = threading.Thread(target=uninstall_thread_func, daemon=True)
         uninstall_thread.start()
 
     def handle_download_result(self, success, model_id):
-        button_widget = self.download_buttons.get(model_id)
+        button_widget = self.model_action_buttons.get(model_id)
         if success:
             self.installed_models.add(model_id)
             logger.info(f"{_('Модель', 'Model')} {model_id} {_('установлена. Перезагрузка и адаптация настроек...', 'installed. Reloading and adapting settings...')}")
             self.load_settings()
             logger.info(_("Настройки перезагружены.", "Settings reloaded."))
 
-            # Обновляем кнопку уже после перезагрузки настроек
-            button_widget = self.download_buttons.get(model_id)
-            if button_widget and button_widget.winfo_exists():
-                button_widget.config(text="Установлено", state=tk.DISABLED)
+            if button_widget:
+                button_widget.setText(_("Установлено", "Installed"))
+                button_widget.setEnabled(False)
 
             self.display_installed_models_settings()
             self.save_installed_models_list() 
@@ -1542,14 +1373,14 @@ class VoiceModelSettingsWindow:
             logger.info(f"{_('Обработка установки', 'Handling installation of')} {model_id} {_('завершена.', 'completed.')}")
         else:
             logger.info(f"{_('Ошибка установки модели', 'Error installing model')} {model_id}.")
-            # ?????
             self._create_model_panels()
             button_widget = self.model_action_buttons.get(model_id)
-            if button_widget and button_widget.winfo_exists():
-                button_widget.config(text=_("Ошибка", "Error"), state=tk.NORMAL) 
+            if button_widget:
+                button_widget.setText(_("Ошибка", "Error"))
+                button_widget.setEnabled(True) 
 
     def handle_uninstall_result(self, success, model_id):
-        """Обновляет интерфейс после завершения удаления."""
+        """Update UI after uninstallation"""
         button_widget = self.model_action_buttons.get(model_id)
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
 
@@ -1558,7 +1389,7 @@ class VoiceModelSettingsWindow:
             if model_id in self.installed_models:
                 self.installed_models.remove(model_id)
 
-            if button_widget and button_widget.winfo_exists() and model_data:
+            if button_widget and model_data:
                 install_text = _("Установить", "Install")
                 can_install = True
 
@@ -1571,21 +1402,27 @@ class VoiceModelSettingsWindow:
                     can_install = False
                     install_text = _("Несовместимо с AMD", "Incompatible with AMD")
 
-                install_state_tk = tk.NORMAL if can_install else tk.DISABLED
-                button_widget.config(
-                    text=install_text,
-                    state=install_state_tk,
-                    command=lambda mid=model_id, btn=button_widget, mdata=model_data: self.confirm_and_start_download(mid, btn, mdata),
-                    bg="#555555", # Цвет кнопки установки
-                    activebackground="#666666"
-                )
+                button_widget.setText(install_text)
+                button_widget.setEnabled(can_install)
+                button_widget.setObjectName("SecondaryButton")
+                button_widget.setStyleSheet(button_widget.styleSheet())  # Refresh style
+                
+                try:
+                    button_widget.clicked.disconnect()
+                except:
+                    pass
+                    
+                if can_install:
+                    button_widget.clicked.connect(
+                        lambda: self.confirm_and_start_download(model_id, button_widget, model_data)
+                    )
             else:
-                logger.warning(_(f"Не удалось найти кнопку для модели {model_id} после удаления.", f"Couldn't find the button for model {model_id} after uninstall."))
+                logger.warning(f"Couldn't find the button for model {model_id} after uninstall.")
 
             if model_id in self.settings_sections:
                 section = self.settings_sections.pop(model_id)
-                if section and section.winfo_exists():
-                    section.destroy()
+                if section:
+                    section.deleteLater()
 
             if not self.installed_models:
                  self.display_installed_models_settings() 
@@ -1598,10 +1435,12 @@ class VoiceModelSettingsWindow:
 
         else:
             logger.error(f"{_('Ошибка при удалении модели', 'Error uninstalling model')} {model_id}.")
-            tkinter.messagebox.showerror(_("Ошибка Удаления", "Uninstallation Error"), _(f"Не удалось удалить модель '{model_id}'.\nСм. лог для подробностей.", f"Could not uninstall model '{model_id}'.\nSee log for details."), parent=self.master)
-            # Восстанавливаем кнопку "Удалить"
-            if button_widget and button_widget.winfo_exists():
-                button_widget.config(text="Удалить", state=tk.NORMAL)
+            QMessageBox.critical(self, _("Ошибка Удаления", "Uninstallation Error"), 
+                               _(f"Не удалось удалить модель '{model_id}'.\nСм. лог для подробностей.", 
+                                 f"Could not uninstall model '{model_id}'.\nSee log for details."))
+            if button_widget:
+                button_widget.setText(_("Удалить", "Uninstall"))
+                button_widget.setEnabled(True)
 
     def save_installed_models_list(self):
         try:
@@ -1612,57 +1451,37 @@ class VoiceModelSettingsWindow:
             logger.info(f"{_('Ошибка сохранения списка установленных моделей в', 'Error saving list of installed models to')} {self.installed_models_file}: {e}")
 
     def show_setting_description(self, key):
-        if self.description_label_widget and self.description_label_widget.winfo_exists():
+        if self.description_label_widget:
             description = self.setting_descriptions.get(key, "")
-            self.description_label_widget.config(text=description if description else self.default_description_text)
+            self.description_label_widget.setText(description if description else self.default_description_text)
 
     def show_model_description(self, key):
-        if self.description_label_widget and self.description_label_widget.winfo_exists():
+        if self.description_label_widget:
             description = self.model_descriptions.get(key, "")
-            self.description_label_widget.config(text=description if description else self.default_description_text)
+            self.description_label_widget.setText(description if description else self.default_description_text)
 
     def clear_description(self, event=None):
-        if self.description_label_widget and self.description_label_widget.winfo_exists():
-            self.description_label_widget.config(text=self.default_description_text)
+        if self.description_label_widget:
+            self.description_label_widget.setText(self.default_description_text)
 
-    def _update_scrollregion(self, canvas, scrollbar_widget):
-        # Общий метод для обновления области прокрутки и показа/скрытия скроллбара
-        if not canvas or not canvas.winfo_exists(): return
-        canvas.update_idletasks()
-        bbox = canvas.bbox("all")
-        if bbox:
-            scroll_region = (bbox[0], bbox[1], bbox[2], bbox[3])
-            canvas.configure(scrollregion=scroll_region)
-            scroll_height = scroll_region[3] - scroll_region[1]
-            canvas_height = canvas.winfo_height()
-
-            if scrollbar_widget and scrollbar_widget.winfo_exists():
-                if scroll_height > canvas_height:
-                    if not scrollbar_widget.winfo_ismapped():
-                        # Пакуем относительно родительского фрейма канваса
-                        scrollbar_widget.pack(side=tk.RIGHT, fill=tk.Y, in_=canvas.master)
-                else:
-                    if scrollbar_widget.winfo_ismapped():
-                        scrollbar_widget.pack_forget()
-                        canvas.yview_moveto(0)
+    def _update_scrollregion(self, canvas):
+        """Update scroll region"""
+        if canvas:
+            canvas.updateGeometry()
 
     def _update_settings_scrollregion(self, event=None):
-        # Находим скроллбар в родительском фрейме канваса настроек
-        scrollbar = next((w for w in self.settings_canvas.master.winfo_children() if isinstance(w, ttk.Scrollbar)), None)
-        self._update_scrollregion(self.settings_canvas, scrollbar)
+        self._update_scrollregion(self.settings_canvas)
 
     def _update_models_scrollregion(self, event=None):
-        # Находим скроллбар в родительском фрейме канваса моделей
-        scrollbar = next((w for w in self.models_canvas.master.winfo_children() if isinstance(w, ttk.Scrollbar)), None)
-        self._update_scrollregion(self.models_canvas, scrollbar)
+        self._update_scrollregion(self.models_canvas)
 
     def save_and_continue(self):
         self.save_settings()
 
     def save_and_quit(self):
         self.save_settings()
-        if self.master:
-            self.master.destroy()
+        self.close()
 
     def run(self):
-        self.master.mainloop()
+        """For compatibility with tkinter version"""
+        self.show()

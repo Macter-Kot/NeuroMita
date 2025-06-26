@@ -30,7 +30,7 @@ class F5TTSModel(IVoiceModel):
     def is_installed(self) -> bool:
         self._load_module()
         model_dir = os.path.join("checkpoints", "F5-TTS")
-        ckpt_path = os.path.join(model_dir, "model_240000_inference.safetensors")
+        ckpt_path = os.path.join(model_dir, "model.safetensors")
         vocab_path = os.path.join(model_dir, "vocab.txt")
         return self.f5_pipeline_module is not None and os.path.exists(ckpt_path) and os.path.exists(vocab_path)
 
@@ -56,7 +56,7 @@ class F5TTSModel(IVoiceModel):
         
         if self.current_f5_pipeline is None:
             model_dir = os.path.join("checkpoints", "F5-TTS")
-            ckpt_path = os.path.join(model_dir, "model_240000_inference.safetensors")
+            ckpt_path = os.path.join(model_dir, "model.safetensors")
             vocab_path = os.path.join(model_dir, "vocab.txt")
 
             if not all(os.path.exists(p) for p in [ckpt_path, vocab_path]):

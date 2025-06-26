@@ -119,3 +119,5 @@ def setup_voiceover_controls(gui, parent_layout):
     # --- Первичная настройка видимости ---
     gui.switch_voiceover_settings()
     gui.check_triton_dependencies()
+
+    gui.update_local_voice_combobox()

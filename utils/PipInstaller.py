@@ -1,18 +1,23 @@
-# PipInstaller.py
-import subprocess
-import sys
-import os
-import queue
-import threading
-import time
-import tkinter as tk
-import json
+"""
+PipInstaller 2.0
 
+•  Больше не создаёт собственное tk-окно, если ему передали
+   «чужое» progress_window (Qt-диалог или None);
+•  Не делает tk-специфичных вызовов, если окно не-Tk;
+•  Все callback’и (update_log / update_status / update_progress)
+   вызываются в том же потоке, в котором идёт установка.  Для
+   нормальной работы в Qt нужно просто вызывать
+   QApplication.processEvents() — это уже делается в цикле.
+"""
 
+from __future__ import annotations
+import subprocess, sys, os, queue, threading, time, json
+import tkinter as tk       # импорт остаётся, чтобы старый путь тоже работал
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name, NormalizedName
 from packaging.version import parse as parse_version
 from Logger import logger
+
 
 class DependencyResolver:
     def __init__(self, libs_path_abs, update_log_func):
@@ -164,109 +169,166 @@ class DependencyResolver:
                 try: installed_set.add(canonicalize_name(item.split('-')[0]))
                 except Exception: pass
         return installed_set
-
+# ─────────────────────────────────────────────────────────────
+#  PipInstaller
+# ─────────────────────────────────────────────────────────────
 class PipInstaller:
-    def __init__(self, script_path, libs_path="Lib", update_status=None, update_log=None, progress_window=None):
+    def __init__(
+        self,
+        script_path: str,
+        libs_path: str = "Lib",
+        update_status=None,
+        update_log=None,
+        progress_window=None,
+        update_progress=None
+    ):
         self.script_path = script_path
         self.libs_path = libs_path
         self.libs_path_abs = os.path.abspath(libs_path)
-        self.update_status = update_status if update_status else lambda msg: logger.info(f"Status: {msg}")
-        self.update_log = update_log if update_log else lambda msg: logger.info(f"Log: {msg}")
+
+        # Callbacks
+        self.update_status   = update_status or (lambda m: logger.info(f"STATUS: {m}"))
+        self.update_log      = update_log    or (lambda m: logger.info(f"LOG   : {m}"))
+        self.update_progress = update_progress or (lambda *_: None)
+
         self.progress_window = progress_window
         self._ensure_libs_path()
 
-    def _ensure_libs_path(self):
-        if not os.path.exists(self.libs_path):
-            try: os.makedirs(self.libs_path); self.update_log(f"Создана директория: {self.libs_path}")
-            except OSError as e: self.update_log(f"Ошибка создания {self.libs_path}: {e}"); raise
-        if self.libs_path_abs not in sys.path:
-            sys.path.insert(0, self.libs_path_abs); self.update_log(f"Добавлен путь {self.libs_path_abs} в sys.path")
-
-    def install_package(self, package_spec, description="Установка пакета...", extra_args=None):
+    # ─────────────────────────────────────────────────────────
+    #  public helpers
+    # ─────────────────────────────────────────────────────────
+    def install_package(self, package_spec, description="Установка пакета...", extra_args=None) -> bool:
         self._ensure_libs_path()
-        base_cmd = [self.script_path, "-m", "pip", "install", "--target", self.libs_path_abs, "--no-user", "--no-cache-dir"]
-        if extra_args: base_cmd.extend(extra_args)
-        if isinstance(package_spec, list): base_cmd.extend(package_spec)
-        else: base_cmd.append(package_spec)
-        install_success = self._run_pip_process(base_cmd, description)
-        if not install_success: self.update_log(f"Установка пакета '{package_spec}' не удалась.")
-        return install_success
+        cmd = [self.script_path, "-m", "pip", "install",
+               "--target", self.libs_path_abs,
+               "--no-user", "--no-cache-dir"]
+        if extra_args:
+            cmd.extend(extra_args)
+        if isinstance(package_spec, list):
+            cmd.extend(package_spec)
+        else:
+            cmd.append(package_spec)
+        return self._run_pip_process(cmd, description)
 
-    def uninstall_packages(self, packages_to_uninstall: list[str], description="Удаление пакетов..."):
-        if not packages_to_uninstall:
+    def uninstall_packages(self, packages: list[str], description="Удаление пакетов...") -> bool:
+        if not packages:
             self.update_log("Список пакетов для удаления пуст.")
             return True
-        self._ensure_libs_path()
-        # Передаем оригинальные имена, pip должен их понять
-        base_cmd = [self.script_path, "-m", "pip", "uninstall", "--yes"]
-        base_cmd.extend(packages_to_uninstall)
-        self.update_log(f"Попытка удаления пакетов: {', '.join(packages_to_uninstall)}")
-        success = self._run_pip_process(base_cmd, description)
-        if not success: self.update_log(f"Ошибка во время pip uninstall для: {', '.join(packages_to_uninstall)}")
-        else: self.update_log(f"Команда pip uninstall для '{', '.join(packages_to_uninstall)}' завершена.")
-        return success
+        cmd = [self.script_path, "-m", "pip", "uninstall", "--yes"] + packages
+        return self._run_pip_process(cmd, description)
 
-    def _run_pip_process(self, cmd, description):
+    # ─────────────────────────────────────────────────────────
+    #  internal
+    # ─────────────────────────────────────────────────────────
+    def _ensure_libs_path(self):
+        if not os.path.exists(self.libs_path):
+            os.makedirs(self.libs_path, exist_ok=True)
+            self.update_log(f"Создана директория {self.libs_path}")
+        if self.libs_path_abs not in sys.path:
+            sys.path.insert(0, self.libs_path_abs)
+
+    def _run_pip_process(self, cmd: list[str], description: str) -> bool:
+        # определяем, tk-окно ли
+        is_tk_window = hasattr(self.progress_window, "winfo_exists") \
+                    and callable(self.progress_window.winfo_exists)
+
         self.update_status(description)
-        self.update_log(f"Выполняем: {' '.join(cmd)}")
+        self.update_log("Выполняем: " + " ".join(cmd))
+
+        self.update_log("[DEBUG] внутри _run_pip_process, сейчас вызовем Popen")
         try:
-            process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                encoding='utf-8', errors='ignore', bufsize=1,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                encoding="utf-8",
+                errors="ignore",
+                bufsize=1,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
             )
+            self.update_log("[DEBUG] Popen запущен, pid=%s" % proc.pid)
         except FileNotFoundError:
-            self.update_log(f"ОШИБКА: Не найден Python: {self.script_path}"); self.update_status("Ошибка: Python не найден"); return False
+            self.update_status("Python не найден")
+            self.update_log("ОШИБКА: не найден интерпретатор Python.")
+            return False
         except Exception as e:
-            self.update_log(f"ОШИБКА при запуске subprocess: {e}"); self.update_status("Ошибка запуска процесса"); return False
+            self.update_status("Ошибка запуска процесса")
+            self.update_log(f"ОШИБКА запуска subprocess: {e}")
+            return False
 
-        stdout_queue = queue.Queue(); stderr_queue = queue.Queue()
-        def read_output(pipe, queue_obj):
+        # неблокирующее чтение
+        q_out, q_err = queue.Queue(), queue.Queue()
+
+        def _reader(pipe, q):
             try:
-                for line in iter(pipe.readline, ''):
-                    if line: queue_obj.put(line.strip())
+                for line in iter(pipe.readline, ""):
+                    q.put(line.rstrip())
             finally:
-                try: pipe.close()
-                except OSError: pass
-        stdout_thread = threading.Thread(target=read_output, args=(process.stdout, stdout_queue), daemon=True); stderr_thread = threading.Thread(target=read_output, args=(process.stderr, stderr_queue), daemon=True)
-        stdout_thread.start(); stderr_thread.start()
+                pipe.close()
 
-        def process_queues():
-            msgs_processed = 0
-            while not stdout_queue.empty():
-                try:
-                    line = stdout_queue.get_nowait()
-                    if not line.startswith("Found existing installation:") and not line.startswith("Uninstalling"): self.update_log(line)
-                    else: self.update_log(f"PIP_STDOUT: {line}")
-                    msgs_processed += 1
-                except queue.Empty: break
-            while not stderr_queue.empty():
-                try:
-                    line = stderr_queue.get_nowait()
-                    if "WARNING:" in line.upper() or "DEPRECATION:" in line.upper(): self.update_log(f"INFO: {line}")
-                    elif "ERROR:" in line.upper(): self.update_log(f"ОШИБКА: {line}")
-                    elif line.strip(): self.update_log(f"STDERR: {line}")
-                    msgs_processed += 1
-                except queue.Empty: break
-            return msgs_processed
+        threading.Thread(target=_reader, args=(proc.stdout, q_out), daemon=True).start()
+        threading.Thread(target=_reader, args=(proc.stderr, q_err), daemon=True).start()
 
-        start_time = time.time(); last_activity_time = start_time
-        timeout = 7200; no_activity_timeout = 1800
-        while process.poll() is None:
-            if self.progress_window and not self.progress_window.winfo_exists():
-                self.update_log("Окно прогресса закрыто, прерываем процесс."); process.terminate(); time.sleep(0.5); process.kill(); return False
-            msgs_processed = process_queues()
-            if msgs_processed > 0: last_activity_time = time.time()
-            if time.time() - last_activity_time > no_activity_timeout:
-                self.update_log(f"Предупреждение: Процесс неактивен > {no_activity_timeout // 60} мин. Завершение."); process.terminate(); time.sleep(1); process.kill(); return False
-            if time.time() - start_time > timeout:
-                self.update_log(f"Превышено время выполнения (> {timeout // 60} мин). Завершение."); process.terminate(); time.sleep(1); process.kill(); return False
-            if self.progress_window and self.progress_window.winfo_exists():
-                try: self.progress_window.update()
-                except tk.TclError: self.update_log("Окно прогресса закрыто."); process.terminate(); time.sleep(0.5); process.kill(); return False
-            time.sleep(0.1)
-        stdout_thread.join(timeout=5); stderr_thread.join(timeout=5)
-        process_queues()
-        returncode = process.returncode
-        self.update_log(f"Процесс pip завершился с кодом: {returncode} ({'Успех' if returncode == 0 else 'Ошибка'})")
-        return returncode == 0
+        start          = time.time()
+        last_activity  = start
+        TIMEOUT_SEC    = 7200
+        NO_ACTIVITY_SEC = 1800
+        progress_sofar = 0            # будем повышать до 95 %
+
+        while proc.poll() is None:
+            # окно закрыли (tk-ветка)
+            if is_tk_window and not self.progress_window.winfo_exists():
+                self.update_log("Окно закрыто, прерываем процесс.")
+                proc.terminate(); time.sleep(0.5); proc.kill()
+                return False
+
+            # читаем очередные строки
+            msgs = 0
+            while not q_out.empty():
+                self.update_log(q_out.get_nowait())
+                msgs += 1
+            while not q_err.empty():
+                self.update_log(q_err.get_nowait())
+                msgs += 1
+            if msgs:
+                last_activity = time.time()
+                # поднимаем прогресс «на глаз»
+                progress_sofar = min(progress_sofar + msgs, 95)
+                self.update_progress(progress_sofar)
+
+            # таймауты
+            now = time.time()
+            if now - last_activity > NO_ACTIVITY_SEC:
+                self.update_log("Предупреждение: процесс неактивен, прерываем.")
+                proc.terminate(); time.sleep(0.5); proc.kill()
+                return False
+            if now - start > TIMEOUT_SEC:
+                self.update_log("Таймаут > 2 ч, прерываем.")
+                proc.terminate(); time.sleep(0.5); proc.kill()
+                return False
+
+            # обновляем tk-окно
+            if is_tk_window and self.progress_window.winfo_exists():
+                try:
+                    self.progress_window.update()
+                except tk.TclError:
+                    pass
+
+            # даём Qt «подышать»
+            from PyQt6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+            time.sleep(0.05)
+
+        # дочитываем остаток
+        while not q_out.empty():
+            self.update_log(q_out.get_nowait())
+        while not q_err.empty():
+            self.update_log(q_err.get_nowait())
+
+        self.update_progress(100)          # финальные 100 %
+
+        ret = proc.returncode
+        self.update_log(f"pip завершился с кодом {ret}")
+        return ret == 0

@@ -9,9 +9,10 @@ import sys
 import os
 import asyncio
 import pygame
-import tkinter as tk
-from tkinter import ttk
-import tkinter.font as tkFont
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+                             QTextEdit, QFrame, QWidget, QProgressBar, QApplication)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtGui import QFont, QTextCursor
 import time
 import ffmpeg
 from utils.GpuUtils import check_gpu_provider
@@ -104,19 +105,37 @@ class LocalVoice:
     # НОВЫЕ ПУБЛИЧНЫЕ МЕТОДЫ (Упрощенный интерфейс)
     # =========================================================================
 
-    def download_model(self, model_id: str) -> bool:
-        model_to_install = self.models.get(model_id)
-        if not model_to_install:
-            logger.error(f"Неизвестный идентификатор модели для установки: {model_id}")
+    # LocalVoice.py  ── внутри класса LocalVoice
+    def download_model(
+            self, model_id: str,
+            progress_cb=None, status_cb=None, log_cb=None
+        ) -> bool:
+        logger.info(f"[DEBUG] LocalVoice.download_model('{model_id}') вызван")
+        """
+        progress_cb(int 0-100), status_cb(str), log_cb(str)
+        передаются из GUI-потока; PipInstaller будет их вызывать.
+        """
+        model = self.models.get(model_id)
+        if not model:
+            logger.error(f"Unknown model id {model_id}")
             return False
-        logger.info(f"Начало установки модели '{model_to_install.get_display_name()}' (ID: {model_id})")
-        success = model_to_install.install()
-        if success:
-            logger.info(f"Установка модели '{model_id}' завершена успешно.")
-            self.current_model_id = model_id
-        else:
-            logger.error(f"Установка модели '{model_id}' не удалась.")
-        return success
+
+        # сохраняем колбэки для install-методов
+        self._external_progress = progress_cb or (lambda *_: None)
+        self._external_status   = status_cb   or (lambda *_: None)
+        self._external_log      = log_cb      or (lambda *_: None)
+
+        try:
+            ok = model.install()
+            logger.info(f"[DEBUG] LocalVoice.download_model → install() вернул {ok}")
+            if ok:
+                self.current_model_id = model_id
+            return ok
+        finally:
+            # очистка, чтобы следующий вызов был «чистым»
+            for attr in ("_external_progress", "_external_status", "_external_log"):
+                if hasattr(self, attr):
+                    delattr(self, attr)
 
     def initialize_model(self, model_id: str, init: bool = False) -> bool:
         model_to_init = self.models.get(model_id)
@@ -318,8 +337,7 @@ class LocalVoice:
 
                 if not success:
                     update_status(_("Ошибка при установке PyTorch", "Error installing PyTorch"))
-                    if progress_window and progress_window.winfo_exists():
-                        progress_window.after(5000, progress_window.destroy)
+                    QTimer.singleShot(5000, progress_window.close)
                     return False
                 update_progress(50)
             else:
@@ -332,8 +350,7 @@ class LocalVoice:
             )
             if not success:
                 update_status(_("Ошибка при установке omegaconf", "Error installing omegaconf"))
-                if progress_window and progress_window.winfo_exists():
-                    progress_window.after(5000, progress_window.destroy)
+                QTimer.singleShot(5000, progress_window.close)
                 return False
 
             update_progress(70)
@@ -348,16 +365,14 @@ class LocalVoice:
                 desc = _("Установка основной библиотеки tts-with-rvc (AMD)...", "Installing main library tts-with-rvc (AMD)...")
             else:
                 update_log(_(f"Ошибка: не найдена подходящая видеокарта: {self.provider}", f"Error: suitable graphics card not found: {self.provider}"))
-                if progress_window and progress_window.winfo_exists():
-                    progress_window.after(5000, progress_window.destroy)
+                QTimer.singleShot(5000, progress_window.close)
                 return False
 
             success = installer.install_package(package_url, description=desc)
 
             if not success:
                 update_status(_("Ошибка при установке tts-with-rvc", "Error installing tts-with-rvc"))
-                if progress_window and progress_window.winfo_exists():
-                    progress_window.after(5000, progress_window.destroy)
+                QTimer.singleShot(5000, progress_window.close)
                 return False
 
             libs_path_abs = os.path.abspath("Lib")
@@ -381,13 +396,12 @@ class LocalVoice:
             self.models['low']._load_module()
             self.models['low+']._load_module()
             
-            if progress_window and progress_window.winfo_exists():
-                progress_window.after(3000, progress_window.destroy)
+            QTimer.singleShot(3000, progress_window.close)
             return True
         except Exception as e:
             logger.error(f"Ошибка при установке Edge-TTS + RVC: {e}", exc_info=True)
-            if gui_elements and gui_elements["window"] and gui_elements["window"].winfo_exists():
-                gui_elements["window"].destroy()
+            if gui_elements and gui_elements["window"]:
+                gui_elements["window"].close()
             return False
 
     def download_fish_speech_internal(self):
@@ -426,8 +440,7 @@ class LocalVoice:
                 )
                 if not success:
                     update_status(_("Ошибка при установке PyTorch", "Error installing PyTorch"))
-                    if progress_window and progress_window.winfo_exists():
-                        progress_window.after(5000, progress_window.destroy)
+                    QTimer.singleShot(5000, progress_window.close)
                     return False
                 update_progress(40)
             else:
@@ -442,8 +455,7 @@ class LocalVoice:
                 )
                 if not success:
                     update_status(_("Ошибка при установке Fish Speech", "Error installing Fish Speech"))
-                    if progress_window and progress_window.winfo_exists():
-                        progress_window.after(5000, progress_window.destroy)
+                    QTimer.singleShot(5000, progress_window.close)
                     return False
                 update_progress(80)
 
@@ -456,8 +468,7 @@ class LocalVoice:
             else:
                 update_log(_(f"Ошибка: не найдена подходящая видеокарта: {self.provider}", f"Error: suitable graphics card not found: {self.provider}"))
                 update_status(_("Требуется NVIDIA GPU", "NVIDIA GPU required"))
-                if progress_window and progress_window.winfo_exists():
-                    progress_window.after(5000, progress_window.destroy)
+                QTimer.singleShot(5000, progress_window.close)
                 return False
 
             update_progress(100)
@@ -465,13 +476,12 @@ class LocalVoice:
             
             self.models['medium']._load_module()
             
-            if progress_window and progress_window.winfo_exists():
-                progress_window.after(5000, progress_window.destroy)
+            QTimer.singleShot(5000, progress_window.close)
             return True
         except Exception as e:
             logger.error(f"Ошибка при установке Fish Speech: {e}", exc_info=True)
-            if gui_elements and gui_elements["window"] and gui_elements["window"].winfo_exists():
-                gui_elements["window"].destroy()
+            if gui_elements and gui_elements["window"]:
+                gui_elements["window"].close()
             return False
 
     def download_triton_internal(self):
@@ -505,8 +515,7 @@ class LocalVoice:
 
             if not success:
                 update_status(_("Ошибка при установке Triton", "Error installing Triton"))
-                if progress_window and progress_window.winfo_exists():
-                    progress_window.after(5000, progress_window.destroy)
+                QTimer.singleShot(5000, progress_window.close)
                 return False
 
             # --- Патчи ---
@@ -582,92 +591,141 @@ class LocalVoice:
             
             update_progress(100)
             update_status(_("Установка Triton завершена.", "Triton installation complete."))
-            if progress_window and progress_window.winfo_exists():
-                progress_window.after(5000, progress_window.destroy)
+            QTimer.singleShot(5000, progress_window.close)
             
             self.triton_installed = True
             return True
         except Exception as e:
             logger.error(f"Критическая ошибка при установке Triton: {e}", exc_info=True)
-            if gui_elements and gui_elements["window"] and gui_elements["window"].winfo_exists():
-                gui_elements["window"].destroy()
+            if gui_elements and gui_elements["window"]:
+                gui_elements["window"].close()
             return False
 
+    #  LocalVoice.py  ── внутри класса LocalVoice
     def download_f5_tts_internal(self):
-        gui_elements = None
-        try:
-            gui_elements = self._create_installation_window(
+        """
+        Установка F5-TTS.
+
+        •  Если метод вызван в GUI-потоке без внешних колбэков – создаёт своё окно.
+        •  Если вызван из воркера и у LocalVoice присутствуют
+        _external_progress / _external_status / _external_log –
+        окно НЕ создаётся, все сообщения уводятся во внешние колбэки.
+        """
+        logger.info("[DEBUG] download_f5_tts_internal вошёл")
+        # ─────────────────────────────────────────────────────────
+        # 1.  Определяем режим работы
+        # ─────────────────────────────────────────────────────────
+        have_external = hasattr(self, "_external_log")
+        if have_external:
+            progress_window = None
+            update_progress = getattr(self, "_external_progress", lambda *_: None)
+            update_status   = getattr(self, "_external_status",   lambda *_: None)
+            update_log      = getattr(self, "_external_log",      lambda *_: None)
+        else:
+            gui = self._create_installation_window(
                 title=_("Установка F5-TTS", "Installing F5-TTS"),
                 initial_status=_("Подготовка...", "Preparing...")
             )
-            if not gui_elements:
+            if not gui:
+                logger.error("Не удалось создать окно установки F5-TTS.")
                 return False
 
-            progress_window = gui_elements["window"]
-            update_progress = gui_elements["update_progress"]
-            update_status = gui_elements["update_status"]
-            update_log = gui_elements["update_log"]
+            progress_window = gui["window"]
+            update_progress = gui["update_progress"]
+            update_status   = gui["update_status"]
+            update_log      = gui["update_log"]
 
+        # ─────────────────────────────────────────────────────────
+        # 2.  Основная логика установки
+        # ─────────────────────────────────────────────────────────
+        try:
             installer = PipInstaller(
-                script_path=r"libs\python\python.exe",
-                libs_path="Lib",
-                update_status=update_status,
-                update_log=update_log,
-                progress_window=progress_window
-            )
+                    script_path=r"libs\python\python.exe",
+                    libs_path="Lib",
+                    update_status=update_status,
+                    update_log=update_log,
+                    progress_window=progress_window,
+                    update_progress=update_progress        # ← новинка
+                )
+            logger.info("[DEBUG] PipInstaller создан, запускаем pip install")
 
             update_progress(5)
             update_log(_("Начало установки F5-TTS...", "Starting F5-TTS installation..."))
 
-            if self.provider in ["NVIDIA"] and not self.is_cuda_available():
+            # PyTorch (если надо)
+            if self.provider == "NVIDIA" and not self.is_cuda_available():
+                update_status(_("Установка PyTorch (cu124)...", "Installing PyTorch (cu124)..."))
                 update_progress(10)
-                if not installer.install_package(["torch==2.6.0", "torchaudio==2.6.0"], description=_("Установка PyTorch..."), extra_args=["--index-url", "https://download.pytorch.org/whl/cu124"]):
+                if not installer.install_package(
+                    ["torch==2.6.0", "torchaudio==2.6.0"],
+                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu124"],
+                    description="Install PyTorch cu124"
+                ):
+                    update_status(_("Ошибка PyTorch", "PyTorch error"))
                     return False
+
             update_progress(25)
 
-            if not installer.install_package(["f5-tts", "google-api-core"], description=_("Установка f5-tts...")):
+            if not installer.install_package(
+                ["f5-tts", "google-api-core"],
+                description=_("Установка f5-tts...", "Installing f5-tts...")
+            ):
                 return False
+
             update_progress(50)
 
-            def _download_file_with_progress(url, dest_path, file_description):
-                import requests
-                response = requests.get(url, stream=True, timeout=30)
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                with open(dest_path, 'wb') as f:
-                    downloaded = 0
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0:
-                            percent = (downloaded / total_size) * 100
-                            update_status(f"Загрузка {file_description}: {int(percent)}%")
-                return True
-
+            # Скачиваем веса
+            import requests, math, os
             model_dir = os.path.join("checkpoints", "F5-TTS")
             os.makedirs(model_dir, exist_ok=True)
-            
-            model_url = "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/F5TTS_v1_Base/model_240000_inference.safetensors?download=true"
-            vocab_url = "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/F5TTS_v1_Base/vocab.txt?download=true"
-            
-            if not _download_file_with_progress(model_url, os.path.join(model_dir, "model_240000_inference.safetensors"), "model.safetensors"): return False
-            update_progress(75)
-            if not _download_file_with_progress(vocab_url, os.path.join(model_dir, "vocab.txt"), "vocab.txt"): return False
-            update_progress(90)
+
+            def dl(url, dest, descr, start_prog, end_prog):
+                if os.path.exists(dest): return
+                update_status(descr)
+                r = requests.get(url, stream=True, timeout=30)
+                r.raise_for_status()
+                total = int(r.headers.get("content-length", 0))
+                done = 0
+                with open(dest, "wb") as fh:
+                    for chunk in r.iter_content(8192):
+                        fh.write(chunk)
+                        done += len(chunk)
+                        if total:
+                            pct = done / total
+                            prog = start_prog + (end_prog - start_prog) * pct
+                            update_progress(math.floor(prog))
+
+            dl(
+                "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/"
+                "F5TTS_v1_Base/model_240000_inference.safetensors?download=true",
+                os.path.join(model_dir, "model.safetensors"),
+                _("Загрузка весов модели...", "Downloading model weights..."),
+                50, 80
+            )
+
+            dl(
+                "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/"
+                "F5TTS_v1_Base/vocab.txt?download=true",
+                os.path.join(model_dir, "vocab.txt"),
+                _("Загрузка vocab.txt...", "Downloading vocab.txt..."),
+                80, 90
+            )
 
             update_progress(100)
             update_status(_("Установка F5-TTS завершена.", "F5-TTS installation complete."))
-            
-            self.models['f5_tts']._load_module()
-
-            if progress_window and progress_window.winfo_exists():
-                progress_window.after(3000, progress_window.destroy)
+            self.models["f5_tts"]._load_module()
             return True
+
         except Exception as e:
-            logger.error(f"Критическая ошибка при установке F5-TTS: {e}", exc_info=True)
-            if gui_elements and gui_elements["window"] and gui_elements["window"].winfo_exists():
-                gui_elements["window"].destroy()
+            logger.error(f"Ошибка установки F5-TTS: {e}", exc_info=True)
+            update_log(f"ERROR: {e}")
             return False
+
+        finally:
+            # закрываем своё окно, если оно было создано
+            if not have_external and progress_window:
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(3000, progress_window.close)
 
     # =========================================================================
     # Вспомогательные и GUI функции (остаются здесь)
@@ -766,236 +824,211 @@ class LocalVoice:
             self.triton_checks_performed = False
 
     def _create_installation_window(self, title, initial_status="Подготовка..."):
-        progress_window = None
         try:
-            if not hasattr(self, '_installation_fonts_created'):
-                try:
-                    title_font_name = "LocalVoiceInstallTitle"
-                    status_font_name = "LocalVoiceInstallStatus"
-                    log_font_name = "LocalVoiceInstallLog"
-
-                    try:
-                        self._title_font = tkFont.Font(name=title_font_name)
-                        self._title_font.config(family="Segoe UI", size=12, weight="bold")
-                    except tk.TclError:
-                        self._title_font = tkFont.Font(name=title_font_name, family="Segoe UI", size=12, weight="bold")
-
-                    try:
-                        self._status_font_prog = tkFont.Font(name=status_font_name)
-                        self._status_font_prog.config(family="Segoe UI", size=9)
-                    except tk.TclError:
-                        self._status_font_prog = tkFont.Font(name=status_font_name, family="Segoe UI", size=9)
-
-                    try:
-                        self._log_font = tkFont.Font(name=log_font_name)
-                        self._log_font.config(family="Consolas", size=9)
-                    except tk.TclError:
-                        self._log_font = tkFont.Font(name=log_font_name, family="Consolas", size=9)
-
-                    self._installation_fonts_created = True
-                except tk.TclError as e:
-                    logger.info(f"Критическая ошибка при создании/получении шрифтов: {e}")
-                    return None
+            dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
+            dialog.setWindowTitle(title)
+            dialog.setFixedSize(700, 400)
+            dialog.setModal(True)
+            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
             
-            bg_color, fg_color, log_bg_color, log_fg_color = "#1e1e1e", "#ffffff", "#101010", "#cccccc"
-            progress_bar_trough, progress_bar_color = "#555555", "#4CAF50"
+            # Применяем стили
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: #1e1e1e;
+                }
+                QLabel {
+                    color: #ffffff;
+                }
+                QTextEdit {
+                    background-color: #101010;
+                    color: #cccccc;
+                    border: 1px solid #333;
+                }
+                QProgressBar {
+                    border: 1px solid #555;
+                    border-radius: 5px;
+                    background-color: #555555;
+                    text-align: center;
+                }
+                QProgressBar::chunk {
+                    background-color: #4CAF50;
+                    border-radius: 5px;
+                }
+            """)
             
-            progress_window = tk.Toplevel(self.parent.root if self.parent and hasattr(self.parent, 'root') else None)
-            progress_window.title(title)
-            progress_window.geometry("700x400")
-            progress_window.configure(bg=bg_color)
-            progress_window.resizable(False, False)
-            progress_window.attributes('-topmost', True)
-
-            tk.Label(progress_window, text=title, font=self._title_font, bg=bg_color, fg=fg_color).pack(pady=10)
+            layout = QVBoxLayout(dialog)
             
-            info_frame = tk.Frame(progress_window, bg=bg_color)
-            info_frame.pack(fill=tk.X, padx=10)
-            status_label = tk.Label(info_frame, text=initial_status, anchor="w", font=self._status_font_prog, bg=bg_color, fg=fg_color)
-            status_label.pack(side=tk.LEFT, pady=5, fill=tk.X, expand=True)
-            progress_value_label = tk.Label(info_frame, text="0%", font=self._status_font_prog, bg=bg_color, fg=fg_color)
-            progress_value_label.pack(side=tk.RIGHT, pady=5)
-
-            progress_bar_canvas = tk.Canvas(progress_window, bg=progress_bar_trough, height=10, highlightthickness=0)
-            progress_bar_canvas.pack(pady=5, padx=10, fill=tk.X)
-            progress_rectangle = progress_bar_canvas.create_rectangle(0, 0, 0, 10, fill=progress_bar_color, outline="")
-
-            log_frame = tk.Frame(progress_window, bg=bg_color)
-            log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            log_text = tk.Text(log_frame, height=15, bg=log_bg_color, fg=log_fg_color, wrap=tk.WORD, font=self._log_font, relief=tk.FLAT, state=tk.DISABLED)
-            log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            scrollbar = tk.Scrollbar(log_frame, command=log_text.yview)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            log_text.config(yscrollcommand=scrollbar.set)
-
-            progress_window.update_idletasks()
-            parent_win = self.parent.root if self.parent and hasattr(self.parent, 'root') else None
-            if parent_win and parent_win.winfo_exists():
-                x = parent_win.winfo_x() + (parent_win.winfo_width() // 2) - (progress_window.winfo_width() // 2)
-                y = parent_win.winfo_y() + (parent_win.winfo_height() // 2) - (progress_window.winfo_height() // 2)
-                progress_window.geometry(f"+{x}+{y}")
-            progress_window.grab_set()
-
-            def update_progress_bar(value):
-                if progress_window and progress_window.winfo_exists():
-                    max_width = progress_bar_canvas.winfo_width()
-                    if max_width <= 1: return progress_window.after(50, lambda: update_progress_bar(value))
-                    fill_width = (value / 100) * max_width
-                    progress_bar_canvas.coords(progress_rectangle, 0, 0, fill_width, 10)
-                    progress_value_label.config(text=f"{int(value)}%")
-                    progress_window.update_idletasks()
-
+            # Заголовок
+            title_label = QLabel(title)
+            title_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(title_label)
+            
+            # Статус и прогресс
+            info_layout = QHBoxLayout()
+            status_label = QLabel(initial_status)
+            status_label.setFont(QFont("Segoe UI", 9))
+            info_layout.addWidget(status_label, 1)
+            
+            progress_value_label = QLabel("0%")
+            progress_value_label.setFont(QFont("Segoe UI", 9))
+            info_layout.addWidget(progress_value_label)
+            
+            layout.addLayout(info_layout)
+            
+            # Прогресс-бар
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, 100)
+            progress_bar.setTextVisible(False)
+            layout.addWidget(progress_bar)
+            
+            # Лог
+            log_text = QTextEdit()
+            log_text.setReadOnly(True)
+            log_text.setFont(QFont("Consolas", 9))
+            layout.addWidget(log_text, 1)
+            
+            # Функции обновления
+            def update_progress(value):
+                progress_bar.setValue(int(value))
+                progress_value_label.setText(f"{int(value)}%")
+                QApplication.processEvents()
+            
             def update_status(message):
-                if progress_window and progress_window.winfo_exists(): status_label.config(text=message)
-
+                status_label.setText(message)
+                QApplication.processEvents()
+            
             def update_log(text):
-                if progress_window and progress_window.winfo_exists():
-                    log_text.config(state=tk.NORMAL)
-                    log_text.insert(tk.END, text + "\n")
-                    log_text.see(tk.END)
-                    log_text.config(state=tk.DISABLED)
-
-            return {"window": progress_window, "update_progress": update_progress_bar, "update_status": update_status, "update_log": update_log}
+                log_text.append(text)
+                cursor = log_text.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                log_text.setTextCursor(cursor)
+                QApplication.processEvents()
+            
+            # Центрируем окно
+            if self.parent and hasattr(self.parent, 'geometry'):
+                parent_rect = self.parent.geometry()
+                dialog.move(
+                    parent_rect.center().x() - dialog.width() // 2,
+                    parent_rect.center().y() - dialog.height() // 2
+                )
+            
+            dialog.show()
+            QApplication.processEvents()
+            
+            return {
+                "window": dialog,
+                "update_progress": update_progress,
+                "update_status": update_status,
+                "update_log": update_log
+            }
         except Exception as e:
             logger.error(f"Ошибка при создании окна установки: {e}", exc_info=True)
-            if progress_window: progress_window.destroy()
             return None
 
     def _create_action_window(self, title, initial_status="Подготовка..."):
-        progress_window = None
         try:
-            if not hasattr(self, '_action_fonts_created'):
-                try:
-                    title_font_name = "LocalVoiceActionTitle"
-                    status_font_name = "LocalVoiceActionStatus"
-                    log_font_name = "LocalVoiceActionLog"
-                    self._title_font_action = tkFont.Font(name=title_font_name, family="Segoe UI", size=12, weight="bold")
-                    self._status_font_prog_action = tkFont.Font(name=status_font_name, family="Segoe UI", size=9)
-                    self._log_font_action = tkFont.Font(name=log_font_name, family="Consolas", size=9)
-                    self._action_fonts_created = True
-                except tk.TclError as e: 
-                    logger.info(f"Ошибка шрифтов окна действия: {e}")
-                    return None
+            dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
+            dialog.setWindowTitle(title)
+            dialog.setFixedSize(700, 400)
+            dialog.setModal(True)
             
-            title_font = self._title_font_action
-            status_font_prog = self._status_font_prog_action
-            log_font = self._log_font_action
-
-            bg_color="#1e1e1e"
-            fg_color="#ffffff"
-            log_bg_color="#101010"
-            log_fg_color="#cccccc"
-            button_bg="#333333"
-
-            progress_window = tk.Toplevel(self.parent.root if self.parent and hasattr(self.parent, 'root') else None)
-            progress_window.title(title)
-            progress_window.geometry("700x400")
-            progress_window.configure(bg=bg_color)
-            progress_window.resizable(False, False)
-            progress_window.attributes('-topmost', False)
-
-            tk.Label(progress_window, text=title, font=title_font, bg=bg_color, fg=fg_color).pack(pady=10)
-
-            info_frame = tk.Frame(progress_window, bg=bg_color)
-            info_frame.pack(fill=tk.X, padx=10)
-
-            status_label = tk.Label(info_frame, text=initial_status, anchor="w", font=status_font_prog, bg=bg_color, fg=fg_color)
-            status_label.pack(side=tk.LEFT, pady=5, fill=tk.X, expand=True)
-            log_frame = tk.Frame(progress_window, bg=bg_color)
-            log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            log_text = tk.Text(log_frame, height=15, bg=log_bg_color, fg=log_fg_color, wrap=tk.WORD, font=log_font, relief=tk.FLAT, borderwidth=1, highlightthickness=0, insertbackground=fg_color)
-            log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: #1e1e1e;
+                }
+                QLabel {
+                    color: #ffffff;
+                }
+                QTextEdit {
+                    background-color: #101010;
+                    color: #cccccc;
+                    border: 1px solid #333;
+                }
+            """)
             
-            scrollbar = tk.Scrollbar(log_frame, command=log_text.yview, relief=tk.FLAT, troughcolor=bg_color, bg=button_bg, activebackground="#555", elementborderwidth=0, borderwidth=0)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            layout = QVBoxLayout(dialog)
             
-            log_text.config(yscrollcommand=scrollbar.set)
-            log_text.config(state=tk.DISABLED)
-            progress_window.update_idletasks()
-
-            parent_win = self.parent.root if self.parent and hasattr(self.parent, 'root') else None
-            if parent_win and parent_win.winfo_exists():
-                x = parent_win.winfo_x() + (parent_win.winfo_width() // 2) - (progress_window.winfo_width() // 2)
-                y = parent_win.winfo_y() + (parent_win.winfo_height() // 2) - (progress_window.winfo_height() // 2)
-                progress_window.geometry(f"+{x}+{y}")
-            else:
-                screen_width = progress_window.winfo_screenwidth()
-                screen_height = progress_window.winfo_screenheight()
-                x = (screen_width // 2) - (progress_window.winfo_width() // 2)
-                y = (screen_height // 2) - (progress_window.winfo_height() // 2)
-                progress_window.geometry(f'+{x}+{y}')
-            progress_window.grab_set()
+            # Заголовок
+            title_label = QLabel(title)
+            title_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(title_label)
+            
+            # Статус
+            status_label = QLabel(initial_status)
+            status_label.setFont(QFont("Segoe UI", 9))
+            layout.addWidget(status_label)
+            
+            # Лог
+            log_text = QTextEdit()
+            log_text.setReadOnly(True)
+            log_text.setFont(QFont("Consolas", 9))
+            layout.addWidget(log_text, 1)
+            
             def update_status(message):
-                if progress_window and progress_window.winfo_exists():
-                    status_label.config(text=message)
-                    progress_window.update()
+                status_label.setText(message)
+                QApplication.processEvents()
+            
             def update_log(text):
-                 if progress_window and progress_window.winfo_exists():
-                    log_text.config(state=tk.NORMAL)
-                    log_text.insert(tk.END, text + "\n")
-                    log_text.see(tk.END)
-                    log_text.config(state=tk.DISABLED)
-                    
-                    progress_window.update()
-            return {"window": progress_window, "update_status": update_status, "update_log": update_log}
-        except Exception as e: 
+                log_text.append(text)
+                cursor = log_text.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                log_text.setTextCursor(cursor)
+                QApplication.processEvents()
+            
+            # Центрируем окно
+            if self.parent and hasattr(self.parent, 'geometry'):
+                parent_rect = self.parent.geometry()
+                dialog.move(
+                    parent_rect.center().x() - dialog.width() // 2,
+                    parent_rect.center().y() - dialog.height() // 2
+                )
+            
+            dialog.show()
+            QApplication.processEvents()
+            
+            return {
+                "window": dialog,
+                "update_status": update_status,
+                "update_log": update_log
+            }
+        except Exception as e:
             logger.error(f"Ошибка создания окна действия: {e}")
             traceback.print_exc()
             return None
 
     def _show_vc_redist_warning_dialog(self):
-        """Отображает диалоговое окно с предупреждением об установке VC Redist
-        и предлагает повторить попытку импорта."""
-        self._dialog_choice = None 
-
-        bg_color = "#1e1e1e"
-        fg_color = "#ffffff"
-        button_bg = "#333333"
-        button_fg = "#ffffff"
-        button_active_bg = "#555555"
-        warning_color = "orange"
-        retry_button_bg = "#4CAF50" 
-
-        try:
-
-            dlg_main_font_name = "VCRedistDialogMainFont"
-            dlg_bold_font_name = "VCRedistDialogBoldFont"
-            dlg_button_font_name = "VCRedistDialogButtonFont"
-
-            try: 
-                main_font = tkFont.Font(name=dlg_main_font_name)
-                main_font.config(family="Segoe UI", size=10)
-            except tk.TclError: 
-                main_font = tkFont.Font(name=dlg_main_font_name, family="Segoe UI", size=10)
-            try: 
-                bold_font = tkFont.Font(name=dlg_bold_font_name)
-                bold_font.config(family="Segoe UI", size=11, weight="bold")
-            except tk.TclError: 
-                bold_font = tkFont.Font(name=dlg_bold_font_name, family="Segoe UI", size=11, weight="bold")
-            try: 
-                button_font = tkFont.Font(name=dlg_button_font_name)
-                button_font.config(family="Segoe UI", size=9, weight="bold")
-            except tk.TclError: 
-                button_font = tkFont.Font(name=dlg_button_font_name, family="Segoe UI", size=9, weight="bold")
-
-        except tk.TclError as e:
-            logger.info(f"{_('Критическая ошибка шрифтов для диалога VC Redist:', 'Critical font error for VC Redist dialog:')} {e}")
-            main_font, bold_font, button_font = None, None, None
-
-        dialog = tk.Toplevel(self.parent.root if self.parent and hasattr(self.parent, 'root') else None)
-        dialog.title(_("⚠️ Ошибка загрузки Triton", "⚠️ Triton Load Error"))
-
-        dialog.configure(bg=bg_color)
-        dialog.resizable(False, False)
-        dialog.attributes('-topmost', True)
-
-        top_frame = tk.Frame(dialog, bg=bg_color, padx=15, pady=10)
-        top_frame.pack(fill=tk.X)
-
-        tk.Label(top_frame, text=_("Ошибка импорта Triton (DLL Load Failed)", "Triton Import Error (DLL Load Failed)"), font=bold_font, bg=bg_color, fg=warning_color).pack(anchor='w')
-
-        info_frame = tk.Frame(dialog, bg=bg_color, padx=15, pady=5)
-        info_frame.pack(fill=tk.X)
+        """Отображает диалоговое окно с предупреждением об установке VC Redist"""
+        dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
+        dialog.setWindowTitle(_("⚠️ Ошибка загрузки Triton", "⚠️ Triton Load Error"))
+        dialog.setModal(True)
+        dialog.setFixedSize(500, 250)
+        
+        dialog.setStyleSheet("""
+            QDialog { background-color: #1e1e1e; }
+            QLabel { color: #ffffff; }
+            QPushButton {
+                background-color: #333333;
+                color: #ffffff;
+                border: none;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #555555; }
+            #RetryButton { background-color: #4CAF50; }
+            #RetryButton:hover { background-color: #45a049; }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Заголовок
+        title_label = QLabel(_("Ошибка импорта Triton (DLL Load Failed)", "Triton Import Error (DLL Load Failed)"))
+        title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        title_label.setStyleSheet("color: orange;")
+        layout.addWidget(title_label)
+        
+        # Текст
         info_text = _(
             "Не удалось загрузить библиотеку для Triton (возможно, отсутствует VC++ Redistributable).\n"
             "Установите последнюю версию VC++ Redistributable (x64) с сайта Microsoft\n"
@@ -1004,181 +1037,78 @@ class LocalVoice:
             "Install the latest VC++ Redistributable (x64) from the Microsoft website\n"
             "or try importing again if you just installed it."
         )
-        tk.Label(info_frame, text=info_text, font=main_font, bg=bg_color, fg=fg_color, justify=tk.LEFT).pack(anchor='w')
-
-        button_frame = tk.Frame(dialog, bg=bg_color, padx=15, pady=15)
-        button_frame.pack(fill=tk.X)
-
-        # --- Функции для кнопок ---
-        def on_retry():
-            self._dialog_choice = "retry"
-            dialog.destroy()
-
-        def on_docs():
-            try:
-                if hasattr(self, 'docs_manager') and self.docs_manager:
-                    self.docs_manager.open_doc("installation_guide.html#vc_redist")
-                else: logger.warning(_("DocsManager не инициализирован.", "DocsManager not initialized."))
-            except Exception as e_docs: logger.info(f"{_('Не удалось открыть документацию:', 'Failed to open documentation:')} {e_docs}")
-
-        def on_close():
-            self._dialog_choice = "close"
-            dialog.destroy()
-
-        # --- Создание кнопок ---
-        retry_button = tk.Button(button_frame, text=_("Попробовать снова", "Retry"), command=on_retry,
-                                font=button_font, bg=retry_button_bg, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        retry_button.pack(side=tk.RIGHT, padx=(5, 0))
-
-        close_button = tk.Button(button_frame, text=_("Закрыть", "Close"), command=on_close,
-                                font=button_font, bg=button_bg, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        close_button.pack(side=tk.RIGHT, padx=(5, 0))
-
-        docs_button = tk.Button(button_frame, text=_("Документация", "Documentation"), command=on_docs, # Укоротил текст
-                                font=button_font, bg=button_bg, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        docs_button.pack(side=tk.LEFT, padx=(0, 5))
-
-        # --- Центрирование и модальность ---
-        dialog.update_idletasks()
-        parent_win = self.parent.root if self.parent and hasattr(self.parent, 'root') else None
-        if parent_win and parent_win.winfo_exists():
-            x = parent_win.winfo_x() + (parent_win.winfo_width() // 2) - (dialog.winfo_width() // 2)
-            y = parent_win.winfo_y() + (parent_win.winfo_height() // 2) - (dialog.winfo_height() // 2)
-            dialog.geometry(f"+{x}+{y}")
-        else:
-            screen_width = dialog.winfo_screenwidth()
-            screen_height = dialog.winfo_screenheight()
-            x = (screen_width // 2) - (dialog.winfo_width() // 2)
-            y = (screen_height // 2) - (dialog.winfo_height() // 2)
-            dialog.geometry(f'+{x}+{y}')
-
-        dialog.protocol("WM_DELETE_WINDOW", on_close) 
-        dialog.grab_set()
-        dialog.wait_window()
-
+        info_label = QLabel(info_text)
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        layout.addStretch()
+        
+        # Кнопки
+        button_layout = QHBoxLayout()
+        
+        docs_button = QPushButton(_("Документация", "Documentation"))
+        docs_button.clicked.connect(lambda: self.docs_manager.open_doc("installation_guide.html#vc_redist"))
+        button_layout.addWidget(docs_button)
+        
+        button_layout.addStretch()
+        
+        close_button = QPushButton(_("Закрыть", "Close"))
+        close_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'close') or dialog.accept())
+        button_layout.addWidget(close_button)
+        
+        retry_button = QPushButton(_("Попробовать снова", "Retry"))
+        retry_button.setObjectName("RetryButton")
+        retry_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'retry') or dialog.accept())
+        button_layout.addWidget(retry_button)
+        
+        layout.addLayout(button_layout)
+        
+        dialog.exec()
         return self._dialog_choice
 
     def _show_triton_init_warning_dialog(self):
         """Отображает диалоговое окно с предупреждением о зависимостях Triton."""
-        self._dialog_choice = None
-
-        # Цвета и шрифты
-        bg_color = "#1e1e1e"
-        fg_color = "#ffffff"
-        button_bg = "#333333"
-        button_fg = "#ffffff"
-        button_active_bg = "#555555"
-        status_found_color = "#4CAF50"
-        status_notfound_color = "#F44336"
-        orange_color = "orange"
-
-        try:
-            # Уникальные имена для шрифтов этого диалога
-            dlg_main_font_name = "TritonDialogMainFont"
-            dlg_bold_font_name = "TritonDialogBoldFont"
-            dlg_status_font_name = "TritonDialogStatusFont"
-            dlg_button_font_name = "TritonDialogButtonFont"
-
-            # Пытаемся получить или создать каждый шрифт
-            try:
-                main_font = tkFont.Font(name=dlg_main_font_name)
-                main_font.config(family="Segoe UI", size=10)
-            except tk.TclError:
-                main_font = tkFont.Font(name=dlg_main_font_name, family="Segoe UI", size=10)
-
-            try:
-                bold_font = tkFont.Font(name=dlg_bold_font_name)
-                bold_font.config(family="Segoe UI", size=10, weight="bold")
-            except tk.TclError:
-                bold_font = tkFont.Font(name=dlg_bold_font_name, family="Segoe UI", size=10, weight="bold")
-
-            try:
-                status_font = tkFont.Font(name=dlg_status_font_name)
-                status_font.config(family="Segoe UI", size=9)
-            except tk.TclError:
-                status_font = tkFont.Font(name=dlg_status_font_name, family="Segoe UI", size=9)
-
-            try:
-                button_font = tkFont.Font(name=dlg_button_font_name)
-                button_font.config(family="Segoe UI", size=9, weight="bold")
-            except tk.TclError:
-                button_font = tkFont.Font(name=dlg_button_font_name, family="Segoe UI", size=9, weight="bold")
-
-        except tk.TclError as e:
-            logger.info(f"{_('Критическая ошибка при создании/получении шрифтов для диалога:', 'Critical error creating/getting fonts for dialog:')} {e}")
-            main_font, bold_font, status_font, button_font = None, None, None, None 
-
-        # Создание окна
-        dialog = tk.Toplevel(self.parent.root if self.parent and hasattr(self.parent, 'root') else None)
-        dialog.title(_("⚠️ Зависимости Triton", "⚠️ Triton Dependencies"))
-        dialog.configure(bg=bg_color)
-        dialog.resizable(False, False)
-        dialog.attributes('-topmost', True)
-
-        # --- Верхняя часть: Статус ---
-        top_frame = tk.Frame(dialog, bg=bg_color, padx=15, pady=10)
-        top_frame.pack(fill=tk.X)
-
-        tk.Label(top_frame, text=_("Статус зависимостей Triton:", "Triton Dependency Status:"), font=bold_font, bg=bg_color, fg=fg_color).pack(anchor='w', pady=(0, 5))
-
-        status_frame = tk.Frame(top_frame, bg=bg_color)
-        status_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # Словарь для хранения ссылок на метки статуса (для обновления)
-        status_label_widgets = {}
-
-        def update_status_display():
-            # Очищаем предыдущие метки статуса
-            for widget in status_frame.winfo_children():
-                widget.destroy()
-            status_label_widgets.clear()
-
-            items = [
-                ("CUDA Toolkit:", self.cuda_found),
-                ("Windows SDK:", self.winsdk_found),
-                ("MSVC:", self.msvc_found)
-            ]
-
-            for text, found in items:
-                item_frame = tk.Frame(status_frame, bg=bg_color)
-                # Размещаем элементы горизонтально
-                item_frame.pack(side=tk.LEFT, padx=(0, 15), anchor='w')
-
-                label = tk.Label(item_frame, text=text, font=status_font, bg=bg_color, fg=fg_color)
-                label.pack(side=tk.LEFT)
-                status_text = _("Найден", "Found") if found else _("Не найден", "Not Found")
-                status_color = status_found_color if found else status_notfound_color
-                status_label_widget = tk.Label(item_frame, text=status_text, font=status_font, bg=bg_color, fg=status_color)
-                status_label_widget.pack(side=tk.LEFT, padx=(3, 0))
-                # Сохраняем ссылку на метку статуса
-                status_label_widgets[text] = status_label_widget
-
-            # Показываем или скрываем предупреждение
-            all_found = self.cuda_found and self.winsdk_found and self.msvc_found
-            warning_text_tr = _("⚠️ Модели Fish Speech+ / + RVC требуют всех компонентов!", "⚠️ Models Fish Speech+ / + RVC require all components!")
-            if not all_found:
-                if not hasattr(dialog, 'warning_label') or not dialog.warning_label.winfo_exists():
-                    dialog.warning_label = tk.Label(top_frame, text=warning_text_tr, bg=bg_color, fg=orange_color, font=bold_font)
-                    # Пакуем под status_frame
-                    dialog.warning_label.pack(anchor='w', pady=(5, 0), before=status_frame)
-                    dialog.warning_label.pack_forget() 
-                    dialog.warning_label.pack(anchor='w', pady=(5,0), fill=tk.X)
-                dialog.warning_label.config(text=_("⚠️ Модели Fish Speech+ / + RVC требуют всех компонентов!", "⚠️ Models Fish Speech+ / + RVC require all components!"))
-                if not dialog.warning_label.winfo_ismapped():
-                     dialog.warning_label.pack(anchor='w', pady=(5,0), fill=tk.X)
-            elif hasattr(dialog, 'warning_label') and dialog.warning_label.winfo_ismapped():
-                dialog.warning_label.pack_forget() 
-
-            dialog.update_idletasks() # Обновляем геометрию окна
-
-        update_status_display() # Первоначальное отображение статуса
-
-        # --- Средняя часть: Информация ---
-        info_frame = tk.Frame(dialog, bg=bg_color, padx=15, pady=5)
-        info_frame.pack(fill=tk.X)
+        dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
+        dialog.setWindowTitle(_("⚠️ Зависимости Triton", "⚠️ Triton Dependencies"))
+        dialog.setModal(True)
+        dialog.setFixedSize(600, 350)
+        
+        dialog.setStyleSheet("""
+            QDialog { background-color: #1e1e1e; }
+            QLabel { color: #ffffff; }
+            QPushButton {
+                background-color: #333333;
+                color: #ffffff;
+                border: none;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #555555; }
+            #ContinueButton { background-color: #4CAF50; }
+            #ContinueButton:hover { background-color: #45a049; }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Заголовок
+        title_label = QLabel(_("Статус зависимостей Triton:", "Triton Dependency Status:"))
+        title_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        layout.addWidget(title_label)
+        
+        # Статусы
+        self.status_layout = QHBoxLayout()
+        self.status_labels = {}
+        self._update_status_display()
+        layout.addLayout(self.status_layout)
+        
+        # Предупреждение
+        self.warning_label = QLabel(_("⚠️ Модели Fish Speech+ / + RVC требуют всех компонентов!", 
+                                     "⚠️ Models Fish Speech+ / + RVC require all components!"))
+        self.warning_label.setStyleSheet("color: orange; font-weight: bold;")
+        self.warning_label.setVisible(not (self.cuda_found and self.winsdk_found and self.msvc_found))
+        layout.addWidget(self.warning_label)
+        
+        # Информация
         info_text = _(
             "Если компоненты не найдены, установите их согласно документации.\n"
             "Вы также можете попробовать инициализировать модель вручную,\n"
@@ -1187,93 +1117,104 @@ class LocalVoice:
             "You can also try initializing the model manually\n"
             "by running `init_triton.bat` in the program's root folder."
         )
-        tk.Label(info_frame, text=info_text, font=main_font, bg=bg_color, fg=fg_color, justify=tk.LEFT).pack(anchor='w')
+        info_label = QLabel(info_text)
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        layout.addStretch()
+        
+        # Кнопки
+        button_layout = QHBoxLayout()
+        
+        docs_button = QPushButton(_("Открыть документацию", "Open Documentation"))
+        docs_button.clicked.connect(lambda: self.docs_manager.open_doc("installation_guide.html"))
+        button_layout.addWidget(docs_button)
+        
+        refresh_button = QPushButton(_("Обновить статус", "Refresh Status"))
+        refresh_button.clicked.connect(self._on_refresh_status)
+        button_layout.addWidget(refresh_button)
+        
+        button_layout.addStretch()
+        
+        skip_button = QPushButton(_("Пропустить инициализацию", "Skip Initialization"))
+        skip_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'skip') or dialog.accept())
+        button_layout.addWidget(skip_button)
+        
+        continue_button = QPushButton(_("Продолжить инициализацию", "Continue Initialization"))
+        continue_button.setObjectName("ContinueButton")
+        continue_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'continue') or dialog.accept())
+        button_layout.addWidget(continue_button)
+        
+        layout.addLayout(button_layout)
+        
+        dialog.exec()
+        return self._dialog_choice
 
-        # --- Нижняя часть: Кнопки ---
-        button_frame = tk.Frame(dialog, bg=bg_color, padx=15, pady=15)
-        button_frame.pack(fill=tk.X)
+    def _update_status_display(self):
+        """Обновляет отображение статусов в диалоге"""
+        # Очищаем предыдущие виджеты
+        while self.status_layout.count():
+            item = self.status_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        items = [
+            ("CUDA Toolkit:", self.cuda_found),
+            ("Windows SDK:", self.winsdk_found),
+            ("MSVC:", self.msvc_found)
+        ]
+        
+        for text, found in items:
+            item_widget = QWidget()
+            item_layout = QHBoxLayout(item_widget)
+            item_layout.setContentsMargins(0, 0, 15, 0)
+            
+            label = QLabel(text)
+            label.setFont(QFont("Segoe UI", 9))
+            item_layout.addWidget(label)
+            
+            status_text = _("Найден", "Found") if found else _("Не найден", "Not Found")
+            status_color = "#4CAF50" if found else "#F44336"
+            status_label = QLabel(status_text)
+            status_label.setFont(QFont("Segoe UI", 9))
+            status_label.setStyleSheet(f"color: {status_color};")
+            item_layout.addWidget(status_label)
+            
+            self.status_layout.addWidget(item_widget)
+        
+        self.status_layout.addStretch()
+        
+        # Обновляем видимость предупреждения
+        if hasattr(self, 'warning_label'):
+            self.warning_label.setVisible(not (self.cuda_found and self.winsdk_found and self.msvc_found))
 
-        # Функции для кнопок
-        def on_refresh():
-            logger.info(_("Обновление статуса зависимостей...", "Updating dependency status..."))
-            refresh_button.config(state=tk.DISABLED, text=_("Проверка...", "Checking..."))
-            dialog.update()
-            self._check_system_dependencies()
-            update_status_display()
-            refresh_button.config(state=tk.NORMAL, text=_("Обновить статус", "Refresh Status"))
-            logger.info(_("Статус обновлен.", "Status updated."))
-
-        def on_docs():
-            self.docs_manager.open_doc("installation_guide.html") 
-                
-        def on_skip():
-            self._dialog_choice = "skip"
-            dialog.destroy()
-
-        def on_continue():
-            self._dialog_choice = "continue"
-            dialog.destroy()
-
-        # Создание кнопок
-        continue_button = tk.Button(button_frame, text=_("Продолжить инициализацию", "Continue Initialization"), command=on_continue,
-                                    font=button_font, bg=status_found_color, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                    activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        continue_button.pack(side=tk.RIGHT, padx=(5, 0))
-
-        skip_button = tk.Button(button_frame, text=_("Пропустить инициализацию", "Skip Initialization"), command=on_skip,
-                                font=button_font, bg=button_bg, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        skip_button.pack(side=tk.RIGHT, padx=(5, 0))
-
-        docs_button = tk.Button(button_frame, text=_("Открыть документацию", "Open Documentation"), command=on_docs,
-                                font=button_font, bg=button_bg, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        docs_button.pack(side=tk.LEFT, padx=(0, 5))
-
-        refresh_button = tk.Button(button_frame, text=_("Обновить статус", "Refresh Status"), command=on_refresh,
-                                   font=button_font, bg=button_bg, fg=button_fg, relief=tk.FLAT, borderwidth=0,
-                                   activebackground=button_active_bg, activeforeground=button_fg, padx=10, pady=3, cursor="hand2")
-        refresh_button.pack(side=tk.LEFT, padx=(0, 5))
-
-
-        # Центрирование окна
-        dialog.update_idletasks() # Убедимся, что размеры окна рассчитаны
-        parent_win = self.parent.root if self.parent and hasattr(self.parent, 'root') else None
-        if parent_win and parent_win.winfo_exists():
-            # Центрируем относительно родительского окна
-            parent_x = parent_win.winfo_x()
-            parent_y = parent_win.winfo_y()
-            parent_width = parent_win.winfo_width()
-            parent_height = parent_win.winfo_height()
-            dialog_width = dialog.winfo_width()
-            dialog_height = dialog.winfo_height()
-            x = parent_x + (parent_width // 2) - (dialog_width // 2)
-            y = parent_y + (parent_height // 2) - (dialog_height // 2)
-            dialog.geometry(f"+{x}+{y}")
-        else:
-            # Центрируем относительно экрана
-             screen_width = dialog.winfo_screenwidth()
-             screen_height = dialog.winfo_screenheight()
-             dialog_width = dialog.winfo_width()
-             dialog_height = dialog.winfo_height()
-             x = (screen_width // 2) - (dialog_width // 2)
-             y = (screen_height // 2) - (dialog_height // 2)
-             dialog.geometry(f'+{x}+{y}')
-
-
-        # Делаем окно модальным
-        dialog.grab_set() # Перехватываем ввод
-        dialog.wait_window() # Ждем закрытия окна
-
-        return self._dialog_choice # Возвращаем выбор пользователя
+    def _on_refresh_status(self):
+        """Обработчик кнопки обновления статуса"""
+        logger.info(_("Обновление статуса зависимостей...", "Updating dependency status..."))
+        self._check_system_dependencies()
+        self._update_status_display()
+        logger.info(_("Статус обновлен.", "Status updated."))
 
     def _uninstall_component(self, component_name: str, main_package_to_remove: str):
-        gui_elements = self._create_action_window(title=f"Удаление {component_name}", initial_status=f"Удаление {main_package_to_remove}...")
-        if not gui_elements: return False
+        gui_elements = self._create_action_window(
+            title=f"Удаление {component_name}", 
+            initial_status=f"Удаление {main_package_to_remove}..."
+        )
+        if not gui_elements: 
+            return False
         
-        installer = PipInstaller(script_path=r"libs\python\python.exe", libs_path="Lib", update_status=gui_elements["update_status"], update_log=gui_elements["update_log"], progress_window=gui_elements["window"])
+        installer = PipInstaller(
+            script_path=r"libs\python\python.exe", 
+            libs_path="Lib", 
+            update_status=gui_elements["update_status"], 
+            update_log=gui_elements["update_log"], 
+            progress_window=gui_elements["window"]
+        )
         
-        uninstall_success = installer.uninstall_packages([main_package_to_remove], description=f"Удаление {main_package_to_remove}...")
+        uninstall_success = installer.uninstall_packages(
+            [main_package_to_remove], 
+            description=f"Удаление {main_package_to_remove}..."
+        )
         
         if uninstall_success:
             cleanup_success = self._cleanup_orphans(installer, gui_elements["update_log"])
@@ -1285,7 +1226,7 @@ class LocalVoice:
         else:
             gui_elements["update_status"](f"Ошибка удаления {main_package_to_remove}")
 
-        gui_elements["window"].after(3000, gui_elements["window"].destroy)
+        QTimer.singleShot(3000, gui_elements["window"].close)
         return uninstall_success
 
     def _cleanup_orphans(self, installer: PipInstaller, update_log_func) -> bool:

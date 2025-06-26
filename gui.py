@@ -43,7 +43,7 @@ from utils.PipInstaller import PipInstaller
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QTextEdit, QPushButton, QLabel, QScrollArea, QFrame,
                              QSplitter, QMessageBox, QComboBox, QCheckBox, QDialog,
-                             QProgressBar, QTextBrowser)
+                             QProgressBar, QTextBrowser, QVBoxLayout )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QPixmap, QIcon
 
@@ -1770,11 +1770,14 @@ class ChatGUI(QMainWindow):
 
     def update_local_voice_combobox(self):
         """Обновляет комбобокс списком установленных локальных моделей и статус инициализации."""
-        if not hasattr(self, 'local_voice_combobox') or not self.local_voice_combobox:
+        if not hasattr(self, 'local_voice_combobox') or self.local_voice_combobox is None:
+            logger.info(self.local_voice_combobox)
+            logger.warning("update_local_voice_combobox: виджет local_voice_combobox не найден.")
             return
 
         installed_models_names = [model["name"] for model in LOCAL_VOICE_MODELS if
                                   self.local_voice.is_model_installed(model["id"])]
+        logger.info(f'Доступные модели: {installed_models_names}')
         
         current_items = [self.local_voice_combobox.itemText(i) for i in range(self.local_voice_combobox.count())]
         
@@ -1862,16 +1865,31 @@ class ChatGUI(QMainWindow):
                     self.current_local_voice_id = new_model_id
                     self.update_local_voice_combobox()
 
+            # Создаем отдельное окно QDialog
+            from PyQt6.QtWidgets import QDialog
             install_dialog = QDialog(self)
             install_dialog.setWindowTitle(_("Управление локальными моделями", "Manage Local Models"))
+            install_dialog.setModal(False)  # Делаем немодальным
+            install_dialog.resize(875, 800)
             
-            VoiceModelSettingsWindow(
-                master=install_dialog,
+            # Создаем layout для диалога
+            dialog_layout = QVBoxLayout(install_dialog)
+            dialog_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Создаем виджет настроек моделей
+            settings_widget = VoiceModelSettingsWindow(
+                master=None,  # Не передаем родителя
                 config_dir=config_dir,
                 on_save_callback=on_save_callback,
                 local_voice=self.local_voice,
                 check_installed_func=self.check_module_installed,
             )
+            
+            # Добавляем виджет в диалог
+            dialog_layout.addWidget(settings_widget)
+            
+            # Показываем диалог
+            install_dialog.show()
             
         except ImportError:
             logger.error("Не найден модуль voice_model_settings.py. Установка моделей недоступна.")

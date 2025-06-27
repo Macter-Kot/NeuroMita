@@ -1336,7 +1336,216 @@ class ChatGUI(QMainWindow):
             self.model.current_character_to_change = value
             self.model.check_change_current_character()
 
-        # ... остальной код обработчиков остается без изменений ...
+        elif key == "NM_API_MODEL":
+            self.model.api_model = value.strip()
+        elif key == "NM_API_KEY":
+            self.model.api_key = value.strip()
+        elif key == "NM_API_URL":
+            self.model.api_url = value.strip()
+        elif key == "NM_API_REQ":
+            self.model.makeRequest = bool(value)
+        elif key == "gpt4free_model":
+            self.model.gpt4free_model = value.strip()
+
+
+        elif key == "MODEL_MAX_RESPONSE_TOKENS":
+            self.model.max_response_tokens = int(value)
+        elif key == "MODEL_TEMPERATURE":
+            self.model.temperature = float(value)
+        elif key == "MODEL_PRESENCE_PENALTY":
+            self.model.presence_penalty = float(value)
+        elif key == "MODEL_FREQUENCY_PENALTY":
+            self.model.frequency_penalty = float(value)
+        elif key == "MODEL_LOG_PROBABILITY":
+            self.model.log_probability = float(value)
+        elif key == "MODEL_TOP_K":
+            self.model.top_k = int(value)
+        elif key == "MODEL_TOP_P":
+            self.model.top_p = float(value)
+        elif key == "MODEL_THOUGHT_PROCESS":
+            self.model.thinking_budget = float(value)
+
+
+
+        elif key == "MODEL_MESSAGE_LIMIT":
+            self.model.memory_limit = int(value)
+        elif key == "MODEL_MESSAGE_ATTEMPTS_COUNT":
+            self.model.max_request_attempts = int(value)
+        elif key == "MODEL_MESSAGE_ATTEMPTS_TIME":
+            self.model.request_delay = float(value)
+
+        elif key == "MIC_ACTIVE":
+            if bool(value):
+                # Запускаем распознавание, если оно активировано
+                SpeechRecognition.speach_recognition_start(self.device_id, self.loop)
+                self.mic_recognition_active.set(True)
+            else:
+                # Останавливаем распознавание, если оно деактивировано
+                SpeechRecognition.speach_recognition_stop()
+                self.mic_recognition_active.set(False)
+            self.update_status_colors()
+
+        elif key == "ENABLE_SCREEN_ANALYSIS":
+            if bool(value):
+                self.start_screen_capture_thread()
+            else:
+                self.stop_screen_capture_thread()
+        elif key == "ENABLE_CAMERA_CAPTURE":
+            if bool(value):
+                self.start_camera_capture_thread()
+            else:
+                self.stop_camera_capture_thread()
+        elif key in ["SCREEN_CAPTURE_INTERVAL", "SCREEN_CAPTURE_QUALITY", "SCREEN_CAPTURE_FPS",
+                     "SCREEN_CAPTURE_HISTORY_LIMIT", "SCREEN_CAPTURE_TRANSFER_LIMIT", "SCREEN_CAPTURE_WIDTH",
+                     "SCREEN_CAPTURE_HEIGHT"]:
+            # Если поток захвата экрана запущен, перезапускаем его с новыми настройками
+            if self.screen_capture_instance and self.screen_capture_instance.is_running():
+                logger.info(f"Настройка захвата экрана '{key}' изменена на '{value}'. Перезапускаю поток захвата.")
+                self.stop_screen_capture_thread()
+                self.start_screen_capture_thread()
+            else:
+                logger.info(
+                    f"Настройка захвата экрана '{key}' изменена на '{value}'. Поток захвата не активен, изменения будут применены при следующем запуске.")
+        elif key == "SEND_IMAGE_REQUESTS":
+            if bool(value):
+                self.start_image_request_timer()
+            else:
+                self.stop_image_request_timer()
+        elif key == "IMAGE_REQUEST_INTERVAL":
+            if self.image_request_timer_running:
+                logger.info(f"Настройка интервала запросов изображений изменена на '{value}'. Перезапускаю таймер.")
+                self.stop_image_request_timer()
+                self.start_image_request_timer()
+            else:
+                logger.info(
+                    f"Настройка интервала запросов изображений изменена на '{value}'. Таймер не активен, изменения будут применены при следующем запуске.")
+        elif key in ["EXCLUDE_GUI_WINDOW", "EXCLUDE_WINDOW_TITLE"]:
+            # Получаем текущие значения настроек
+            exclude_gui = self.settings.get("EXCLUDE_GUI_WINDOW", False)
+            exclude_title = self.settings.get("EXCLUDE_WINDOW_TITLE", "")
+
+            hwnd_to_pass = None
+            if exclude_gui:
+                # Если включено исключение GUI, получаем HWND текущего окна Tkinter
+                hwnd_to_pass = self.root.winfo_id()
+                logger.info(f"Получен HWND окна GUI для исключения: {hwnd_to_pass}")
+            elif exclude_title:
+                # Если указан заголовок, пытаемся найти HWND по заголовку
+                try:
+                    hwnd_to_pass = win32gui.FindWindow(None, exclude_title)
+                    if hwnd_to_pass:
+                        logger.info(f"Найден HWND для заголовка '{exclude_title}': {hwnd_to_pass}")
+                    else:
+                        logger.warning(f"Окно с заголовком '{exclude_title}' не найдено.")
+                except Exception as e:
+                    logger.error(f"Ошибка при поиске окна по заголовку '{exclude_title}': {e}")
+
+            # Передаем параметры в ScreenCapture
+            if self.screen_capture_instance:
+                self.screen_capture_instance.set_exclusion_parameters(hwnd_to_pass, exclude_title,
+                                                                      exclude_gui or bool(exclude_title))
+                logger.info(
+                    f"Параметры исключения окна переданы в ScreenCapture: exclude_gui={exclude_gui}, exclude_title='{exclude_title}'")
+
+            # Если поток захвата экрана запущен, перезапускаем его с новыми настройками
+            if self.screen_capture_instance and self.screen_capture_instance.is_running():
+                logger.info(f"Настройка исключения окна '{key}' изменена на '{value}'. Перезапускаю поток захвата.")
+                self.stop_screen_capture_thread()
+                self.start_screen_capture_thread()
+            else:
+                logger.info(
+                    f"Настройка исключения окна '{key}' изменена на '{value}'. Поток захвата не активен, изменения будут применены при следующем запуске.")
+        elif key == "RECOGNIZER_TYPE":
+            # Останавливаем текущее распознавание
+            SpeechRecognition.active = False
+            # Даем время на завершение текущего потока
+            time.sleep(0.1)  # Небольшая задержка
+
+            # Устанавливаем новый тип распознавателя
+            SpeechRecognition.set_recognizer_type(value)
+
+            # Перезапускаем распознавание с новым типом
+            if self.settings.get("MIC_ACTIVE", False):
+                SpeechRecognition.active = True  # Активируем снова, только если был активен
+                SpeechRecognition.speach_recognition_start(self.device_id, self.loop)
+            microphone_settings.update_vosk_model_visibility(self, value)
+        elif key == "VOSK_MODEL":
+            SpeechRecognition.vosk_model = value
+        elif key == "SILENCE_THRESHOLD":
+            SpeechRecognition.SILENCE_THRESHOLD = float(value)
+        elif key == "SILENCE_DURATION":
+            SpeechRecognition.SILENCE_DURATION = float(value)
+        elif key == "VOSK_PROCESS_INTERVAL":
+            SpeechRecognition.VOSK_PROCESS_INTERVAL = float(value)
+        elif key == "IMAGE_QUALITY_REDUCTION_ENABLED":
+            self.model.image_quality_reduction_enabled = bool(value)
+
+            self.model.image_quality_reduction_start_index = int(value)
+        elif key == "IMAGE_QUALITY_REDUCTION_USE_PERCENTAGE":
+            self.model.image_quality_reduction_use_percentage = bool(value)
+        elif key == "IMAGE_QUALITY_REDUCTION_MIN_QUALITY":
+            self.model.image_quality_reduction_min_quality = int(value)
+        elif key == "IMAGE_QUALITY_REDUCTION_DECREASE_RATE":
+            self.model.image_quality_reduction_decrease_rate = int(value)
+
+        elif key == "ENABLE_HISTORY_COMPRESSION_ON_LIMIT":
+            self.model.enable_history_compression_on_limit = bool(value)
+        elif key == "ENABLE_HISTORY_COMPRESSION_PERIODIC":
+            self.model.enable_history_compression_periodic = bool(value)
+        elif key == "HISTORY_COMPRESSION_OUTPUT_TARGET":
+            self.model.history_compression_output_target = str(value)
+        elif key == "HISTORY_COMPRESSION_PERIODIC_INTERVAL":
+            self.model.history_compression_periodic_interval = int(value)
+        elif key == "HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS":
+            self.model.history_compression_min_messages_to_compress = float(value)
+
+            # Handle chat specific settings keys
+        if key == "CHAT_FONT_SIZE":
+            try:
+                font_size = int(value)
+                # Обновляем размер шрифта для всех тегов, использующих "Arial"
+                for tag_name in self.chat_window.tag_names():
+                    current_font = self.chat_window.tag_cget(tag_name, "font")
+                    if "Arial" in current_font:
+                        # Разбираем текущий шрифт, чтобы сохранить стиль (bold, italic)
+                        font_parts = current_font.split()
+                        new_font_parts = ["Arial", str(font_size)]
+                        if "bold" in font_parts:
+                            new_font_parts.append("bold")
+                        if "italic" in font_parts:
+                            new_font_parts.append("italic")
+                        self.chat_window.tag_configure(tag_name, font=(" ".join(new_font_parts)))
+                logger.info(f"Размер шрифта чата изменен на: {font_size}")
+            except ValueError:
+                logger.warning(f"Неверное значение для размера шрифта чата: {value}")
+            except Exception as e:
+                logger.error(f"Ошибка при изменении размера шрифта чата: {e}")
+        elif key == "SHOW_CHAT_TIMESTAMPS":
+            # Перезагружаем историю чата, чтобы применить/убрать метки времени
+            self.load_chat_history()
+            logger.info(f"Настройка 'Показывать метки времени' изменена на: {value}. История чата перезагружена.")
+        elif key == "MAX_CHAT_HISTORY_DISPLAY":
+            # Перезагружаем историю чата, чтобы применить новое ограничение
+            self.load_chat_history()
+            logger.info(f"Настройка 'Макс. сообщений в истории' изменена на: {value}. История чата перезагружена.")
+        elif key == "HIDE_CHAT_TAGS":
+            # Перезагружаем историю чата, чтобы применить/убрать скрытие тегов
+            self.load_chat_history()
+            logger.info(f"Настройка 'Скрывать теги' изменена на: {value}. История чата перезагружена.")
+
+
+        elif key == "SHOW_TOKEN_INFO":
+            self.update_token_count()
+        elif key == "TOKEN_COST_INPUT":
+            self.model.token_cost_input = float(value)
+            self.update_token_count()
+        elif key == "TOKEN_COST_OUTPUT":
+            self.model.token_cost_output = float(value)
+            self.update_token_count()
+        elif key == "MAX_MODEL_TOKENS":
+            self.model.max_model_tokens = int(value)
+            self.update_token_count()
+
 
     def create_settings_section(self, parent_layout, title, settings_config):
         return guiTemplates.create_settings_section(self, parent_layout, title, settings_config)

@@ -1,0 +1,18 @@
+ 
+ 
+Поиск любого активного объекта (Только со всеми активными родителями!)
+ MenuObject = GameObject.Find("MenuGame");
+
+Поиск ребенка объекта, внимание, не нужно его самого в строку включать (В данном случае world не нужен)! Игнорирует неактивность
+ CornerSofa = MitaCore.worldHouse.Find("House/HouseGameNormal Tamagotchi/HouseGame Tamagotchi/House/Main/CornerSofa");
+
+Найти в конретной сцене
+ MitaCore.worldTogether = FindObjectInScene(scene.name, "World");
+
+Копирование объекта 
+ HeartNeonTemplate = GameObject.Instantiate(MitaCore.worldTogether.Find("Acts/Mita/MitaPerson Mita/Armature/Hips/Spine/Chest/Neck2/Neck1/Head/Right Eye/HeartNeon").gameObject);
+
+Копировать компоненты не получится, но возможно копировать GameObject к которому они прикреплены. Часть полей может от этого сломаться.
+
+Перенести в DontDestroyOnLoad, нужно чтобы не было родителей. Можно просто изменить родителя на кого-то в DontDestroyOnLoad, тоже перенесет (также работает и между сценами)
+GameObject.DontDestroyOnLoad(ScaryFaceTemplate);

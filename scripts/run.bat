@@ -1,3 +1,1 @@
-
 libs\python\python.exe NeuroMita.pyz
-pause

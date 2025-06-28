@@ -1,16 +1,21 @@
-import cv2
+
 from guiTemplates import create_settings_section
 from utils import getTranslationVariant as _
 from Logger import logger
 
 def get_camera_list():
-    camera_list = []
-    for i in range(5):
-        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-        if cap.isOpened():
-            camera_list.append(f"Camera {i}")
-            cap.release()
-    return camera_list if camera_list else [_("Камер не найдено", "No cameras found")]
+    try:
+        import cv2
+        camera_list = []
+        for i in range(5):
+            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                camera_list.append(f"Camera {i}")
+                cap.release()
+        return camera_list if camera_list else [_("Камер не найдено", "No cameras found")]
+    except ImportError as ex:
+        logger.warning('OpenCV не установлен: камеры не обнаружены.')
+        return [_("Камер не найдено", "No cameras found")]
 
 def update_camera_list(gui):
     if hasattr(gui, 'camera_combobox'):

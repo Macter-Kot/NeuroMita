@@ -47,7 +47,6 @@ pydantic==2.10.6
 pydantic-core==2.27.2
 pygame==2.6.1
 python-dateutil==2.9.0.post0
-pywin32-ctypes
 regex==2024.11.6
 requests==2.32.3
 rsa==4.9
@@ -71,14 +70,13 @@ dotenv
 onnxruntime
 # atm4x reqs
 
-pywin32
 pyworld==0.3.5
 numpy==1.26.0
 httpx==0.27.0
 # transformers
+pywin32
 py7zr
 uvicorn
 google-cloud-storage
 google-api-core
-pywin32
 pyqt6

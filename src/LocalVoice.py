@@ -48,6 +48,38 @@ def getTranslationVariant(ru_str, en_str=""):
 
 _ = getTranslationVariant
 
+
+# ──────────────────────────────────────────────────────────────
+#  ДОБАВИТЬ в начало файла (после других импортов Qt)
+from PyQt6.QtCore import QMetaObject, QThread, Qt, QObject
+# ──────────────────────────────────────────────────────────────
+
+# ===== 1.  Утилита для «безопасного» вызова GUI из воркера =====
+def _call_in_main_thread(fn, *args, **kwargs):
+    """
+    Гарантирует выполнение fn в GUI-потоке и возвращает его результат.
+    Используется для показа диалоговых окон из фоновых потоков.
+    """
+    app = QApplication.instance()
+    if QThread.currentThread() == app.thread():
+        # Уже в GUI-потоке ─ вызываем напрямую
+        return fn(*args, **kwargs)
+
+    # Хранилище для результата
+    ret_holder = {}
+
+    def _wrapper():
+        ret_holder["result"] = fn(*args, **kwargs)
+
+    # BlockingQueuedConnection блокирует вызывающий поток,
+    # пока _wrapper не отработает в GUI-потоке.
+    QMetaObject.invokeMethod(
+        app,                    # объект-приёмник
+        _wrapper,               # вызываемая функция
+        Qt.ConnectionType.BlockingQueuedConnection
+    )
+    return ret_holder.get("result")
+
 class LocalVoice:
     def __init__(self, parent=None):
         self.parent = parent
@@ -752,7 +784,6 @@ class LocalVoice:
 
                     if user_choice == "retry" and retries_left > 0:
                         update_log(_("Пользователь выбрал повторить попытку импорта Triton...", "User chose to retry Triton import..."))
-                        retries_left -= 1
                         check_successful = False
                         continue
                     else:
@@ -762,6 +793,14 @@ class LocalVoice:
                             update_log(_("Пользователь закрыл окно предупреждения VC Redist, не решая проблему.", "User closed the VC Redist warning window without resolving the issue."))
                         check_successful = False
                         break
+                else:
+                    check_successful = not import_error_occurred and not dependencies_check_error
+                    if not check_successful:
+                        if import_error_occurred:
+                            update_log(_("Проверка зависимостей не удалась из-за ошибки импорта (не DLL).", "Dependency check failed due to import error (not DLL)."))
+                        elif dependencies_check_error:
+                            update_log(_("Проверка зависимостей не удалась из-за ошибки внутри _check_system_dependencies.", "Dependency check failed due to an error within _check_system_dependencies."))
+                    break 
 
             skip_init = False
             user_action_deps = None
@@ -1096,23 +1135,91 @@ class LocalVoice:
             logger.info(f"Ошибка при загрузке настроек модели {model_id}: {e}")
             return {}
 
-    async def convert_wav_to_stereo(self, input_path, output_path, atempo: float = 1, volume: str = "1.0", pitch=0):
-        try:
-            if not os.path.exists(input_path):
-                logger.info(f"Файл {input_path} не найден при попытке конвертации.")
-                return None
-            (
-                ffmpeg.input(input_path)
-                .filter('rubberband', semitones=pitch, pitchq='quality') 
-                .filter('atempo', atempo)
-                .filter('volume', volume=volume)  
-                .output(output_path, format="wav", acodec="pcm_s16le", ar="44100", ac=2)
-                .run(cmd=["ffmpeg", "-nostdin"], capture_stdout=True, capture_stderr=True)
+    def convert_wav_to_stereo(
+        self,
+        input_path      : str,
+        output_path     : str,
+        *,
+        atempo : float  = 1.0,
+        volume : str    = "1.0",
+        pitch  : float  = 0.0,
+        show_call_stack: bool = False,
+        save_err_to    : str | None = None   # путь для сохранения stderr
+    ) -> str | None:
+        """
+        Конвертирует WAV → стерео WAV.
+        При ошибке:
+        •  логирует полный traceback,
+        •  выводит stderr FFmpeg,
+        •  (опция) записывает stderr в файл.
+        """
+
+        if show_call_stack:
+            logger.debug(
+                "[convert_wav_to_stereo] call-stack:\n" +
+                "".join(traceback.format_stack(limit=15))
             )
+
+        if not os.path.exists(input_path):
+            err = f"Файл не найден: {input_path}"
+            logger.error(err)
+            raise FileNotFoundError(err)
+
+        try:
+            pitch_ratio = 2 ** (pitch / 12.0)
+            # ───────── запуск FFmpeg ─────────
+            out, err = (
+                ffmpeg
+                .input(input_path)
+                .filter("rubberband", pitch=pitch_ratio, pitchq="quality")
+                .filter("atempo", atempo)
+                .filter("volume", volume=volume)
+                .output(
+                    output_path,
+                    format="wav",
+                    acodec="pcm_s16le",
+                    ar="44100",
+                    ac=2
+                )
+                .run(
+                    cmd=["ffmpeg", "-nostdin"],
+                    capture_stdout=True,
+                    capture_stderr=True,
+                    overwrite_output=True
+                )
+            )
+            # Можно залогировать вывод, если нужен
+            logger.debug(f"FFmpeg stdout:\n{out.decode(errors='ignore')}")
             return output_path
-        except Exception as e:
-            logger.info(f"Ошибка при конвертации WAV в стерео: {e}")
-            return None
+
+        except ffmpeg.Error as fe:
+            # Здесь уже полноценный трейс + stderr FFmpeg
+            tb = traceback.format_exc()
+            ff_err = fe.stderr.decode(errors="ignore") if fe.stderr else "«stderr пуст»"
+
+            logger.error(
+                "[convert_wav_to_stereo] FFmpeg ERROR\n" +
+                "-"*60 + "\n" +
+                ff_err + "\n" +
+                "-"*60 + "\n" +
+                tb
+            )
+
+            # Сохраняем stderr на диск (по желанию)
+            if save_err_to:
+                try:
+                    with open(save_err_to, "w", encoding="utf-8", errors="ignore") as f:
+                        f.write(ff_err)
+                    logger.info(f"stderr FFmpeg сохранён в {save_err_to}")
+                except Exception as save_e:
+                    logger.warning(f"Не удалось сохранить stderr: {save_e}")
+
+            raise   # пробрасываем наружу – пусть вызывающий решает, что делать
+
+        except Exception:
+            # Любая другая ошибка
+            logger.error("[convert_wav_to_stereo] Unexpected error:\n" + traceback.format_exc())
+            raise
 
     def _check_system_dependencies(self):
         """Проверяет наличие CUDA, Windows SDK и MSVC с помощью triton.
@@ -1193,8 +1300,7 @@ class LocalVoice:
             dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
             dialog.setWindowTitle(title)
             dialog.setFixedSize(700, 400)
-            dialog.setModal(True)
-            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            dialog.setWindowFlags(dialog.windowFlags())
             
             # Применяем стили
             dialog.setStyleSheet("""
@@ -1365,6 +1471,9 @@ class LocalVoice:
 
     def _show_vc_redist_warning_dialog(self):
         """Отображает диалоговое окно с предупреждением об установке VC Redist"""
+        if QThread.currentThread() != QApplication.instance().thread():
+            return _call_in_main_thread(self._show_vc_redist_warning_dialog)
+        
         dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
         dialog.setWindowTitle(_("⚠️ Ошибка загрузки Triton", "⚠️ Triton Load Error"))
         dialog.setModal(True)
@@ -1433,10 +1542,13 @@ class LocalVoice:
 
     def _show_triton_init_warning_dialog(self):
         """Отображает диалоговое окно с предупреждением о зависимостях Triton."""
+        if QThread.currentThread() != QApplication.instance().thread():
+            return _call_in_main_thread(self._show_triton_init_warning_dialog)
+        
         dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
         dialog.setWindowTitle(_("⚠️ Зависимости Triton", "⚠️ Triton Dependencies"))
         dialog.setModal(True)
-        dialog.setFixedSize(600, 350)
+        dialog.setFixedSize(700, 350)
         
         dialog.setStyleSheet("""
             QDialog { background-color: #1e1e1e; }

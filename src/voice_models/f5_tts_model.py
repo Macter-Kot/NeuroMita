@@ -131,7 +131,7 @@ class F5TTSModel(IVoiceModel):
                 return None
             
             stereo_output_path = output_path.replace("_raw", "_stereo")
-            converted_file = await self.parent.convert_wav_to_stereo(output_path, stereo_output_path)
+            converted_file = self.parent.convert_wav_to_stereo(output_path, stereo_output_path)
 
             if converted_file and os.path.exists(converted_file):
                 final_output_path = stereo_output_path

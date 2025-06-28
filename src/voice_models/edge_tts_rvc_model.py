@@ -215,7 +215,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 return None
             
             stereo_output_file = output_file_rvc.replace(".wav", "_stereo.wav")
-            converted_file = await self.parent.convert_wav_to_stereo(output_file_rvc, stereo_output_file, atempo=1.0, pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0))
+            converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, stereo_output_file, atempo=1.0, pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0))
 
             if converted_file and os.path.exists(converted_file):
                 final_output_path = stereo_output_file
@@ -329,7 +329,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             # For VinerX: в этом файле я использую ffmpeg rubberband питчинг - почитай про него. Но при прослушивании голос почему-то не меняется у шортхейр миты. Надо это посмотреть и исправить
             # Что касается файла: он создаётся правильно, но воспроизводится незапитченная версия почему то в интерфейсе (в игре не тестил). Вот команда, которая хорошо отрабатывает: ffmpeg -i 05fbd3d5.wav -af "rubberband=pitch=1.3" out.mp3
             # Посмотри её, если сможешь, исправь, пожалуйста. Это также и про silero/edge tts
-            converted_file = await self.parent.convert_wav_to_stereo(output_file_rvc, stereo_output_file, atempo=1.0, pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0))
+            converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, stereo_output_file, atempo=1.0, pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0))
 
 
             if converted_file and os.path.exists(converted_file):

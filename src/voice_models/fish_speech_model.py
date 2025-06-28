@@ -19,8 +19,6 @@ class FishSpeechModel(IVoiceModel):
         super().__init__(parent, model_id)
         self.fish_speech_module = None
         self.current_fish_speech = None
-        logger.info('Тут из инита вызываюсь 1 раз')
-        self.i = 0
 
     def _load_module(self):
         try:
@@ -35,35 +33,24 @@ class FishSpeechModel(IVoiceModel):
         return "Fish Speech / +RVC"
     def is_installed(self) -> bool:
 
-        onnxruntime_is_imported = 'onnxruntime' in sys.modules or 'onnxruntime-directml' in sys.modules or 'onnx' in sys.modules or 'onnxruntime-gpu' in sys.modules or 'msvc-runtime' in sys.modules
-        logger.info(
-            f"Проверка статуса onnxruntime: "
-            f"{'УЖЕ ИМПОРТИРОВАН' if onnxruntime_is_imported else 'ЕЩЕ НЕ ИМПОРТИРОВАН'}"
-        )
-        import onnxruntime
-        onnxruntime_is_imported = 'onnxruntime' in sys.modules or 'onnxruntime-directml' in sys.modules or 'onnx' in sys.modules or 'onnxruntime-gpu' in sys.modules or 'msvc-runtime' in sys.modules
-        logger.info(
-            f"Проверка статуса onnxruntime: "
-            f"{'УЖЕ ИМПОРТИРОВАН' if onnxruntime_is_imported else 'ЕЩЕ НЕ ИМПОРТИРОВАН'}"
-        )
-        self.i+= 1
-        logger.info(f'is_installed ФИш спич проверка, ну че за дела: {self.i}')
         self._load_module()
         if self.model_id in ["medium+", "medium+low"]:
             return self.fish_speech_module is not None and self.parent.is_triton_installed()
         return self.fish_speech_module is not None
 
     def install(self) -> bool:
-        success = self.parent.download_fish_speech_internal()
-        if not success:
-            return False
+        if self.fish_speech_module is None:
+            success = self.parent.download_fish_speech_internal()
+            if not success:
+                return False
             
         if self.model_id in ["medium+", "medium+low"]:
             logger.info(f"Модель {self.model_id} требует Triton. Начинаю установку Triton...")
-            triton_success = self.parent.download_triton_internal()
-            if not triton_success:
-                logger.warning("Fish Speech был установлен, но установка Triton не удалась.")
-                return True 
+            if not self.parent.is_triton_installed():
+                triton_success = self.parent.download_triton_internal()
+                if not triton_success:
+                    logger.warning("Fish Speech был установлен, но установка Triton не удалась.")
+                    return True 
         
         return True
 
@@ -167,7 +154,7 @@ class FishSpeechModel(IVoiceModel):
                 return None
 
             stereo_output_path = raw_output_path.replace("_raw", "_stereo")
-            converted_file = await self.parent.convert_wav_to_stereo(raw_output_path, stereo_output_path, volume="1.5")
+            converted_file = self.parent.convert_wav_to_stereo(raw_output_path, stereo_output_path, volume="1.5")
             
             processed_output_path = stereo_output_path if converted_file and os.path.exists(converted_file) else raw_output_path
             if processed_output_path == stereo_output_path:

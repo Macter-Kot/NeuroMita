@@ -1,6 +1,7 @@
 
 import os
 import webbrowser
+import sys
 
 # --- HTML Контент Документации ---
 _INSTALLATION_GUIDE_HTML = """
@@ -138,14 +139,13 @@ _INSTALLATION_GUIDE_HTML = """
 
 # _OTHER_DOC_HTML = """..."""
 
-
 class DocsManager:
     """
     Управляет созданием, хранением и открытием HTML файлов документации.
     """
     def __init__(self):
         # Определяем путь к папке 'docs', где находится этот файл
-        self.docs_dir = os.path.dirname(os.path.abspath(__file__))
+        self.docs_dir = os.path.dirname(os.path.abspath(sys.executable))
         
         # Словарь для хранения контента документации {имя_файла: html_строка}
         self.doc_contents = {

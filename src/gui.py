@@ -1990,45 +1990,50 @@ class ChatGUI(QMainWindow):
             logger.warning("update_local_voice_combobox: виджет local_voice_combobox не найден.")
             return
 
-        installed_models_names = [model["name"] for model in LOCAL_VOICE_MODELS if
-                                  self.local_voice.is_model_installed(model["id"])]
-        logger.info(f'Доступные модели: {installed_models_names}')
-        
-        current_items = [self.local_voice_combobox.itemText(i) for i in range(self.local_voice_combobox.count())]
-        
-        if installed_models_names != current_items:
-            self.local_voice_combobox.clear()
-            self.local_voice_combobox.addItems(installed_models_names)
-            logger.info(f"Обновлен список локальных моделей: {installed_models_names}")
+        self.local_voice_combobox.blockSignals(True)
 
-        current_model_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
-        current_model_name = ""
-        if current_model_id:
-            for model in LOCAL_VOICE_MODELS:
-                if model["id"] == current_model_id:
-                    current_model_name = model["name"]
-                    break
+        try:
+            installed_models_names = [model["name"] for model in LOCAL_VOICE_MODELS if
+                                      self.local_voice.is_model_installed(model["id"])]
+            logger.info(f'Доступные модели: {installed_models_names}')
 
-        if current_model_name and current_model_name in installed_models_names:
-            if self.local_voice_combobox.currentText() != current_model_name:
-                self.local_voice_combobox.setCurrentText(current_model_name)
-        elif installed_models_names:
-            if self.local_voice_combobox.currentText() != installed_models_names[0]:
-                self.local_voice_combobox.setCurrentText(installed_models_names[0])
+            current_items = [self.local_voice_combobox.itemText(i) for i in range(self.local_voice_combobox.count())]
+
+            if installed_models_names != current_items:
+                self.local_voice_combobox.clear()
+                self.local_voice_combobox.addItems(installed_models_names)
+                logger.info(f"Обновлен список локальных моделей: {installed_models_names}")
+
+            current_model_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
+            current_model_name = ""
+            if current_model_id:
                 for model in LOCAL_VOICE_MODELS:
-                    if model["name"] == installed_models_names[0]:
-                        if self.settings.get("NM_CURRENT_VOICEOVER") != model["id"]:
-                            self.settings.set("NM_CURRENT_VOICEOVER", model["id"])
-                            self.settings.save_settings()
-                            self.current_local_voice_id = model["id"]
+                    if model["id"] == current_model_id:
+                        current_model_name = model["name"]
                         break
-        else:
-            if self.local_voice_combobox.currentText() != '':
-                self.local_voice_combobox.setCurrentText('')
-            if self.settings.get("NM_CURRENT_VOICEOVER") is not None:
-                self.settings.set("NM_CURRENT_VOICEOVER", None)
-                self.settings.save_settings()
-                self.current_local_voice_id = None
+
+            if current_model_name and current_model_name in installed_models_names:
+                if self.local_voice_combobox.currentText() != current_model_name:
+                    self.local_voice_combobox.setCurrentText(current_model_name)
+            elif installed_models_names:
+                if self.local_voice_combobox.currentText() != installed_models_names[0]:
+                    self.local_voice_combobox.setCurrentText(installed_models_names[0])
+                    for model in LOCAL_VOICE_MODELS:
+                        if model["name"] == installed_models_names[0]:
+                            if self.settings.get("NM_CURRENT_VOICEOVER") != model["id"]:
+                                self.settings.set("NM_CURRENT_VOICEOVER", model["id"])
+                                self.settings.save_settings()
+                                self.current_local_voice_id = model["id"]
+                            break
+            else:
+                if self.local_voice_combobox.currentText() != '':
+                    self.local_voice_combobox.setCurrentText('')
+                if self.settings.get("NM_CURRENT_VOICEOVER") is not None:
+                    self.settings.set("NM_CURRENT_VOICEOVER", None)
+                    self.settings.save_settings()
+                    self.current_local_voice_id = None
+        finally:
+            self.local_voice_combobox.blockSignals(False)
 
         self.update_local_model_status_indicator()
         self.check_triton_dependencies()

@@ -1,7 +1,7 @@
 # НейроМита v0.011
 Мод, в котором вам предстоит общаться с Митами управлямыми нейронными сетями. Сделано на Python и C# MelonMod.
 
-Translation (deepseek) [English readme](README_EN.md)
+Translation (deepseek) [English readme](docs/README_EN.md)
 
 Внимание, требуются c# unity разработчики (начинающие и выше), помощник аниматора, если что пишите сразу в лс дискорд vinerx!
 

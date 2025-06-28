@@ -9,7 +9,8 @@ import asyncio
 from telethon.tl.types import MessageMediaDocument, DocumentAttributeAudio
 from telethon.errors import SessionPasswordNeededError
 
-import tkinter as tk
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QPushButton, QMessageBox
+from PyQt6.QtCore import Qt, QEventLoop
 import platform
 
 from AudioConverter import AudioConverter
@@ -244,94 +245,85 @@ class TelegramBotHandler:
 
             # Проверяем, авторизован ли уже клиент
             if not await self.client.is_user_authorized():
-                # Создаем окно для ввода кода подтверждения
-                code_window = tk.Toplevel()
-                code_window.title("Подтверждение Telegram")
-                code_window.geometry("300x150")
-                code_window.resizable(False, False)
+                # Создаем диалог для ввода кода подтверждения
+                code_dialog = QDialog()
+                code_dialog.setWindowTitle("Подтверждение Telegram")
+                code_dialog.setFixedSize(300, 150)
+                code_dialog.setWindowFlags(code_dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
-                frame = tk.Frame(code_window)
-                frame.place(relx=0.5, rely=0.5, anchor="center")
+                layout = QVBoxLayout()
+                code_dialog.setLayout(layout)
 
-                code_var = tk.StringVar()
-
-                code_entry = tk.Entry(
-                    frame, textvariable=code_var, width=20, justify="center"
-                )
-                code_entry.pack(pady=10)
-                code_entry.focus()  # Устанавливаем фокус на поле ввода
+                code_entry = QLineEdit()
+                code_entry.setAlignment(Qt.AlignCenter)
+                code_entry.setPlaceholderText("Введите код подтверждения")
+                layout.addWidget(code_entry)
 
                 code_future = asyncio.Future()
 
                 def submit_code():
-                    if code_var.get().strip():  # Проверяем, что код не пустой
-                        code_future.set_result(code_var.get().strip())
-                        code_window.destroy()
+                    code = code_entry.text().strip()
+                    if code:
+                        code_future.set_result(code)
+                        code_dialog.accept()
                     else:
-                        tk.messagebox.showerror("Ошибка", "Введите код подтверждения")
+                        QMessageBox.critical(code_dialog, "Ошибка", "Введите код подтверждения")
 
-                def on_enter(event):
-                    submit_code()
+                submit_button = QPushButton("Подтвердить")
+                submit_button.clicked.connect(submit_code)
+                layout.addWidget(submit_button)
 
-                code_entry.bind("<Return>", on_enter)  # Добавляем обработку Enter
-
-                submit_button = tk.Button(
-                    frame,
-                    text="Подтвердить",
-                    command=submit_code,
-                    width=15,
-                    relief="flat",
-                )
-                submit_button.pack(pady=15)
+                # Обработка Enter
+                code_entry.returnPressed.connect(submit_code)
 
                 # Ждем код подтверждения
                 try:
                     await self.client.sign_in(phone=self.phone)
+                    
+                    # Показываем диалог в основном потоке
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, code_dialog.exec)
+                    
                     verification_code = await code_future
 
                     try:
                         await self.client.sign_in(phone=self.phone, code=verification_code)
                     except SessionPasswordNeededError:
                         # Если требуется пароль двухфакторной аутентификации
-                        password_window = tk.Toplevel()
-                        password_window.title("Двухфакторная аутентификация")
-                        password_window.geometry("300x150")
-                        password_window.resizable(False, False)
+                        password_dialog = QDialog()
+                        password_dialog.setWindowTitle("Двухфакторная аутентификация")
+                        password_dialog.setFixedSize(300, 150)
+                        password_dialog.setWindowFlags(password_dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
-                        frame = tk.Frame(password_window)
-                        frame.place(relx=0.5, rely=0.5, anchor="center")
+                        layout = QVBoxLayout()
+                        password_dialog.setLayout(layout)
 
-                        password_var = tk.StringVar()
-
-                        password_entry = tk.Entry(
-                            frame, textvariable=password_var, width=20, justify="center", show="*"
-                        )
-                        password_entry.pack(pady=10)
-                        password_entry.focus()
+                        password_entry = QLineEdit()
+                        password_entry.setAlignment(Qt.AlignCenter)
+                        password_entry.setEchoMode(QLineEdit.Password)
+                        password_entry.setPlaceholderText("Введите пароль")
+                        layout.addWidget(password_entry)
 
                         password_future = asyncio.Future()
 
                         def submit_password():
-                            if password_var.get().strip():
-                                password_future.set_result(password_var.get().strip())
-                                password_window.destroy()
+                            password = password_entry.text().strip()
+                            if password:
+                                password_future.set_result(password)
+                                password_dialog.accept()
                             else:
-                                tk.messagebox.showerror("Ошибка", "Введите пароль")
+                                QMessageBox.critical(password_dialog, "Ошибка", "Введите пароль")
 
-                        def on_enter_password(event):
-                            submit_password()
+                        submit_button = QPushButton("Подтвердить")
+                        submit_button.clicked.connect(submit_password)
+                        layout.addWidget(submit_button)
 
-                        password_entry.bind("<Return>", on_enter_password)
+                        # Обработка Enter
+                        password_entry.returnPressed.connect(submit_password)
 
-                        submit_button = tk.Button(
-                            frame,
-                            text="Подтвердить",
-                            command=submit_password,
-                            width=15,
-                            relief="flat",
-                        )
-                        submit_button.pack(pady=15)
-
+                        # Показываем диалог в основном потоке
+                        await loop.run_in_executor(None, password_dialog.exec_)
+                        
                         # Получаем пароль от пользователя
                         password = await password_future
                         await self.client.sign_in(password=password)

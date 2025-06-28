@@ -37,7 +37,7 @@ except Exception as e:
     logger.warning(f"{e}")
 import xml.dom
 
-if os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") != "0":
+if os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") != "1":
     import transformers.models.auto.modeling_auto
 import modulefinder
 import sunau

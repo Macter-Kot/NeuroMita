@@ -8,7 +8,7 @@ from Logger import logger
 from SettingsManager import SettingsManager, CollapsibleSection
 from chat_model import ChatModel
 from server import ChatServer
-# from Silero import TelegramBotHandler # ВРЕМЕННО УБРАЛ
+from Silero import TelegramBotHandler
 
 from pyqt_styles.styles import get_stylesheet
 import gettext
@@ -20,7 +20,7 @@ import glob
 import sounddevice as sd
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
 from utils.ffmpeg_installer import install_ffmpeg
-# from utils.ModelsDownloader import ModelsDownloader # ВРЕМЕННО УБРАЛ
+# from utils.ModelsDownloader import ModelsDownloader # ВРЕМЕННО УБРАЛ, пока новой ссылки не будет.
 
 import asyncio
 import threading
@@ -53,7 +53,7 @@ from ui.settings import (
     g4f_settings, gamemaster_settings, general_model_settings,
     language_settings, microphone_settings, screen_analysis_settings,
     token_settings, voiceover_settings, command_replacer_settings, history_compressor,
-    # prompt_catalogue_settings #  ВРЕМЕННО УБРАЛ
+    prompt_catalogue_settings
 )
 
 
@@ -593,7 +593,7 @@ class ChatGUI(QMainWindow):
         voiceover_settings.setup_voiceover_controls(self, settings_layout)
         microphone_settings.setup_microphone_controls(self, settings_layout)
         character_settings.setup_mita_controls(self, settings_layout)
-        #prompt_catalogue_settings.setup_prompt_catalogue_controls(self, settings_layout) # ВРЕМЕННО УБРАЛ
+        prompt_catalogue_settings.setup_prompt_catalogue_controls(self, settings_layout)
         self.setup_debug_controls(settings_layout)
         self.setup_common_controls(settings_layout)
         gamemaster_settings.setup_game_master_controls(self, settings_layout)
@@ -1703,16 +1703,22 @@ class ChatGUI(QMainWindow):
         model_id = model["id"]
         model_name = model["name"]
 
-        downloader = ModelsDownloader(target_dir=".")
-        logger.info(f"Проверка/загрузка файлов для '{model_name}'...")
+        # downloader = ModelsDownloader(target_dir=".")
+        # logger.info(f"Проверка/загрузка файлов для '{model_name}'...")
 
-        models_are_ready = downloader.download_models_if_needed(self)
+        # models_are_ready = downloader.download_models_if_needed(self)
 
-        if not models_are_ready:
+        # if not models_are_ready:
+        #     logger.warning(f"Файлы моделей для '{model_name}' не готовы (загрузка не удалась или отменена).")
+        #     QMessageBox.critical(self, _("Ошибка", "Error"),
+        #         _("Не удалось подготовить файлы моделей. Инициализация отменена.",
+        #           "Failed to prepare model files. Initialization cancelled."))
+        #     return
+        if not os.path.exists('models'):
             logger.warning(f"Файлы моделей для '{model_name}' не готовы (загрузка не удалась или отменена).")
             QMessageBox.critical(self, _("Ошибка", "Error"),
-                _("Не удалось подготовить файлы моделей. Инициализация отменена.",
-                  "Failed to prepare model files. Initialization cancelled."))
+               _("Не найдена папка Models. Инициализация отменена.",
+               "Failed to find Models folder. Initialization cancelled."))
             return
 
         logger.info(f"Модели для '{model_name}' готовы. Запуск инициализации...")

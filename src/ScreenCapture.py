@@ -7,6 +7,21 @@ from Logger import logger
 from win32 import win32gui
 # import win32con
 
+# Добавляем необходимые импорты для PipInstaller
+import sys
+import os
+from utils.PipInstaller import PipInstaller
+
+# Функция для перевода
+def getTranslationVariant(ru_str, en_str=""):
+    from SettingsManager import SettingsManager
+    lang = SettingsManager.get("LANGUAGE", "RU")
+    if en_str and lang == "EN":
+        return en_str
+    return ru_str
+
+_ = getTranslationVariant
+
 class ScreenCapture:
     def __init__(self):
         self._running = False
@@ -26,6 +41,19 @@ class ScreenCapture:
         self.hwnd_to_exclude = None # HWND окна, которое нужно исключить из захвата
         self.window_title_to_exclude = None # Заголовок окна, которое нужно исключить
         self.exclude_gui_window = False # Флаг для исключения окна GUI
+        
+        # Инициализация PipInstaller
+        try:
+            self._pip_installer = PipInstaller(
+                script_path=r"libs\python\python.exe",
+                libs_path="Lib",
+                update_log=logger.info
+            )
+            logger.debug("PipInstaller успешно инициализирован для ScreenCapture.")
+        except Exception as e:
+            logger.error(f"Не удалось инициализировать PipInstaller: {e}", exc_info=True)
+            self._pip_installer = None
+            
     def _ensure_pil_installed(self):
         """Проверяет наличие Pillow и устанавливает при необходимости."""
         if self._pil_checked:
@@ -37,22 +65,26 @@ class ScreenCapture:
             logger.debug("Библиотека Pillow (PIL) уже установлена.")
         except ImportError:
             logger.warning("Библиотека Pillow (PIL) не найдена. Попытка автоматической установки...")
-            import subprocess
-            import sys
+            
+            if self._pip_installer is None:
+                raise RuntimeError("PipInstaller не инициализирован - установку нельзя осуществить")
+            
+            success = self._pip_installer.install_package(
+                "Pillow",
+                description=_("Установка библиотеки Pillow (PIL)...", "Installing Pillow (PIL) library...")
+            )
+            
+            if not success:
+                raise RuntimeError("Не удалось установить Pillow")
+            
             try:
-                # Выполняем установку через pip, используя текущий интерпретатор Python
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow"])
+                # После установки пытаемся импортировать снова
+                __import__('PIL.Image')
                 logger.info("Библиотека Pillow успешно установлена.")
-                # После установки нужно обновить пути импорта
-                import importlib
-                importlib.invalidate_caches()
-            except (subprocess.CalledProcessError, ImportError) as e:
-                logger.error(f"Не удалось установить или импортировать Pillow: {e}")
-                logger.error("Пожалуйста, установите библиотеку вручную: pip install Pillow")
-                raise RuntimeError("Необходимая библиотека Pillow не может быть установлена.") from e
+            except ImportError:
+                raise RuntimeError("Даже после установки Pillow - не получилось импортировать.")
         
         self._pil_checked = True
-
 
     def start_capture(self, interval_seconds: float = 1.0, quality: int = 25, fps: int = 1, max_history_frames: int = 1, max_transfer_frames: int = 1, capture_width: int = 1024, capture_height: int = 768):
         # --- НАЧАЛО ИЗМЕНЕНИЙ: ДИНАМИЧЕСКАЯ ПОДГРУЗКА ПАКЕТА ---

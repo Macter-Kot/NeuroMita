@@ -31,27 +31,22 @@ class FishSpeechModel(IVoiceModel):
 
     def get_display_name(self) -> str:
         return "Fish Speech / +RVC"
+    
     def is_installed(self) -> bool:
-
         self._load_module()
-        if self.model_id in ["medium+", "medium+low"]:
+        mode = self._mode()
+        if mode in ("medium+", "medium+low"):
             return self.fish_speech_module is not None and self.parent.is_triton_installed()
         return self.fish_speech_module is not None
 
     def install(self) -> bool:
         if self.fish_speech_module is None:
-            success = self.parent.download_fish_speech_internal()
-            if not success:
+            if not self.parent.download_fish_speech_internal():
                 return False
-            
-        if self.model_id in ["medium+", "medium+low"]:
-            logger.info(f"Модель {self.model_id} требует Triton. Начинаю установку Triton...")
-            if not self.parent.is_triton_installed():
-                triton_success = self.parent.download_triton_internal()
-                if not triton_success:
-                    logger.warning("Fish Speech был установлен, но установка Triton не удалась.")
-                    return True 
-        
+
+        mode = self._mode()
+        if mode in ("medium+", "medium+low") and not self.parent.is_triton_installed():
+            return self.parent.download_triton_internal()
         return True
 
     def uninstall(self) -> bool:
@@ -71,26 +66,35 @@ class FishSpeechModel(IVoiceModel):
             return True
 
         self._load_module()
-
         if self.fish_speech_module is None:
-            logger.error(f"Модуль fish_speech_lib не установлен, но требуется для модели {self.model_id}")
+            logger.error("fish_speech_lib не установлен")
             return False
 
-        compile_model = self.model_id in ["medium+", "medium+low"]
-        if self.parent.first_compiled is not None and self.parent.first_compiled != compile_model:
-            logger.error("КОНФЛИКТ: Невозможно переключиться между скомпилированной и нескомпилированной версией Fish Speech без перезапуска программы.")
+        mode = self._mode()
+        compile_model = mode in ("medium+", "medium+low")
+
+        # здесь — тот же самый first_compiled-чек
+        if (self.parent.first_compiled is not None 
+                and self.parent.first_compiled != compile_model):
+            logger.error(
+                "КОНФЛИКТ: нельзя переключиться между compile=True/False без перезапуска")
             return False
 
         if self.current_fish_speech is None:
             settings = self.load_model_settings()
-            device = settings.get("fsprvc_fsp_device" if self.model_id == "medium+low" else "device", "cuda")
-            half = settings.get("fsprvc_fsp_half" if self.model_id == "medium+low" else "half", "True" if compile_model else "False").lower() == "true"
+            device = settings.get(
+                "fsprvc_fsp_device" if mode == "medium+low" else "device",
+                "cuda")
+            half = settings.get(
+                "fsprvc_fsp_half"  if mode == "medium+low" else "half",
+                "True" if compile_model else "False").lower() == "true"
 
-            self.current_fish_speech = self.fish_speech_module(device=device, half=half, compile_model=compile_model)
-            
+            self.current_fish_speech = self.fish_speech_module(
+                device=device, half=half, compile_model=compile_model)
+
             self.parent.first_compiled = compile_model
-            logger.info(f"Компонент Fish Speech для модели '{self.model_id}' инициализирован (compile={compile_model}).")
-        
+            logger.info(f"FishSpeech инициализирован (compile={compile_model})")
+
         self.initialized = True
 
         if init:
@@ -115,8 +119,9 @@ class FishSpeechModel(IVoiceModel):
             raise ImportError("Модуль fish_speech_lib не установлен.")
 
         try:
+            mode = self._mode()
             settings = self.load_model_settings()
-            is_combined_model = self.model_id == "medium+low"
+            is_combined_model = mode == "medium+low"
             
             temp_key = "fsprvc_fsp_temperature" if is_combined_model else "temperature"
             top_p_key = "fsprvc_fsp_top_p" if is_combined_model else "top_p"
@@ -184,3 +189,11 @@ class FishSpeechModel(IVoiceModel):
             traceback.print_exc()
             logger.info(f"Ошибка при создании озвучки с Fish Speech ({self.model_id}): {error}")
             return None
+        
+    def _mode(self) -> str:
+        """
+        Возвращает текущий «режим» (medium / medium+ / medium+low),
+        выбранный в LocalVoice.initialize_model().
+        Если по какой-то причине ещё не выбран – по умолчанию medium.
+        """
+        return (self.parent.current_model_id or "medium")

@@ -62,20 +62,16 @@ def _call_in_main_thread(fn, *args, **kwargs):
     """
     app = QApplication.instance()
     if QThread.currentThread() == app.thread():
-        # Уже в GUI-потоке ─ вызываем напрямую
         return fn(*args, **kwargs)
 
-    # Хранилище для результата
     ret_holder = {}
 
     def _wrapper():
         ret_holder["result"] = fn(*args, **kwargs)
 
-    # BlockingQueuedConnection блокирует вызывающий поток,
-    # пока _wrapper не отработает в GUI-потоке.
     QMetaObject.invokeMethod(
-        app,                    # объект-приёмник
-        _wrapper,               # вызываемая функция
+        app,
+        _wrapper,         
         Qt.ConnectionType.BlockingQueuedConnection
     )
     return ret_holder.get("result")
@@ -92,13 +88,14 @@ class LocalVoice:
         
         # Создаем один экземпляр для всех RVC-моделей
         edge_rvc_handler = EdgeTTS_RVC_Model(self, "edge_rvc_handler")
-        
+        fish_handler = FishSpeechModel(self, "fish_handler")
+
         self.models: Dict[str, IVoiceModel] = {
             "low": edge_rvc_handler,
             "low+": edge_rvc_handler,
-            "medium": FishSpeechModel(self, "medium"),
-            "medium+": FishSpeechModel(self, "medium+"),
-            "medium+low": FishSpeechModel(self, "medium+low"),
+            "medium":        fish_handler,
+            "medium+":       fish_handler,
+            "medium+low":    fish_handler,
             "f5_tts": F5TTSModel(self, "f5_tts"),
         }
 
@@ -327,6 +324,19 @@ class LocalVoice:
                 del sys.modules[module_name]
         except Exception:
             pass
+
+
+    def select_model(self, model_id: str) -> None:
+        """
+        Делает указанную ИНИЦИАЛИЗИРОВАННУЮ модель активной.
+        Исключений не бросает – вызывающий уже проверил is_model_initialized().
+        """
+        model = self.models.get(model_id)
+        if not model or not model.initialized:
+            raise RuntimeError(f"Model '{model_id}' is not initialised")
+        self.current_model_id      = model_id
+        self.active_model_instance = model
+        logger.info(f"Active local voice model set to '{model_id}'")
 
     # =========================================================================
     # ВНУТРЕННИЕ МЕТОДЫ УСТАНОВКИ (вызываются из классов моделей)

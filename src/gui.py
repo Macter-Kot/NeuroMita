@@ -1694,9 +1694,22 @@ class ChatGUI(QMainWindow):
         if not self.local_voice.is_model_initialized(selected_model_id):
             self.show_model_loading_window(selected_model)
         else:
-            logger.info(f"Модель {selected_model_id} уже инициализирована.")
+            try:
+                self.local_voice.select_model(selected_model_id)
+            except Exception as e:
+                logger.error(f'Не удалось активировать модель {selected_model_id}: {e}')
+                QMessageBox.critical(self, 'Ошибка', f'Не удалось активировать модель\n{e}')
+                return
+
+            self.settings.set("NM_CURRENT_VOICEOVER", selected_model_id)
+            self.settings.save_settings()
+
+            self.current_local_voice_id   = selected_model_id
             self.last_voice_model_selected = selected_model
-            self.local_voice.current_model = selected_model_id
+            self.update_local_model_status_indicator()
+            self.update_local_voice_combobox()
+            logger.info(f"Переключился на уже инициализированную модель «{selected_model_id}»")
+            return                              
 
     def show_model_loading_window(self, model):
         """Показывает окно загрузки модели с прогрессом"""
@@ -1831,7 +1844,13 @@ class ChatGUI(QMainWindow):
         if loading_window:
             loading_window.close()
 
-        self.local_voice.current_model = model_id
+        try:
+            self.local_voice.select_model(model_id)          # ← ключевая строка
+        except Exception as e:
+            logger.error(f"Не удалось активировать модель {model_id}: {e}")
+            QMessageBox.critical(self, "Ошибка",
+                                f"Не удалось активировать модель {model_id}.\n{e}")
+            return
 
         self.last_voice_model_selected = None
         for model in LOCAL_VOICE_MODELS:

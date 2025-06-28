@@ -81,7 +81,7 @@ def setup_voiceover_controls(gui, parent_layout):
     label_container.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
     
     gui.local_voice_combobox = QComboBox()
-    gui.local_voice_combobox.currentTextChanged.connect(gui.on_local_voice_selected)
+    gui.local_voice_combobox.activated.connect(gui.on_local_voice_selected)
 
     local_model_layout.addWidget(label_container)
     local_model_layout.addWidget(gui.local_voice_combobox, 1)

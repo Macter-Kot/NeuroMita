@@ -16,9 +16,9 @@ def setup_microphone_controls(gui, parent_layout):
          'options': ["google", "vosk", "gigaam"], 'default': "google",
          'tooltip': _("Выберите движок распознавания речи", "Select speech recognition engine"),
          'command': lambda: update_vosk_model_visibility(gui, gui.settings.get('RECOGNIZER_TYPE'))},
-        {'label': _("Модель Vosk", "Vosk Model"), 'type': 'combobox', 'key': 'VOSK_MODEL',
-         'options': ["vosk-model-ru-0.10"], 'default': "vosk-model-ru-0.10",
-         'tooltip': _("Выберите модель Vosk.", "Select Vosk model."), 'widget_name': 'VOSK_MODEL_frame'},
+        # {'label': _("Модель Vosk", "Vosk Model"), 'type': 'combobox', 'key': 'VOSK_MODEL',
+        #  'options': ["vosk-model-ru-0.10"], 'default': "vosk-model-ru-0.10",
+        #  'tooltip': _("Выберите модель Vosk.", "Select Vosk model."), 'widget_name': 'VOSK_MODEL_frame'},
         {'label': _("Порог тишины (VAD)", "Silence Threshold (VAD)"), 'type': 'entry', 'key': 'SILENCE_THRESHOLD',
          'default': '0.01', 'validation': gui.validate_float_positive,
          'tooltip': _("Порог громкости для определения начала/конца речи (VAD).", "Volume threshold for Voice Activity Detection (VAD).")},
@@ -53,7 +53,9 @@ def update_vosk_model_visibility(gui, recognizer_type):
     if hasattr(gui, 'VOSK_MODEL_frame'):
         gui.VOSK_MODEL_frame.setVisible(show_vosk)
     else:
-        logger.warning("Vosk model widget frame not found for visibility update.")
+        # Поскольку виджет может быть закомментирован, это предупреждение не является критичным.
+        # logger.warning("Vosk model widget frame not found for visibility update.")
+        pass
 
 def on_mic_selected(gui):
     if not hasattr(gui, 'mic_combobox'): return

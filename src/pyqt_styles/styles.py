@@ -36,6 +36,7 @@ def get_stylesheet():
         QTextEdit#DebugWindow {
             font-family: "Consolas", "Courier New", monospace;
             font-size: 8pt;
+            min-height: 80px;
         }
 
         /* ----- QComboBox (Compact) ----- */

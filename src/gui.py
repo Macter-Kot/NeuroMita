@@ -45,7 +45,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QSplitter, QMessageBox, QComboBox, QCheckBox, QDialog,
                              QProgressBar, QTextBrowser, QVBoxLayout )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
-from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QPixmap, QIcon
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QPixmap, QIcon, QFontMetrics
 
 from ui import chat_area, status_indicators, debug_area, news_area
 from ui.settings import (
@@ -622,14 +622,13 @@ class ChatGUI(QMainWindow):
 
     def insert_message(self, role, content, insert_at_start=False, message_time=""):
         logger.info(f"insert_message вызван. Роль: {role}, Содержимое: {str(content)[:50]}...")
-        
+
         if not hasattr(self, '_images_in_chat'):
             self._images_in_chat = []
-        
+
         processed_content_parts = []
         has_image_content = False
-        
-        # Обработка контента
+
         if isinstance(content, list):
             for item in content:
                 if isinstance(item, dict):
@@ -639,22 +638,21 @@ class ChatGUI(QMainWindow):
                     elif item.get("type") == "image_url":
                         has_image_content = self.process_image_for_chat(has_image_content, item,
                                                                         processed_content_parts)
-            
+
             if has_image_content and not any(
                     part["type"] == "text" and part["content"].strip() for part in processed_content_parts):
                 processed_content_parts.insert(0, {"type": "text",
                                                    "content": _("<Изображение экрана>", "<Screen Image>") + "\n",
                                                    "tag": "default"})
-                
+
         elif isinstance(content, str):
             processed_content_parts.append({"type": "text", "content": content, "tag": "default"})
         else:
             return
-        
-        # Обработка тегов
+
         processed_text_parts = []
         hide_tags = self.settings.get("HIDE_CHAT_TAGS", False)
-        
+
         for part in processed_content_parts:
             if part["type"] == "text":
                 text_content = part["content"]
@@ -662,14 +660,38 @@ class ChatGUI(QMainWindow):
                     text_content = process_text_to_voice(text_content)
                     processed_text_parts.append({"type": "text", "content": text_content, "tag": "default"})
                 else:
-                    # Здесь обработка тегов аналогично оригиналу
-                    processed_text_parts.append({"type": "text", "content": text_content, "tag": "default"})
+                    # Логика обработки тегов, восстановленная из tkinter версии
+                    matches = list(re.finditer(r'(<([^>]+)>)(.*?)(</\2>)|(<([^>]+)>)', text_content))
+                    last_end = 0
+                    if not matches:
+                        processed_text_parts.append({"type": "text", "content": text_content, "tag": "default"})
+                    else:
+                        for match in matches:
+                            start, end = match.span()
+                            if start > last_end:
+                                processed_text_parts.append(
+                                    {"type": "text", "content": text_content[last_end:start], "tag": "default"})
+
+                            if match.group(1) is not None:  # Парный тег <tag>content</tag>
+                                processed_text_parts.append(
+                                    {"type": "text", "content": match.group(1), "tag": "tag_green"})  # <tag>
+                                processed_text_parts.append(
+                                    {"type": "text", "content": match.group(3), "tag": "default"})  # content
+                                processed_text_parts.append(
+                                    {"type": "text", "content": match.group(4), "tag": "tag_green"})  # </tag>
+                            elif match.group(5) is not None:  # Одиночный тег <tag>
+                                processed_text_parts.append({"type": "text", "content": match.group(5), "tag": "tag_green"})
+
+                            last_end = end
+
+                        if last_end < len(text_content):
+                            processed_text_parts.append(
+                                {"type": "text", "content": text_content[last_end:], "tag": "default"})
             else:
                 processed_text_parts.append(part)
-        
-        # Вставка сообщений
+
         cursor = self.chat_window.textCursor()
-        
+
         show_timestamps = self.settings.get("SHOW_CHAT_TIMESTAMPS", False)
         timestamp_str = "[???] "
         if show_timestamps:
@@ -677,22 +699,20 @@ class ChatGUI(QMainWindow):
                 timestamp_str = f"[{message_time}]"
             else:
                 timestamp_str = time.strftime("[%H:%M:%S] ")
-        
+
         if insert_at_start:
             cursor.movePosition(QTextCursor.MoveOperation.Start)
         else:
             cursor.movePosition(QTextCursor.MoveOperation.End)
-        
-        # Форматирование и вставка текста
+
         if show_timestamps:
             self._insert_formatted_text(cursor, timestamp_str, QColor("#888888"), italic=True)
-        
+
         if role == "user":
             self._insert_formatted_text(cursor, _("Вы: ", "You: "), QColor("gold"), bold=True)
         elif role == "assistant":
             self._insert_formatted_text(cursor, f"{self.model.current_character.name}: ", QColor("hot pink"), bold=True)
-        
-        # Вставка контента
+
         for part in processed_text_parts:
             if part["type"] == "text":
                 color = None
@@ -702,14 +722,12 @@ class ChatGUI(QMainWindow):
             elif part["type"] == "image":
                 cursor.insertImage(part["content"])
                 cursor.insertText("\n")
-        
-        # Добавляем переводы строк
+
         if role == "user":
             cursor.insertText("\n")
         elif role in {"assistant", "system"}:
             cursor.insertText("\n\n")
-        
-        # Автоматическая прокрутка вниз
+
         if not insert_at_start:
             self.chat_window.verticalScrollBar().setValue(
                 self.chat_window.verticalScrollBar().maximum()
@@ -919,21 +937,24 @@ class ChatGUI(QMainWindow):
         )
 
     def setup_debug_controls(self, parent_layout):
-        debug_config = [
-            {'label': '', 'key': 'debug_window', 'type': 'text_area', 'height': 5}
-        ]
+        # Создаем сворачиваемую секцию
+        section = CollapsibleSection(_("Отладка", "Debug"), parent_layout.widget())
         
-        section = self.create_settings_section(parent_layout, _("Отладка", "Debug"), debug_config)
+        # Создаем текстовое поле для отладки
+        self.debug_window = QTextEdit()
+        self.debug_window.setReadOnly(True)
         
-        # Находим QTextEdit в секции
-        for i in range(section.content_layout.count()):
-            widget = section.content_layout.itemAt(i).widget()
-            if widget and hasattr(widget, 'findChild'):
-                text_edit = widget.findChild(QTextEdit)
-                if text_edit:
-                    self.debug_window = text_edit
-                    break
+        # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ---
+        # Присваиваем виджету уникальное имя для стилизации
+        self.debug_window.setObjectName("DebugWindow")
         
+        # Добавляем виджет в layout секции
+        section.content_layout.addWidget(self.debug_window)
+        
+        # Добавляем всю секцию в главный layout
+        parent_layout.addWidget(section)
+        
+        # Обновляем информацию при запуске
         self.update_debug_info()
 
     def setup_common_controls(self, parent_layout):
@@ -1171,11 +1192,11 @@ class ChatGUI(QMainWindow):
             )
 
             # --- ОБНОВЛЯЕМ GUI ЧЕРЕЗ СИГНАЛ ---
-            # role, content, insert_at_start, message_time
             self.update_chat_signal.emit("assistant", response, False, "")
 
-            # Дополнительные обновления (статусы, токены)
+            # Дополнительные обновления (статусы, токены, отладка)
             self.update_status_signal.emit()
+            self.update_debug_signal.emit() # Восстанавливаем обновление отладки
             QTimer.singleShot(0, self.update_token_count)
 
             # Отдаём ответ в сервер (игра)
@@ -1499,23 +1520,19 @@ class ChatGUI(QMainWindow):
         elif key == "HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS":
             self.model.history_compression_min_messages_to_compress = float(value)
 
-            # Handle chat specific settings keys
+        # Handle chat specific settings keys
         if key == "CHAT_FONT_SIZE":
             try:
                 font_size = int(value)
-                # Обновляем размер шрифта для всех тегов, использующих "Arial"
-                for tag_name in self.chat_window.tag_names():
-                    current_font = self.chat_window.tag_cget(tag_name, "font")
-                    if "Arial" in current_font:
-                        # Разбираем текущий шрифт, чтобы сохранить стиль (bold, italic)
-                        font_parts = current_font.split()
-                        new_font_parts = ["Arial", str(font_size)]
-                        if "bold" in font_parts:
-                            new_font_parts.append("bold")
-                        if "italic" in font_parts:
-                            new_font_parts.append("italic")
-                        self.chat_window.tag_configure(tag_name, font=(" ".join(new_font_parts)))
-                logger.info(f"Размер шрифта чата изменен на: {font_size}")
+                # 1. Устанавливаем базовый шрифт для всего виджета
+                base_font = QFont("Arial", font_size)
+                self.chat_window.setFont(base_font)
+
+                # 2. Перезагружаем историю чата, чтобы применить размер к существующим сообщениям
+                # Это самый надежный способ, так как _insert_formatted_text будет использовать новое значение из настроек
+                self.load_chat_history()
+
+                logger.info(f"Размер шрифта чата изменен на: {font_size}. История перезагружена.")
             except ValueError:
                 logger.warning(f"Неверное значение для размера шрифта чата: {value}")
             except Exception as e:
@@ -1934,7 +1951,7 @@ class ChatGUI(QMainWindow):
             if hasattr(self.voiceover_section, 'warning_label'):
                 self.voiceover_section.warning_label.setVisible(show_section_warning)
 
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     #  Отображение / скрытие настроек озвучки  (PyQt-реализация)
     # ------------------------------------------------------------------
     def switch_voiceover_settings(self, selected_method: str | None = None) -> None:

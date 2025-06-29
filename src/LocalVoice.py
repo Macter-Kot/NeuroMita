@@ -88,7 +88,7 @@ class LocalVoice:
         
         # Создаем один экземпляр для всех RVC-моделей
         edge_rvc_handler = EdgeTTS_RVC_Model(self, "edge_rvc_handler")
-        fish_handler = FishSpeechModel(self, "fish_handler")
+        fish_handler = FishSpeechModel(self, "fish_handler", rvc_handler=edge_rvc_handler)
 
         self.models: Dict[str, IVoiceModel] = {
             "low": edge_rvc_handler,

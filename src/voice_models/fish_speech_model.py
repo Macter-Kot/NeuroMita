@@ -9,16 +9,17 @@ import asyncio
 from .base_model import IVoiceModel
 from typing import Optional, Any
 from Logger import logger
+
+from .edge_tts_rvc_model import EdgeTTS_RVC_Model
 import importlib.util
 
 
 class FishSpeechModel(IVoiceModel):
-    # __init__, _load_module, get_display_name, is_installed, install, uninstall, cleanup_state, initialize
-    # остаются без изменений.
-    def __init__(self, parent: 'LocalVoice', model_id: str):
+    def __init__(self, parent: 'LocalVoice', model_id: str, rvc_handler: Optional[IVoiceModel] = None):
         super().__init__(parent, model_id)
         self.fish_speech_module = None
         self.current_fish_speech = None
+        self.rvc_handler = rvc_handler
 
     def _load_module(self):
         try:
@@ -30,14 +31,32 @@ class FishSpeechModel(IVoiceModel):
 
 
     def get_display_name(self) -> str:
-        return "Fish Speech / +RVC"
+        mode = self._mode()
+        if mode in "medium":
+            return "Fish Speech"
+        elif mode in "medium+":
+            return "Fish Speech+"
+        if mode in "medium+low":
+            return "Fish Speech+ + RVC"
+        return None
     
     def is_installed(self) -> bool:
         self._load_module()
         mode = self._mode()
+
+        
+        if self.fish_speech_module is None:
+            return False
+        
         if mode in ("medium+", "medium+low"):
-            return self.fish_speech_module is not None and self.parent.is_triton_installed()
-        return self.fish_speech_module is not None
+            if not self.parent.is_triton_installed():
+                return False
+        
+        if mode == "medium+low":
+            if self.rvc_handler is None or not self.rvc_handler.is_installed():
+                return False
+        
+        return True
 
     def install(self) -> bool:
         if self.fish_speech_module is None:
@@ -46,11 +65,23 @@ class FishSpeechModel(IVoiceModel):
 
         mode = self._mode()
         if mode in ("medium+", "medium+low") and not self.parent.is_triton_installed():
+            if mode == "medium+low" and not self.rvc_handler.is_installed():
+                return self.rvc_handler.install() and self.parent.download_triton_internal()
             return self.parent.download_triton_internal()
+        
+        
         return True
 
     def uninstall(self) -> bool:
-        return self.parent._uninstall_component("Fish Speech", "fish-speech-lib")
+        
+        mode = self._mode()
+        if mode == "medium":
+            return self.parent._uninstall_component("Fish Speech", "fish-speech-lib")
+        elif mode in ("medium+", "medium+low"):
+            return self.parent._uninstall_component("Triton", "triton-windows")
+        else: 
+            logger.error(_('Неизвестная модель для удаления.', 'Unknown model for uninstall'))
+            return False
 
     def cleanup_state(self):
         super().cleanup_state()
@@ -59,6 +90,10 @@ class FishSpeechModel(IVoiceModel):
         if self.parent.first_compiled is not None:
             logger.info("Сброс состояния компиляции Fish Speech из-за удаления.")
             self.parent.first_compiled = None
+
+        if self.rvc_handler and self.rvc_handler.initialized:
+            self.rvc_handler.cleanup_state()
+
         logger.info(f"Состояние для модели {self.model_id} сброшено.")
 
     def initialize(self, init: bool = False) -> bool:
@@ -73,7 +108,6 @@ class FishSpeechModel(IVoiceModel):
         mode = self._mode()
         compile_model = mode in ("medium+", "medium+low")
 
-        # здесь — тот же самый first_compiled-чек
         if (self.parent.first_compiled is not None 
                 and self.parent.first_compiled != compile_model):
             logger.error(
@@ -95,14 +129,27 @@ class FishSpeechModel(IVoiceModel):
             self.parent.first_compiled = compile_model
             logger.info(f"FishSpeech инициализирован (compile={compile_model})")
 
+        if mode == "medium+low":
+            if self.rvc_handler and not self.rvc_handler.initialized:
+                logger.info("Инициализация RVC компонента для 'medium+low'...")
+                rvc_success = self.rvc_handler.initialize(init=False)
+                if not rvc_success:
+                    logger.error("Не удалось инициализировать RVC компонент для 'medium+low'.")
+                    return False
+
         self.initialized = True
 
         if init:
             init_text = f"Инициализация модели {self.model_id}" if self.parent.voice_language == "ru" else f"{self.model_id} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {self.model_id}...")
             try:
-                # Используем asyncio.run() для запуска async функции из sync потока
-                asyncio.run(self.voiceover(init_text))
+                main_loop = self.parent.parent.loop
+                if not main_loop or not main_loop.is_running():
+                    raise RuntimeError("Главный цикл событий asyncio недоступен.")
+                
+                future = asyncio.run_coroutine_threadsafe(self.voiceover(init_text), main_loop)
+                result = future.result(timeout=3600)
+                
                 logger.info(f"Тестовый прогон для {self.model_id} успешно завершен.")
             except Exception as e:
                 logger.error(f"Ошибка во время тестового прогона модели {self.model_id}: {e}", exc_info=True)
@@ -168,18 +215,21 @@ class FishSpeechModel(IVoiceModel):
             
             final_output_path = processed_output_path
 
-            if self.model_id == "medium+low":
-                logger.info(f"Применяем RVC к файлу: {final_output_path}")
-                # <<< ИСПРАВЛЕНИЕ: Передаем ID нашей модели, чтобы RVC использовал правильные настройки >>>
-                rvc_output_path = await self.parent.apply_rvc_to_file(final_output_path, original_model_id=self.model_id)
-                
-                if rvc_output_path and os.path.exists(rvc_output_path):
-                    if final_output_path != rvc_output_path:
-                        try: os.remove(final_output_path)
-                        except OSError: pass
-                    final_output_path = rvc_output_path
+            if mode == "medium+low":
+                if self.rvc_handler:
+                    logger.info(f"Применяем RVC (через инъекцию) к файлу: {final_output_path}")
+                    # Используем метод родителя, который уже умеет обрабатывать RVC
+                    rvc_output_path = await self.rvc_handler.apply_rvc_to_file(final_output_path, original_model_id=self.model_id)
+                    
+                    if rvc_output_path and os.path.exists(rvc_output_path):
+                        if final_output_path != rvc_output_path:
+                            try: os.remove(final_output_path)
+                            except OSError: pass
+                        final_output_path = rvc_output_path
+                    else:
+                        logger.warning("Ошибка во время обработки RVC. Возвращается результат до RVC.")
                 else:
-                    logger.warning("Ошибка во время обработки RVC. Возвращается результат до RVC.")
+                    logger.warning("Модель 'medium+low' требует RVC, но обработчик не был предоставлен.")
 
             if self.parent.parent and hasattr(self.parent.parent, 'patch_to_sound_file'):
                 self.parent.parent.patch_to_sound_file = final_output_path

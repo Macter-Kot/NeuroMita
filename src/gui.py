@@ -39,6 +39,8 @@ import time
 from SpeechRecognition import SpeechRecognition
 from utils.PipInstaller import PipInstaller
 
+import functools
+
 # PyQt6 imports
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QTextEdit, QPushButton, QLabel, QScrollArea, QFrame,
@@ -1833,7 +1835,7 @@ class ChatGUI(QMainWindow):
                 success = self.local_voice.initialize_model(model_id, init=True)
 
             if success and not self.model_loading_cancelled:
-                QTimer.singleShot(0, lambda: self.finish_model_loading(model_id, loading_window))
+                QTimer.singleShot(0, functools.partial(self.finish_model_loading, model_id, loading_window))
             elif not self.model_loading_cancelled:
                 error_message = _("Не удалось инициализировать модель. Проверьте логи.",
                                   "Failed to initialize model. Check logs.")

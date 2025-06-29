@@ -129,8 +129,12 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             init_text = f"Инициализация модели {current_mode}" if self.parent.voice_language == "ru" else f"{current_mode} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {current_mode}...")
             try:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(self.voiceover(init_text))
+                main_loop = self.parent.parent.loop
+                if not main_loop or not main_loop.is_running():
+                    raise RuntimeError("Главный цикл событий asyncio недоступен.")
+                
+                future = asyncio.run_coroutine_threadsafe(self.voiceover(init_text), main_loop)
+                result = future.result(timeout=3600)
                 logger.info(f"Тестовый прогон для {current_mode} успешно завершен.")
             except Exception as e:
                 logger.error(f"Ошибка во время тестового прогона модели {current_mode}: {e}", exc_info=True)
@@ -151,6 +155,21 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             return await self._voiceover_silero_rvc(text, character)
         else:
             raise ValueError(f"Обработчик вызван с неизвестным режимом: {current_mode}")
+
+    async def apply_rvc_to_file(self, filepath: str, original_model_id: str) -> Optional[str]:
+        """Применяет RVC к существующему аудиофайлу."""
+        if not self.initialized:
+            logger.info("Инициализация RVC компонента на лету...")
+            if not self.initialize(init=False):
+                logger.error("Не удалось инициализировать RVC компонент.")
+                return None
+
+        logger.info(f"Вызов RVC для файла: {filepath}")
+        return await self._voiceover_edge_tts_rvc(
+            text=None, 
+            TEST_WITH_DONE_AUDIO=filepath,
+            settings_model_id=original_model_id
+        )
 
     async def _voiceover_edge_tts_rvc(self, text, TEST_WITH_DONE_AUDIO: str = None, settings_model_id: Optional[str] = None):
         if self.current_tts_rvc is None:

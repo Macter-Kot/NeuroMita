@@ -525,7 +525,7 @@ class ChatModel:
                 self.gui.silero_turn_off_video= self.current_character.silero_turn_off_video
                 logger.info(f"TTS Text: {self.gui.textToTalk}, Speaker: {self.gui.textSpeaker}")
 
-            self.gui.update_debug_info()
+            self.gui.update_debug_signal.emit()
             return final_response_text
 
         except Exception as e:

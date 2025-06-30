@@ -464,9 +464,9 @@ class ChatModel:
             final_response_text = processed_response_text
             try:
                 use_cmd_replacer  = self.gui.settings.get("USE_COMMAND_REPLACER", False)
-                enable_by_default = os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") == "1"
+                # enable_by_default = os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") == "1"
 
-                if use_cmd_replacer and enable_by_default:
+                if use_cmd_replacer:
                     if not hasattr(self, 'model_handler'):
                         from utils.embedding_handler import EmbeddingModelHandler
                         self.model_handler = EmbeddingModelHandler()
@@ -486,8 +486,6 @@ class ChatModel:
                         skip_comma_params=skip_comma
                     )
                     logger.info(f"After command replacement: {final_response_text[:100]}...")
-                elif use_cmd_replacer and not enable_by_default:
-                    logger.info("Command replacer enabled in settings but disabled by ENV.")
                 else:
                     logger.info("Command replacer disabled.")
             except Exception as ex:

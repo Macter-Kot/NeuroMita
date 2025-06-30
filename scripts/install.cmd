@@ -1,5 +1,24 @@
-libs\python\python.exe -m pip install docopt-ng --no-cache-dir
-libs\python\python.exe -m pip install python-chess --no-deps --no-cache-dir
-libs\python\python.exe -m pip install -r requirements.txt --no-cache-dir
-libs\python\python.exe libs\python\Scripts\pywin32_postinstall.py -install
+@echo off
+chcp 65001 > nul
+
+set PY=libs\python\python.exe
+
+echo Проверяем наличие uv...
+%PY% -m pip show uv >nul 2>&1
+
+rem  ERRORLEVEL = 0  ->  пакет найден
+rem  ERRORLEVEL = 1  ->  пакет не найден
+if errorlevel 1 (
+    echo uv не найден, устанавливаем...
+    %PY% -m pip install --upgrade uv || (
+        echo Ошибка установки uv && exit /b 1
+    )
+) else (
+    echo uv уже установлен
+)
+
+echo ----------------------------------------------
+%PY% -m uv pip install -r requirements.txt --no-cache-dir
+%PY% -m uv run libs\python\Scripts\pywin32_postinstall.py -install
+echo ----------------------------------------------
 pause

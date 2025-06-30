@@ -1,1 +1,2 @@
-libs\python\python.exe NeuroMita.pyz
+libs\python\python.exe -m uv run NeuroMita.pyz
+pause

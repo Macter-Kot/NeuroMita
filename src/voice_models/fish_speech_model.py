@@ -143,12 +143,8 @@ class FishSpeechModel(IVoiceModel):
             init_text = f"Инициализация модели {self.model_id}" if self.parent.voice_language == "ru" else f"{self.model_id} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {self.model_id}...")
             try:
-                main_loop = self.parent.parent.loop
-                if not main_loop or not main_loop.is_running():
-                    raise RuntimeError("Главный цикл событий asyncio недоступен.")
                 
-                future = asyncio.run_coroutine_threadsafe(self.voiceover(init_text), main_loop)
-                result = future.result(timeout=3600)
+                asyncio.run(self.voiceover(init_text))
                 
                 logger.info(f"Тестовый прогон для {self.model_id} успешно завершен.")
             except Exception as e:

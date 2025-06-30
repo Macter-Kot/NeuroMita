@@ -129,12 +129,8 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             init_text = f"Инициализация модели {current_mode}" if self.parent.voice_language == "ru" else f"{current_mode} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {current_mode}...")
             try:
-                main_loop = self.parent.parent.loop
-                if not main_loop or not main_loop.is_running():
-                    raise RuntimeError("Главный цикл событий asyncio недоступен.")
                 
-                future = asyncio.run_coroutine_threadsafe(self.voiceover(init_text), main_loop)
-                result = future.result(timeout=3600)
+                asyncio.run(self.voiceover(init_text))
                 logger.info(f"Тестовый прогон для {current_mode} успешно завершен.")
             except Exception as e:
                 logger.error(f"Ошибка во время тестового прогона модели {current_mode}: {e}", exc_info=True)

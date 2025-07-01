@@ -59,10 +59,14 @@ setting_descriptions = {
     "protect": "[RVC] Защита глухих согласных (ш, щ, с, ...) от искажения высотой тона (0 до 0.5). Меньшие значения обеспечивают большую защиту (согласные звучат чище), но могут немного повлиять на интонацию гласных рядом. Рекомендуется 0.3-0.4.",
     "tts_rate": "[EdgeTTS] Изменение скорости речи базового синтезатора Edge-TTS (до RVC) в процентах. 0 - стандартная скорость.",
     "tts_volume": "[EdgeTTS] Изменение громкости речи базового синтезатора Edge-TTS (до RVC) в процентах. 0 - стандартная громкость.",
+    
+    "seed": "Сид для озвучки.",
+    
     "silero_device": "[Silero] Устройство для генерации речи Silero (CPU или GPU).",
     "silero_sample_rate": "[Silero] Частота дискретизации для генерации речи Silero.", 
     "silero_put_accent": "[Silero] Автоматическая расстановка ударений.", 
     "silero_put_yo": "[Silero] Автоматическая замена 'е' на 'ё'.", 
+
     "half": "[FS/FSP] Использовать FP16 (половинную точность). Рекомендуется для скорости и экономии памяти на GPU.",
     "temperature": "[FS/FSP] Температура сэмплирования (>0). Контролирует случайность/разнообразие генерируемой речи. Выше = разнообразнее, но больше ошибок. Ниже = стабильнее.",
     "top_p": "[FS/FSP] Ядерное сэмплирование (Top-P, 0-1). Ограничивает выбор следующего токена только наиболее вероятными вариантами. Уменьшает вероятность генерации 'бреда'.",
@@ -77,6 +81,7 @@ setting_descriptions = {
     "fsprvc_fsp_repetition_penalty": "[FSP+RVC][FSP] Штраф повторений для части Fish Speech+.",
     "fsprvc_fsp_chunk_length": "[FSP+RVC][FSP] Размер чанка для части Fish Speech+.",
     "fsprvc_fsp_max_tokens": "[FSP+RVC][FSP] Макс. токены для части Fish Speech+.",
+    "fsprvc_fsp_seed": "[FSP+RVC][FSP] Сид для озвучки.",
     "fsprvc_rvc_device": "[FSP+RVC][RVC] Устройство для части RVC.",
     "fsprvc_is_half": "[FSP+RVC][RVC] Half-precision для части RVC.",
     "fsprvc_f0method": "[FSP+RVC][RVC] Метод F0 для части RVC.",
@@ -102,6 +107,7 @@ setting_descriptions = {
     "f5rvc_f5_speed": "[F5+RVC][F5] Скорость речи для части F5-TTS.",
     "f5rvc_f5_nfe_step": "[F5+RVC][F5] Количество шагов диффузии для части F5-TTS.",
     "f5rvc_f5_remove_silence": "[F5+RVC][F5] Удаление тишины для части F5-TTS.",
+    "f5rvc_f5_seed": "[F5+RVC][F5] Сид для озвучки.",
     "f5rvc_rvc_pitch": "[F5+RVC][RVC] Высота голоса для части RVC.",
     "f5rvc_index_rate": "[F5+RVC][RVC] Соотношение индекса для части RVC.",
     "f5rvc_protect": "[F5+RVC][RVC] Защита согласных для части RVC.",
@@ -532,7 +538,8 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "repetition_penalty", "label": _("Штраф повторений", "Repetition Penalty"), "type": "entry", "options": {"default": "1.2"}},
                     {"key": "chunk_length", "label": _("Размер чанка (~символов)", "Chunk Size (~chars)"), "type": "entry", "options": {"default": "200"}},
                     {"key": "max_new_tokens", "label": _("Макс. токены", "Max Tokens"), "type": "entry", "options": {"default": "1024"}},
-                    { "key": "compile_model", "label": _("Компиляция модели", "Compile Model"), "type": "combobox", "options": {"values": ["False", "True"], "default": "False"}, "locked": True}
+                    {"key": "compile_model", "label": _("Компиляция модели", "Compile Model"), "type": "combobox", "options": {"values": ["False", "True"], "default": "False"}, "locked": True},
+                    {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
                 ]
             },
             {
@@ -546,7 +553,8 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "repetition_penalty", "label": _("Штраф повторений", "Repetition Penalty"), "type": "entry", "options": {"default": "1.1"}},
                     {"key": "chunk_length", "label": _("Размер чанка (~символов)", "Chunk Size (~chars)"), "type": "entry", "options": {"default": "200"}},
                     {"key": "max_new_tokens", "label": _("Макс. токены", "Max Tokens"), "type": "entry", "options": {"default": "1024"}},
-                    { "key": "compile_model", "label": _("Компиляция модели", "Compile Model"), "type": "combobox", "options": {"values": ["False", "True"], "default": "True"}, "locked": True}
+                    {"key": "compile_model", "label": _("Компиляция модели", "Compile Model"), "type": "combobox", "options": {"values": ["False", "True"], "default": "True"}, "locked": True},
+                    {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
                  ]
             },
             {
@@ -560,6 +568,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "fsprvc_fsp_repetition_penalty", "label": _("[FSP] Штраф повторений", "[FSP] Repetition Penalty"), "type": "entry", "options": {"default": "1.2"}},
                     {"key": "fsprvc_fsp_chunk_length", "label": _("[FSP] Размер чанка (слов)", "[FSP] Chunk Size (words)"), "type": "entry", "options": {"default": "200"}},
                     {"key": "fsprvc_fsp_max_tokens", "label": _("[FSP] Макс. токены", "[FSP] Max Tokens"), "type": "entry", "options": {"default": "1024"}},
+                    {"key": "fsprvc_fsp_seed", "label": _("[FSP] Seed", "[FSP] Seed"), "type": "entry", "options": {"default": "0"}},
                     {"key": "fsprvc_rvc_device", "label": _("[RVC] Устройство", "[RVC] Device"), "type": "combobox", "options": {"values": ["cuda:0", "cpu", "mps:0", "dml"], "default_nvidia": "cuda:0", "default_amd": "dml"}},
                     {"key": "fsprvc_is_half", "label": _("[RVC] Half-precision", "[RVC] Half-precision"), "type": "combobox", "options": {"values": ["True", "False"], "default_nvidia": "True", "default_amd": "False"}},
                     {"key": "fsprvc_f0method", "label": _("[RVC] Метод F0", "[RVC] F0 Method"), "type": "combobox", "options": {"values": ["pm", "rmvpe", "crepe", "harvest", "fcpe", "dio"], "default_nvidia": "rmvpe", "default_amd": "dio"}},
@@ -568,7 +577,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "fsprvc_index_rate", "label": _("[RVC] Соотн. индекса", "[RVC] Index Rate"), "type": "entry", "options": {"default": "0.75"}},
                     {"key": "fsprvc_protect", "label": _("[RVC] Защита согласных", "[RVC] Consonant Protection"), "type": "entry", "options": {"default": "0.33"}},
                     {"key": "fsprvc_filter_radius", "label": _("[RVC] Радиус фильтра F0", "[RVC] F0 Filter Radius"), "type": "entry", "options": {"default": "3"}},
-                    {"key": "fsprvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}}
+                    {"key": "fsprvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}},
                 ]
             },
             {
@@ -581,7 +590,8 @@ class VoiceModelSettingsWindow(QWidget):
                 "settings": [
                     {"key": "speed", "label": _("Скорость речи", "Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
                     {"key": "nfe_step", "label": _("Шаги диффузии", "Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
-                    {"key": "remove_silence", "label": _("Удалять тишину", "Remove Silence"), "type": "checkbutton", "options": {"default": True}}
+                    {"key": "remove_silence", "label": _("Удалять тишину", "Remove Silence"), "type": "checkbutton", "options": {"default": True}},
+                    {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}}
                 ]
             },
             {
@@ -595,6 +605,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "f5rvc_f5_device", "label": _("[F5] Устройство", "[F5] Device"), "type": "combobox", "options": {"values": ["cuda", "cpu"], "default": "cuda"}},
                     {"key": "f5rvc_f5_speed", "label": _("[F5] Скорость речи", "[F5] Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
                     {"key": "f5rvc_f5_nfe_step", "label": _("[F5] Шаги диффузии", "[F5] Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
+                    {"key": "f5rvc_f5_seed", "label": _("[F5] Seed", "[F5] Seed"), "type": "entry", "options": {"default": "0"}},
                     {"key": "f5rvc_f5_remove_silence", "label": _("[F5] Удалять тишину", "[F5] Remove Silence"), "type": "checkbutton", "options": {"default": True}},
                     {"key": "f5rvc_rvc_pitch", "label": _("[RVC] Высота голоса (пт)", "[RVC] Pitch (semitones)"), "type": "entry", "options": {"default": "0"}},
                     {"key": "f5rvc_index_rate", "label": _("[RVC] Соотн. индекса", "[RVC] Index Rate"), "type": "entry", "options": {"default": "0.75"}},
@@ -603,7 +614,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "f5rvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}},
                     {"key": "f5rvc_is_half", "label": _("[RVC] Half-precision", "[RVC] Half-precision"), "type": "combobox", "options": {"values": ["True", "False"], "default": "True"}},
                     {"key": "f5rvc_f0method", "label": _("[RVC] Метод F0", "[RVC] F0 Method"), "type": "combobox", "options": {"values": ["pm", "rmvpe", "crepe", "harvest", "fcpe", "dio"], "default": "rmvpe"}},
-                    {"key": "f5rvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}}
+                    {"key": "f5rvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}},
                 ]
             }
         ]

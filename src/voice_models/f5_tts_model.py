@@ -104,7 +104,7 @@ class F5TTSModel(IVoiceModel):
                 logger.error(f"Не найдены файлы модели F5-TTS в {model_dir}. Переустановите модель.")
                 return False
             
-            settings = self.load_model_settings()
+            settings = self.parent.load_model_settings(mode)
             device_key = "f5rvc_f5_device" if mode == "high+low" else "device"
             device = settings.get(device_key, "cuda" if self.parent.provider == "NVIDIA" else "cpu")
             
@@ -158,6 +158,7 @@ class F5TTSModel(IVoiceModel):
             speed_key = "f5rvc_f5_speed" if is_combined_model else "speed"
             remove_silence_key = "f5rvc_f5_remove_silence" if is_combined_model else "remove_silence"
             nfe_step_key = "f5rvc_f5_nfe_step" if is_combined_model else "nfe_step"
+            seed_key = "f5rvc_f5_seed" if is_combined_model else "seed"
             
             
             # logger.info("-"*100)
@@ -197,6 +198,9 @@ class F5TTSModel(IVoiceModel):
             os.makedirs("temp", exist_ok=True)
 
             
+            seed_processed = int(settings.get(seed_key, 0))
+            if seed_processed <= 0 or seed_processed > 2**31 - 1: seed_processed = 42
+            
             await asyncio.to_thread(
                 self.current_f5_pipeline.generate,
                 text_to_generate=text,
@@ -205,7 +209,8 @@ class F5TTSModel(IVoiceModel):
                 ref_text=ref_text_content,
                 speed=float(settings.get(speed_key, 1.0)),
                 remove_silence=settings.get(remove_silence_key, True),
-                nfe_step=int(settings.get(nfe_step_key, 32))
+                nfe_step=int(settings.get(nfe_step_key, 32)),
+                seed=seed_processed
             )
 
             if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:

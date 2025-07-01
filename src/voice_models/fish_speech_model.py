@@ -167,7 +167,7 @@ class FishSpeechModel(IVoiceModel):
 
         try:
             mode = self._mode()
-            settings = self.load_model_settings()
+            settings = self.parent.load_model_settings(mode)
             is_combined_model = mode == "medium+low"
             
             temp_key = "fsprvc_fsp_temperature" if is_combined_model else "temperature"
@@ -175,12 +175,16 @@ class FishSpeechModel(IVoiceModel):
             rep_penalty_key = "fsprvc_fsp_repetition_penalty" if is_combined_model else "repetition_penalty"
             chunk_len_key = "fsprvc_fsp_chunk_length" if is_combined_model else "chunk_length"
             max_tokens_key = "fsprvc_fsp_max_tokens" if is_combined_model else "max_new_tokens"
+            seed_key = "fsprvc_fsp_seed" if is_combined_model else "seed"
 
             reference_audio_path = self.parent.clone_voice_filename if self.parent.clone_voice_filename and os.path.exists(self.parent.clone_voice_filename) else None
             reference_text = ""
             if reference_audio_path and self.parent.clone_voice_text and os.path.exists(self.parent.clone_voice_text):
                 with open(self.parent.clone_voice_text, "r", encoding="utf-8") as file:
                     reference_text = file.read().strip()
+
+            seed_processed = int(settings.get(seed_key, 0))
+            if seed_processed <= 0 or seed_processed > 2**31 - 1: seed_processed = 42
 
             sample_rate, audio_data = self.current_fish_speech(
                 text=text,
@@ -191,6 +195,7 @@ class FishSpeechModel(IVoiceModel):
                 repetition_penalty=float(settings.get(rep_penalty_key, 1.2)),
                 max_new_tokens=int(settings.get(max_tokens_key, 1024)),
                 chunk_length=int(settings.get(chunk_len_key, 200)),
+                seed=seed_processed,
                 use_memory_cache=True,
             )
 

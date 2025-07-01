@@ -12,6 +12,8 @@ from cached_path import cached_path
 from hydra.utils import get_class
 from omegaconf import OmegaConf
 
+import torch
+
 # Все импорты из f5_tts.infer.utils_infer остаются такими же
 from f5_tts.infer.utils_infer import (
     cfg_strength as default_cfg_strength,
@@ -95,6 +97,7 @@ class F5TTSPipeline:
             "speed": default_speed,
             "fix_duration": default_fix_duration,
             "device": default_device,
+            "seed": 42
         }
         
         # Объединение: сначала дефолты, потом из файла, потом из kwargs
@@ -242,6 +245,8 @@ class F5TTSPipeline:
             ref_audio_ = voices[voice_name]["ref_audio"]
             ref_text_ = voices[voice_name]["ref_text"]
             
+            torch.manual_seed(run_config["seed"])
+
             audio_segment, final_sample_rate, _ = infer_process(
                 ref_audio_,
                 ref_text_,

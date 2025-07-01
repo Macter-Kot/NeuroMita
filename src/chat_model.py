@@ -244,6 +244,8 @@ class ChatModel:
         except Exception as e:
             logger.error(f"Failed to update OpenAI client: {e}")
             self.client = None
+
+    
     def generate_response(
             self,
             user_input : str,
@@ -272,111 +274,14 @@ class ChatModel:
         self.current_character.set_variable("GAME_ACTUAL_INFO",self.actualInfo)
 
         # 3. Шахматы --------------------------------------------------------------------
-        chess_system_message_for_llm_content: Optional[str] = None
-
-        if hasattr(self.current_character, 'chess_state_queue') \
-        and self.current_character.chess_state_queue is not None \
-        and self.current_character.get_variable("playingChess", False):
-
-            chess_state_details_string = "Шахматная игра активна. Обновление состояния..."
-            latest_chess_state_data: Optional[Dict[str, Any]] = None
-
-            while not self.current_character.chess_state_queue.empty():
-                try:
-                    latest_chess_state_data = self.current_character.chess_state_queue.get_nowait()
-                except queue.Empty:
-                    break
-                except Exception as e:
-                    logger.error(f"[{self.current_character.char_id}] Ошибка чтения chess_state_queue: {e}")
-                    latest_chess_state_data = {"error": f"Ошибка чтения состояния: {e}"}
-                    break
-
-            if latest_chess_state_data:
-                # ---- формируем подробную строку ----------------------------------------
-                fen                    = latest_chess_state_data.get('fen',                 'N/A')
-                current_board_turn     = latest_chess_state_data.get('turn',               'N/A')
-                legal_moves_uci        = latest_chess_state_data.get('legal_moves_uci',    [])
-                is_game_over           = latest_chess_state_data.get('is_game_over',       False)
-                outcome                = latest_chess_state_data.get('outcome_message',    'Игра продолжается')
-                elo                    = latest_chess_state_data.get('current_elo',        'N/A')
-                player_gui_is_white    = latest_chess_state_data.get('player_is_white_in_gui', True)
-                last_board_move_san    = latest_chess_state_data.get('last_move_san',      'Нет (начало игры)')
-
-                llm_color_textual   = "белыми" if not player_gui_is_white else "черными"
-                gui_color_textual   = "белыми" if player_gui_is_white  else "черными"
-
-                llm_actual_color_string = 'white' if not player_gui_is_white else 'black'
-                gui_actual_color_string = 'white' if player_gui_is_white  else 'black'
-
-                s = []
-                s.append(f"--- СОСТОЯНИЕ ШАХМАТНОЙ ПАРТИИ (Maia ELO {elo}) ---")
-                s.append(f"ТЫ ИГРАЕШЬ: {llm_color_textual}.")
-                s.append(f"ТВОЙ ОППОНЕНТ (Игрок GUI) ИГРАЕТ: {gui_color_textual}.")
-
-                # последний ход ----------------------------------------------------------
-                if last_board_move_san != 'Нет (начало игры)':
-                    last_mover_actual_color_string = 'black' if current_board_turn == 'white' else 'white'
-                    if last_mover_actual_color_string == llm_actual_color_string:
-                        s.append(f"ПОСЛЕДНИЙ ХОД СДЕЛАЛ ТЫ ({llm_color_textual}): {last_board_move_san}.")
-                    elif last_mover_actual_color_string == gui_actual_color_string:
-                        s.append(f"ПОСЛЕДНИЙ ХОД СДЕЛАЛ Игрок GUI ({gui_color_textual}): {last_board_move_san}.")
-                    else:
-                        s.append(f"ПОСЛЕДНИЙ ХОД НА ДОСКЕ: {last_board_move_san} (не удалось определить автора).")
-                else:
-                    s.append("ПОСЛЕДНИЙ ХОД: Это начало партии, ходов еще не было.")
-
-                s.append(f"ТЕКУЩАЯ ПОЗИЦИЯ (FEN): {fen}.")
-                s.append(f"СЕЙЧАС ХОДЯТ: {'белые' if current_board_turn == 'white' else 'черные'}.")
-
-                is_llm_turn_now = (current_board_turn == llm_actual_color_string)
-
-                # статус игры ------------------------------------------------------------
-                if is_game_over:
-                    s.append("СТАТУС ИГРЫ: ОКОНЧЕНА.")
-                    s.append(f"РЕЗУЛЬТАТ: {outcome}.")
-                    if latest_chess_state_data.get("game_resigned_by_llm"):
-                        s.append("Ты сдал эту партию.")
-                    elif latest_chess_state_data.get("game_stopped_by_llm"):
-                        s.append("Ты остановил эту партию.")
-                else:
-                    s.append("СТАТУС ИГРЫ: ПРОДОЛЖАЕТСЯ.")
-                    if is_llm_turn_now:
-                        s.append("ЭТО ТВОЙ ХОД.")
-                        if legal_moves_uci:
-                            max_display = 15
-                            valid_moves = [m for m in legal_moves_uci if m]
-                            s.append(f"ТВОИ ЛЕГАЛЬНЫЕ ХОДЫ (UCI, первые {max_display}): "
-                                    f"{', '.join(valid_moves[:max_display])}"
-                                    + ("." if len(valid_moves)<=max_display
-                                        else f" (показаны первые {max_display} из {len(valid_moves)})."))
-                            s.append("Используй тег <MakeChessMoveAsLLM>uci_ход</MakeChessMoveAsLLM> чтобы сделать ход.")
-                            s.append("Пример: <MakeChessMoveAsLLM>e2e4</MakeChessMoveAsLLM>")
-                            # Подсказка о превращении пешки
-                            if any(len(m)==5 and m[4] in 'qrbn' for m in valid_moves):
-                                s.append("Для превращения пешки добавь букву фигуры, напр.: e7e8q.")
-                        else:
-                            s.append("У ТЕБЯ НЕТ ДОСТУПНЫХ ХОДОВ.")
-                    else:
-                        s.append(f"СЕЙЧАС ХОД {gui_color_textual.upper()} (GUI). Ожидай.")
-
-                # Ошибки модуля
-                if latest_chess_state_data.get("error"):
-                    s.append(f"СИСТЕМНОЕ СООБЩЕНИЕ ШАХМАТНОГО МОДУЛЯ: {latest_chess_state_data['error']}.")
-                if latest_chess_state_data.get("error_move") and is_llm_turn_now:
-                    s.append(f"ВАЖНО: Предыдущий ход ({latest_chess_state_data['error_move']}) неверен: "
-                            f"{latest_chess_state_data.get('error_message_for_move','Неверный ход')}.")
-
-                s.append("--- КОНЕЦ ШАХМАТНОЙ ИНФОРМАЦИИ ---")
-                chess_system_message_for_llm_content = "\n".join(s)
-
-                logger.info(f"[{self.current_character.char_id}] Chess system msg formed.")
+        game_state_prompt_content: Optional[str] = None
+        if self.current_character.get_variable("playingGame", False):
+            if hasattr(self.current_character, 'game_manager'):
+                game_state_prompt_content = self.current_character.game_manager.get_active_game_state_prompt()
+                if game_state_prompt_content:
+                     logger.info(f"[{self.current_character.char_id}] Сформирован промпт состояния игры.")
             else:
-                msg = ("Шахматная игра активна, но нет данных от модуля. "
-                    "Запрашиваю текущее состояние.")
-                chess_system_message_for_llm_content = msg
-                logger.info(f"[{self.current_character.char_id}] {msg}")
-                if hasattr(self.current_character, '_send_chess_command'):
-                    self.current_character._send_chess_command({"action": "get_state"})
+                logger.warning(f"[{self.current_character.char_id}] Игра активна, но GameManager отсутствует.")
 
         # 4. Системные промпты / память -------------------------------------------------
         combined_messages = []
@@ -386,10 +291,10 @@ class ChatModel:
         combined_messages.extend(messages)
 
 
-        # Добавляем шахматы (если сформировано)
-        if chess_system_message_for_llm_content:
+        # Добавляем промпт состояния игры (если он был сформирован)
+        if game_state_prompt_content:
             combined_messages.append({"role": "system",
-                                    "content": chess_system_message_for_llm_content})
+                                    "content": game_state_prompt_content})
 
 
 

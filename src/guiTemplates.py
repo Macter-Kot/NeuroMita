@@ -58,8 +58,9 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
                           options=None, default='', default_checkbutton=False, validation=None, tooltip=None,
                           hide=False, command=None, widget_name=None, **kwargs):
     """Создает один виджет настройки (строку) с меткой и элементом управления."""
-    if hide:
-        return None
+    # ИЗМЕНЕНИЕ: Эта проверка удалена, так как виджет должен создаваться в любом случае.
+    # if hide:
+    #     return None
     
     if setting_key and gui.settings.get(setting_key) is None:
         initial_value = default_checkbutton if widget_type == 'checkbutton' else default
@@ -89,7 +90,7 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
         return frame
 
     lbl = QLabel(label)
-    lbl.setMinimumWidth(140) # Уменьшил для более плотного дизайна
+    lbl.setMinimumWidth(140)
     lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
     
     widget = None
@@ -113,11 +114,17 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
         if widget_type == 'entry':
             widget = QLineEdit(str(gui.settings.get(setting_key, default)))
             
+            # ИЗМЕНЕНИЕ: Устанавливаем режим пароля, если hide=True
+            if hide:
+                widget.setEchoMode(QLineEdit.EchoMode.Password)
+
             def save_entry_text():
                 if validation and not validation(widget.text()):
                     widget.setText(str(gui.settings.get(setting_key, default)))
                     return
-                gui._save_setting(setting_key, widget.text())
+                # Не сохраняем пустое значение, если поле скрыто (чтобы не стереть реальные данные)
+                if not (hide and widget.text() == ''):
+                     gui._save_setting(setting_key, widget.text())
                 if command: command(widget.text())
 
             widget.editingFinished.connect(save_entry_text)

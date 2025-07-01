@@ -1480,7 +1480,7 @@ class VoiceModelSettingsWindow(QWidget):
 
     def save_and_quit(self):
         self.save_settings()
-        self.close()
+        self.window().close()
 
     def run(self):
         """For compatibility with tkinter version"""

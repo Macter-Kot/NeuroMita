@@ -77,5 +77,6 @@ pywin32
 py7zr
 uvicorn
 google-cloud-storage
+python-chess
 google-api-core
 pyqt6

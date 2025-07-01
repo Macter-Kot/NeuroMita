@@ -20,9 +20,10 @@ import threading # Добавляем для запуска GUI в потоке
 import importlib
 import os
 
+from game_manager import GameManager
 
 # Setup logger for this module
-logger = logging.getLogger("NeuroMita.Character") # More specific logger name
+from Logger import logger
 
 # ANSI Escape Codes
 RED_COLOR = "\033[91m"
@@ -109,14 +110,11 @@ class Character:
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().isoformat(" ", "minutes"))
 
 
-        # Region ChessVars
-        self.set_variable("playingChess", False)
-        self.chess_gui_thread: Optional[threading.Thread] = None # Изменено с Process на Thread
-        self.chess_command_queue: Optional[multiprocessing.Queue] = None # Оставляем multiprocessing.Queue, он thread-safe
-        self.chess_state_queue: Optional[multiprocessing.Queue] = None   # Оставляем multiprocessing.Queue
-        self.current_chess_elo: Optional[int] = None
-        self.elo_mapping: Dict[str, int] = {"easy": 1100, "medium": 1500, "hard": 1900}
-        # Endregion
+        # region GameVars
+        self.set_variable("playingGame", False)
+        self.set_variable("game_id", None)
+        self.game_manager = GameManager(self)
+        # endregion
 
 
 
@@ -192,24 +190,17 @@ class Character:
             self.system_messages.clear()
         return messages
 
-
-    # In OpenMita/character.py, class Character
     def process_response_nlp_commands(self, response: str) -> str:
         original_response_for_log = response[:200] + "..." if len(response) > 200 else response
         logger.info(f"[{self.char_id}] Original LLM response: {original_response_for_log}")
 
-        # 1. Run custom Post-Processing DSL
         try:
             response = self.post_dsl_interpreter.process(response)
             processed_response_for_log = response[:200] + "..." if len(response) > 200 else response
             logger.info(f"[{self.char_id}] Response after Post-DSL: {processed_response_for_log}")
         except Exception as e:
             logger.error(f"[{self.char_id}] Error during Post-DSL processing: {e}", exc_info=True)
-            # Decide: return original response or an error indicator? For now, continue with (potentially partially) processed response.
 
-        # 2. Existing hardcoded logic (memory, <p> tags)
-        # These could eventually be migrated to be rules in .postscript files too for full flexibility.
-        # For now, they run *after* the custom Post-DSL.
         self.set_variable("LongMemoryRememberCount", self.get_variable("LongMemoryRememberCount", 0) + 1)
         response = self.extract_and_process_memory_data(response)
         try:
@@ -218,74 +209,37 @@ class Character:
             logger.warning(f"Error processing built-in behavior changes from LLM for {self.char_id}: {e}",
                            exc_info=True)
 
+        try:
+            response = self._process_game_tags(response)
+        except Exception as e:
+            logger.error(f"[{self.char_id}] Error during game tag processing: {e}", exc_info=True)
+
         final_response_for_log = response[:200] + "..." if len(response) > 200 else response
         logger.debug(f"[{self.char_id}] Final response after all processing: {final_response_for_log}")
 
-        # Region ChessGameTags
-        start_match = re.search(r"<StartChessGame>(.*?)</StartChessGame>", response, re.DOTALL)
+        return response
+
+    def _process_game_tags(self, response: str) -> str:
+        """
+        Обрабатывает общие игровые теги, такие как <StartGame> и <EndGame>,
+        и делегирует их обработку игровому менеджеру.
+        """
+        start_match = re.search(r'<StartGame id="([^"]*)"/>', response, re.DOTALL | re.IGNORECASE)
         if start_match:
-            difficulty_str = start_match.group(1).strip().lower()
-            elo = self.elo_mapping.get(difficulty_str, self.elo_mapping["medium"])
-            # Важно: playingChess установится в True внутри _start_chess_game_process
-            self._start_chess_game_process(elo=elo, player_is_white=True)
+            full_id_str = start_match.group(1).strip()
+            self.game_manager.start_game(full_id_str)
             response = response.replace(start_match.group(0), "", 1).strip()
-            logger.info(f"[{self.char_id}] Chess game start requested with difficulty '{difficulty_str}' (ELO: {elo}).")
+            logger.info(f"[{self.char_id}] Запрошен запуск игры с ID: '{full_id_str}'.")
 
-        change_diff_match = re.search(r"<ChangeChessDifficulty>(.*?)</ChangeChessDifficulty>", response, re.DOTALL)
-        if change_diff_match:
-            if self.get_variable("playingChess", False):
-                difficulty_str = change_diff_match.group(1).strip().lower()
-                new_elo = self.elo_mapping.get(difficulty_str)
-                if new_elo:
-                    # self.current_chess_elo = new_elo # ELO изменится внутри контроллера после команды
-                    self._send_chess_command({"action": "change_elo", "elo": new_elo})
-                    logger.info(
-                        f"[{self.char_id}] Requested chess difficulty change to '{difficulty_str}' (ELO: {new_elo}).")
-                else:
-                    logger.warning(f"[{self.char_id}] Invalid difficulty for ChangeChessDifficulty: {difficulty_str}")
-            else:
-                logger.warning(f"[{self.char_id}] Received ChangeChessDifficulty but no game is active.")
-            response = response.replace(change_diff_match.group(0), "", 1).strip()
+        end_match = re.search(r'<EndGame id="([^"]*)"/>', response, re.DOTALL | re.IGNORECASE)
+        if end_match:
+            full_id_str = end_match.group(1).strip()
+            self.game_manager.stop_game(full_id_str)
+            response = response.replace(end_match.group(0), "", 1).strip()
+            logger.info(f"[{self.char_id}] Запрошена остановка игры с ID: '{full_id_str}'.")
 
-        if "<RequestBestChessMove!>" in response:
-            if self.get_variable("playingChess", False):
-                self._send_chess_command({"action": "engine_move"})
-                logger.info(f"[{self.char_id}] Requested best chess move from Maia engine.")
-            else:
-                logger.warning(f"[{self.char_id}] Received RequestBestChessMove but no game is active.")
-            response = response.replace("<RequestBestChessMove!>", "", 1).strip()
-
-        llm_move_match = re.search(r"<MakeChessMoveAsLLM>(.*?)</MakeChessMoveAsLLM>", response, re.DOTALL)
-        if llm_move_match:
-            if self.get_variable("playingChess", False):
-                uci_move = llm_move_match.group(1).strip().lower()
-                if uci_move:
-                    self._send_chess_command({"action": "force_engine_move", "move": uci_move})
-                    logger.info(f"[{self.char_id}] LLM specified chess move: {uci_move}.")
-                else:
-                    logger.warning(f"[{self.char_id}] LLM specified empty chess move.")
-            else:
-                logger.warning(f"[{self.char_id}] Received MakeChessMoveAsLLM but no game is active.")
-            response = response.replace(llm_move_match.group(0), "", 1).strip()
-
-        if "<ResignChessGame!>" in response:
-            if self.get_variable("playingChess", False):
-                logger.info(f"[{self.char_id}] LLM resigns the chess game. Stopping process...")
-                self._stop_chess_game_process(resign=True)  # Это вызовет cleanup и установит playingChess=False
-            else:
-                logger.warning(f"[{self.char_id}] Received ResignChessGame but no game is active.")
-            response = response.replace("<ResignChessGame!>", "", 1).strip()
-
-        if "<StopChessGame!>" in response:
-            if self.get_variable("playingChess", False):
-                logger.info(f"[{self.char_id}] LLM stops the chess game. Stopping process...")
-                self._stop_chess_game_process(resign=False)  # Это вызовет cleanup и установит playingChess=False
-            else:
-                logger.debug(f"[{self.char_id}] Received StopChessGame but no game was active. Tag removed.")
-            response = response.replace("<StopChessGame!>", "", 1).strip()
-
-        # Endregion
-
+        if self.get_variable("playingGame", False):
+            response = self.game_manager.process_active_game_tags(response)
 
         return response
 
@@ -507,127 +461,3 @@ class Character:
 
     def __str__(self):
         return f"Character(id='{self.char_id}', name='{self.name}')"
-
-
-
-    # Region ChessGameFunctions
-    def _start_chess_game_process(self, elo: int,
-                                  player_is_white: bool = True):  # Название метода можно оставить для совместимости
-        if self.chess_gui_thread and self.chess_gui_thread.is_alive():
-            logger.warning(f"[{self.char_id}] Chess game thread already running. Stopping it first.")
-            self._stop_chess_game_process()
-
-        try:
-            from Modules.Chess.chess_board import run_chess_gui_process
-
-            self.current_chess_elo = elo
-            self.set_variable("playingChess", True)  # Устанавливаем флаг игры
-
-            # Инициализируем очереди здесь, если они еще не созданы или для новой игры
-            # Важно, чтобы controller внутри GUI потока получал эти очереди
-            if self.chess_command_queue is None:
-                self.chess_command_queue = multiprocessing.Queue()
-            if self.chess_state_queue is None:
-                self.chess_state_queue = multiprocessing.Queue()
-
-            logger.info(
-                f"[{self.char_id}] Starting chess GUI in a new thread. ELO: {elo}, Player White: {player_is_white}")
-
-            self.chess_gui_thread = threading.Thread(
-                target=run_chess_gui_process,
-                args=(self.chess_command_queue, self.chess_state_queue, elo, player_is_white),
-                daemon=True  # Поток-демон завершится, когда завершится основной поток
-            )
-            self.chess_gui_thread.start()
-
-            logger.info(f"[{self.char_id}] Chess GUI thread started.")
-
-            # Убираем отладочный прямой вызов, который передавал None в качестве очередей
-            # logger.info(f"[{self.char_id}] DEBUG: Calling run_chess_gui_process directly for debugging.")
-            # dummy_command_q = None
-            # dummy_state_q = None
-            # try:
-            #     run_chess_gui_process(dummy_command_q, dummy_state_q, elo, player_is_white)
-            #     logger.info(f"[{self.char_id}] DEBUG: run_chess_gui_process finished (if it's blocking).")
-            # except Exception as e_direct_run:
-            #     logger.error(f"[{self.char_id}] DEBUG: Error calling run_chess_gui_process directly: {e_direct_run}", exc_info=True)
-
-        except ImportError as e_imp:
-            logger.error(
-                f"[{self.char_id}] Failed to import chess_board module from 'Modules.Chess.chess_board'. Chess game cannot start. Error details: {e_imp}",
-                exc_info=True
-            )
-            self._cleanup_chess_resources()
-        except AttributeError as e_attr:  # Например, если run_chess_gui_process не найдена
-            logger.error(
-                f"[{self.char_id}] Attribute error related to chess_board module (e.g., 'run_chess_gui_process' not found). Error: {e_attr}. Chess game cannot start.",
-                exc_info=True)
-            self._cleanup_chess_resources()
-        except Exception as e:
-            logger.error(f"[{self.char_id}] Error starting chess game thread: {e}", exc_info=True)
-            self._cleanup_chess_resources()
-
-    def _send_chess_command(self, command_data: Dict[str, Any]):
-        if self.get_variable("playingChess",
-                             False) and self.chess_command_queue and self.chess_gui_thread and self.chess_gui_thread.is_alive():
-            try:
-                self.chess_command_queue.put(command_data)
-                logger.debug(f"[{self.char_id}] Sent command to chess thread: {command_data}")
-            except Exception as e:
-                logger.error(f"[{self.char_id}] Error sending command to chess command_queue: {e}")
-        elif not self.get_variable("playingChess", False):
-            logger.warning(f"[{self.char_id}] Cannot send chess command: game not active.")
-        else:
-            logger.warning(f"[{self.char_id}] Cannot send chess command: command_queue or thread not available/alive.")
-
-    def _stop_chess_game_process(self, resign: bool = False):  # Название метода можно оставить
-        if self.get_variable("playingChess", False):
-            logger.info(f"[{self.char_id}] Stopping chess game (resign={resign}). Sending command to GUI thread.")
-            # Отправляем команду на закрытие GUI процесса/потока через очередь
-            # run_chess_gui_process должен обработать "stop_gui_process" или "resign"/"stop"
-            # и корректно завершить свой цикл и ресурсы Tkinter.
-            if resign:
-                self._send_chess_command({"action": "resign"})  # Это приведет к закрытию GUI в run_chess_gui_process
-            else:
-                # Если просто останавливаем, то GUI должен получить команду "stop_gui_process"
-                # или "stop", чтобы знать, что нужно закрыться.
-                # "stop_gui_process" - более явная команда для самого GUI потока
-                self._send_chess_command({"action": "stop_gui_process"})
-
-            if self.chess_gui_thread and self.chess_gui_thread.is_alive():
-                logger.info(f"[{self.char_id}] Waiting for chess GUI thread to join...")
-                self.chess_gui_thread.join(timeout=10)  # Даем потоку время на завершение
-                if self.chess_gui_thread.is_alive():
-                    logger.warning(f"[{self.char_id}] Chess GUI thread did not terminate gracefully after 10s.")
-                    # Для потоков нет метода terminate(). Поток должен сам завершиться.
-                    # Если он не завершился, это может указывать на проблему в run_chess_gui_process.
-        self._cleanup_chess_resources()  # Это установит playingChess в False и обнулит ресурсы
-
-    def _cleanup_chess_resources(self):
-        logger.debug(f"[{self.char_id}] Cleaning up chess resources.")
-        self.set_variable("playingChess", False)
-
-        # Закрывать очереди multiprocessing.Queue нужно осторожно,
-        # особенно если поток-читатель еще может быть жив.
-        # Но если поток уже завершен (или мы считаем его таковым), то можно.
-        # if self.chess_command_queue:
-        #     try:
-        #         self.chess_command_queue.close() # Предотвращает добавление новых элементов
-        #         # self.chess_command_queue.join_thread() # Ожидает, пока все элементы из буфера не будут обработаны
-        #     except Exception as e:
-        #         logger.warning(f"[{self.char_id}] Error closing command_queue: {e}")
-        # if self.chess_state_queue:
-        #     try:
-        #         self.chess_state_queue.close()
-        #         # self.chess_state_queue.join_thread()
-        #     except Exception as e:
-        #         logger.warning(f"[{self.char_id}] Error closing state_queue: {e}")
-
-        # Просто обнуляем ссылки. Потоки-демоны и сборщик мусора должны справиться.
-        # Или, если очереди создаются заново каждый раз, это тоже решает проблему.
-        self.chess_gui_thread = None
-        self.chess_command_queue = None  # Можно пересоздавать их в _start_chess_game_process
-        self.chess_state_queue = None
-        self.current_chess_elo = None
-
-    # Endregion

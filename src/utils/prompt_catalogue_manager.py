@@ -2,7 +2,7 @@ import os
 import json
 import shutil
 import datetime
-# from tkinter import messagebox
+from PyQt6.QtWidgets import QMessageBox
 import logging
 
 # Initialize logger
@@ -25,7 +25,7 @@ def list_prompt_sets(catalogue_path, character_name=None):
             return all_sets
     except Exception as e:
         logger.exception(f"Error listing prompt sets in {catalogue_path}: {e}")
-        # messagebox.showerror("Error", f"Error listing prompt sets: {e}") #  ВРЕМЕННО УБРАЛ
+        # QMessageBox.critical(None, "Error", f"Error listing prompt sets: {e}") #  ВРЕМЕННО УБРАЛ
         return []
 
 def read_info_json(set_path):
@@ -41,11 +41,11 @@ def read_info_json(set_path):
         return {}
     except json.JSONDecodeError as e:
         logger.error(f"Error decoding JSON in {info_file_path}: {e}")
-        messagebox.showerror("Error", f"Error decoding JSON in info.json: {e}")
+        QMessageBox.critical(None, "Error", f"Error decoding JSON in info.json: {e}")
         return {}
     except Exception as e:
         logger.exception(f"Error reading info.json in {set_path}: {e}")
-        messagebox.showerror("Error", f"Error reading info.json: {e}")
+        QMessageBox.critical(None, "Error", f"Error reading info.json: {e}")
         return {}
 
 def write_info_json(set_path, data):
@@ -59,7 +59,7 @@ def write_info_json(set_path, data):
         return True
     except Exception as e:
         logger.exception(f"Error writing info.json to {info_file_path}: {e}")
-        messagebox.showerror("Error", f"Error writing info.json: {e}")
+        QMessageBox.critical(None, "Error", f"Error writing info.json: {e}")
         return False
 
 def copy_prompt_set(set_path, character_path):
@@ -71,7 +71,7 @@ def copy_prompt_set(set_path, character_path):
         return True
     except Exception as e:
         logger.exception(f"Error copying prompt set from {set_path} to {character_path}: {e}")
-        messagebox.showerror("Error", f"Error copying prompt set: {e}")
+        QMessageBox.critical(None, "Error", f"Error copying prompt set: {e}")
         return False
 
 def create_new_set(character_name, catalogue_path, prompts_path):
@@ -100,20 +100,22 @@ def create_new_set(character_name, catalogue_path, prompts_path):
             return None
     except Exception as e:
         logger.exception(f"Error creating new prompt set in {catalogue_path}: {e}")
-        messagebox.showerror("Error", f"Error creating new prompt set: {e}")
+        QMessageBox.critical(None, "Error", f"Error creating new prompt set: {e}")
         return None
 
 def delete_prompt_set(set_path):
     """
     Deletes the directory at set_path after confirmation.
     """
-    if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete the prompt set at {set_path}?"):
+    reply = QMessageBox.question(None, "Confirm Delete", f"Are you sure you want to delete the prompt set at {set_path}?",
+                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if reply == QMessageBox.StandardButton.Yes:
         try:
             shutil.rmtree(set_path)
             return True
         except Exception as e:
             logger.exception(f"Error deleting prompt set at {set_path}: {e}")
-            messagebox.showerror("Error", f"Error deleting prompt set: {e}")
+            QMessageBox.critical(None, "Error", f"Error deleting prompt set: {e}")
             return False
     else:
         return False

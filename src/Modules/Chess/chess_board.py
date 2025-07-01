@@ -1,12 +1,14 @@
 # File: Modules/Chess/chess_board.py
-import tkinter as tk
-from tkinter import messagebox, simpledialog, font as tkFont
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
 import chess # For chess.square, chess.Move
 import multiprocessing
 import queue # Для command_queue
 import time # Для цикла обработки
 import threading # Для блока __main__
 import traceback # Added for error reporting
+import sys
 
 # Импортируем контроллер из соседнего файла
 from .engine_handler import ChessGameController, MAIA_ELO as DEFAULT_MAIA_ELO # DEFAULT_MAIA_ELO если не передан ELO
@@ -46,97 +48,176 @@ class ChessGameModelTkStyles:
             "bg": ChessGameModelTkStyles.COLOR_BUTTON_BG, "fg": ChessGameModelTkStyles.COLOR_BUTTON_TEXT,
             "activebackground": ChessGameModelTkStyles.COLOR_BUTTON_PRESSED_BG,
             "activeforeground": ChessGameModelTkStyles.COLOR_BUTTON_TEXT,
-            "relief": tk.FLAT, "font": ChessGameModelTkStyles.BUTTON_FONT, "padx": 10, "pady": 5
+            "relief": "flat", "font": ChessGameModelTkStyles.BUTTON_FONT, "padx": 10, "pady": 5
         }
     @staticmethod
     def get_button_hover_style(): return {"bg": ChessGameModelTkStyles.COLOR_BUTTON_HOVER_BG}
 
-class ChessBoardCanvas(tk.Canvas):
-    def __init__(self, parent, square_clicked_callback, **kwargs):
-        super().__init__(parent, **kwargs)
+class ChessBoardCanvas(QWidget):
+    def __init__(self, parent, square_clicked_callback):
+        super().__init__(parent)
         self.square_clicked_callback = square_clicked_callback
-        self.bind("<Button-1>", self._on_mouse_press)
-        self.config(
-            width=8 * SQUARE_SIZE, height=8 * SQUARE_SIZE, bg=ChessGameModelTkStyles.COLOR_WINDOW_BG,
-            highlightthickness=BOARD_BORDER_WIDTH, highlightbackground=ChessGameModelTkStyles.COLOR_BOARD_OUTER_BORDER
-        )
-    def _on_mouse_press(self, event):
-        col_gui = event.x // SQUARE_SIZE
-        row_gui = event.y // SQUARE_SIZE
-        if 0 <= col_gui < 8 and 0 <= row_gui < 8:
-            self.square_clicked_callback(row_gui, col_gui)
+        self.setFixedSize(8 * SQUARE_SIZE, 8 * SQUARE_SIZE)
+        self.square_colors = [[None for _ in range(8)] for _ in range(8)]
+        self.piece_symbols = [[None for _ in range(8)] for _ in range(8)]
+        self.piece_colors = [[None for _ in range(8)] for _ in range(8)]
+        
+        # Инициализация цветов квадратов
+        for r in range(8):
+            for c in range(8):
+                color_idx = (c + r) % 2
+                color = ChessGameModelTkStyles.COLOR_BOARD_LIGHT if color_idx == 0 else ChessGameModelTkStyles.COLOR_BOARD_DARK
+                self.square_colors[r][c] = color
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
+            col_gui = int(pos.x()) // SQUARE_SIZE
+            row_gui = int(pos.y()) // SQUARE_SIZE
+            if 0 <= col_gui < 8 and 0 <= row_gui < 8:
+                self.square_clicked_callback(row_gui, col_gui)
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Рисуем квадраты
+        for r in range(8):
+            for c in range(8):
+                x, y = c * SQUARE_SIZE, r * SQUARE_SIZE
+                color = self.square_colors[r][c] if self.square_colors[r][c] else "#FFFFFF"
+                painter.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE, QColor(color))
+        
+        # Рисуем рамку
+        painter.setPen(QPen(QColor(ChessGameModelTkStyles.COLOR_BOARD_OUTER_BORDER), BOARD_BORDER_WIDTH))
+        painter.drawRect(0, 0, 8 * SQUARE_SIZE, 8 * SQUARE_SIZE)
+        
+        # Рисуем фигуры
+        font = QFont(ChessGameModelTkStyles.PIECE_FONT_FAMILY, DEFAULT_PIECE_FONT_SIZE)
+        font.setBold(True)
+        painter.setFont(font)
+        
+        for r in range(8):
+            for c in range(8):
+                if self.piece_symbols[r][c]:
+                    x_center = (c + 0.5) * SQUARE_SIZE
+                    y_center = (r + 0.5) * SQUARE_SIZE
+                    text_color = "#FFFFFF" if self.piece_colors[r][c] else "#1E1E1E"
+                    painter.setPen(QColor(text_color))
+                    rect = QRectF(c * SQUARE_SIZE, r * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE)
+                    painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.piece_symbols[r][c])
+    
+    def set_square_color(self, r, c, color):
+        self.square_colors[r][c] = color
+        self.update()
+    
+    def set_piece(self, r, c, symbol, is_white):
+        self.piece_symbols[r][c] = symbol
+        self.piece_colors[r][c] = is_white
+        self.update()
 
-class PromotionDialog(simpledialog.Dialog):
+class PromotionDialog(QDialog):
     def __init__(self, parent, title, items_dict):
+        super().__init__(parent)
         self.items_dict = items_dict
         self.item_keys = list(items_dict.keys())
         self.result_value = None
-        super().__init__(parent, title)
-    def body(self, master):
-        master.config(bg=ChessGameModelTkStyles.COLOR_PANEL_BG)
-        tk.Label(master, text="Выберите фигуру:", bg=ChessGameModelTkStyles.COLOR_PANEL_BG, fg=ChessGameModelTkStyles.COLOR_TEXT_LIGHT).pack(pady=5)
-        self.var = tk.StringVar(master)
-        if self.item_keys: self.var.set(self.item_keys[0])
-        first_rb = None
-        for key_text in self.item_keys:
-            rb = tk.Radiobutton(master, text=key_text, variable=self.var, value=key_text,
-                                anchor=tk.W, indicatoron=True, bg=ChessGameModelTkStyles.COLOR_PANEL_BG,
-                                fg=ChessGameModelTkStyles.COLOR_TEXT_LIGHT, selectcolor=ChessGameModelTkStyles.COLOR_WINDOW_BG,
-                                activebackground=ChessGameModelTkStyles.COLOR_PANEL_BG, activeforeground=ChessGameModelTkStyles.COLOR_TEXT_LIGHT)
-            rb.pack(fill=tk.X, padx=10)
-            if first_rb is None: first_rb = rb
-        return first_rb
-    def buttonbox(self):
-        box = tk.Frame(self, bg=ChessGameModelTkStyles.COLOR_PANEL_BG)
-        w_ok = tk.Button(box, text="OK", width=10, command=self.ok, default=tk.ACTIVE)
-        self._apply_button_style(w_ok)
-        w_ok.pack(side=tk.LEFT, padx=5, pady=5)
-        w_cancel = tk.Button(box, text="Отмена", width=10, command=self.cancel)
-        self._apply_button_style(w_cancel)
-        w_cancel.pack(side=tk.LEFT, padx=5, pady=5)
-        self.bind("<Return>", self.ok)
-        self.bind("<Escape>", self.cancel)
-        box.pack()
+        self.setWindowTitle(title)
+        self.setStyleSheet(f"background-color: {ChessGameModelTkStyles.COLOR_PANEL_BG}")
+        self._init_ui()
+    
+    def _init_ui(self):
+        layout = QVBoxLayout()
+        
+        label = QLabel("Выберите фигуру:")
+        label.setStyleSheet(f"color: {ChessGameModelTkStyles.COLOR_TEXT_LIGHT}")
+        layout.addWidget(label)
+        
+        self.radio_group = QButtonGroup()
+        self.radio_buttons = {}
+        
+        for i, key_text in enumerate(self.item_keys):
+            rb = QRadioButton(key_text)
+            rb.setStyleSheet(f"""
+                QRadioButton {{
+                    color: {ChessGameModelTkStyles.COLOR_TEXT_LIGHT};
+                    background-color: {ChessGameModelTkStyles.COLOR_PANEL_BG};
+                }}
+                QRadioButton::indicator {{
+                    background-color: {ChessGameModelTkStyles.COLOR_WINDOW_BG};
+                }}
+            """)
+            self.radio_buttons[key_text] = rb
+            self.radio_group.addButton(rb, i)
+            layout.addWidget(rb)
+            if i == 0:
+                rb.setChecked(True)
+        
+        button_layout = QHBoxLayout()
+        
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        self._apply_button_style(ok_btn)
+        
+        cancel_btn = QPushButton("Отмена")
+        cancel_btn.clicked.connect(self.reject)
+        self._apply_button_style(cancel_btn)
+        
+        button_layout.addWidget(ok_btn)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    
     def _apply_button_style(self, button):
-        button.config(bg=ChessGameModelTkStyles.COLOR_BUTTON_BG, fg=ChessGameModelTkStyles.COLOR_BUTTON_TEXT,
-                      activebackground=ChessGameModelTkStyles.COLOR_BUTTON_PRESSED_BG, activeforeground=ChessGameModelTkStyles.COLOR_BUTTON_TEXT,
-                      relief=tk.FLAT, font=("Arial", 10))
-        button.bind("<Enter>", lambda e, b=button: b.config(bg=ChessGameModelTkStyles.COLOR_BUTTON_HOVER_BG))
-        button.bind("<Leave>", lambda e, b=button: b.config(bg=ChessGameModelTkStyles.COLOR_BUTTON_BG))
-    def apply(self):
-        selected_key = self.var.get()
-        if selected_key and selected_key in self.items_dict: self.result_value = self.items_dict[selected_key]
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ChessGameModelTkStyles.COLOR_BUTTON_BG};
+                color: {ChessGameModelTkStyles.COLOR_BUTTON_TEXT};
+                border: none;
+                padding: 5px 10px;
+                font-family: Arial;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{
+                background-color: {ChessGameModelTkStyles.COLOR_BUTTON_HOVER_BG};
+            }}
+            QPushButton:pressed {{
+                background-color: {ChessGameModelTkStyles.COLOR_BUTTON_PRESSED_BG};
+            }}
+        """)
+    
+    def get_result(self):
+        for key_text, rb in self.radio_buttons.items():
+            if rb.isChecked():
+                return self.items_dict[key_text]
+        return None
 
 
-class ChessGuiTkinter(tk.Tk):
+class ChessGuiTkinter(QMainWindow):
+    # Сигналы для потокобезопасного обновления GUI
+    status_update_signal = pyqtSignal(str)
+    board_update_signal = pyqtSignal()
+    game_over_signal = pyqtSignal(str)
+    
     def __init__(self, game_controller: ChessGameController): 
         super().__init__()
         self.game_controller = game_controller
-        self.title(f"Шахматы против Maia ELO {self.game_controller.current_maia_elo if self.game_controller else DEFAULT_MAIA_ELO}")
-        self.configure(bg=ChessGameModelTkStyles.COLOR_WINDOW_BG)
+        self.setWindowTitle(f"Шахматы против Maia ELO {self.game_controller.current_maia_elo if self.game_controller else DEFAULT_MAIA_ELO}")
+        self.setStyleSheet(f"background-color: {ChessGameModelTkStyles.COLOR_WINDOW_BG}")
 
         coord_font_tuple = ChessGameModelTkStyles.COORDINATE_LABEL_FONT_TUPLE
-        # Ensure unique font name if this class is instantiated multiple times in the same Tk interpreter instance
-        font_name_candidate = "NeuroMitaAppCoordFont"
-        try:
-            self.app_coord_font = tkFont.Font(name=font_name_candidate,
-                                              family=coord_font_tuple[0],
-                                              size=coord_font_tuple[1],
-                                              weight=coord_font_tuple[2],
-                                              exists=True) # Check if it exists
-        except tk.TclError: # If it doesn't exist, tkFont.Font(..., exists=True) raises TclError
-            self.app_coord_font = tkFont.Font(name=font_name_candidate,
-                                              family=coord_font_tuple[0],
-                                              size=coord_font_tuple[1],
-                                              weight=coord_font_tuple[2])
+        self.app_coord_font = QFont(coord_font_tuple[0], coord_font_tuple[1])
+        if coord_font_tuple[2] == "bold":
+            self.app_coord_font.setBold(True)
 
-
-        coord_label_strip_width_approx = self.app_coord_font.measure("W") + ChessGameModelTkStyles.LABEL_AREA_PADDING * 2 + 5
-        coord_label_strip_height_approx = self.app_coord_font.metrics('linespace') + ChessGameModelTkStyles.LABEL_AREA_PADDING * 2 + 5
+        fm = QFontMetrics(self.app_coord_font)
+        coord_label_strip_width_approx = fm.horizontalAdvance("W") + ChessGameModelTkStyles.LABEL_AREA_PADDING * 2 + 5
+        coord_label_strip_height_approx = fm.height() + ChessGameModelTkStyles.LABEL_AREA_PADDING * 2 + 5
         
         min_width = int(8 * SQUARE_SIZE + 2 * BOARD_BORDER_WIDTH + 250 + 40 + coord_label_strip_width_approx)
         min_height = int(8 * SQUARE_SIZE + 2 * BOARD_BORDER_WIDTH + 60 + 40 + coord_label_strip_height_approx)
-        self.minsize(min_width, min_height)
+        self.setMinimumSize(min_width, min_height)
 
         self.piece_symbols = {
             'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
@@ -145,109 +226,142 @@ class ChessGuiTkinter(tk.Tk):
         self.selected_square_gui_coords = None
         self.possible_moves_for_selected_gui_coords = []
         self.last_move_squares_gui_coords = []
-        self.square_bg_item_ids = [[None for _ in range(8)] for _ in range(8)]
-        self.piece_item_ids = [[None for _ in range(8)] for _ in range(8)]
         self.square_original_colors = [[None for _ in range(8)] for _ in range(8)]
         self.rank_labels_gui = [None] * 8
         self.file_labels_gui = [None] * 8
         
         self.is_closing = False 
 
+        # Подключаем сигналы к слотам
+        self.status_update_signal.connect(self.update_status_bar_slot)
+        self.board_update_signal.connect(self.update_board_display_slot)
+        self.game_over_signal.connect(self.show_game_over_message_slot)
+
         self._init_ui()
-        self.protocol("WM_DELETE_WINDOW", self.on_closing_event)
+        self._setup_board_squares()
 
     def _init_ui(self):
-        main_layout_frame = tk.Frame(self, bg=ChessGameModelTkStyles.COLOR_WINDOW_BG)
-        main_layout_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=20, pady=20)
-        board_area_frame = tk.Frame(main_layout_frame, bg=ChessGameModelTkStyles.COLOR_WINDOW_BG)
-        board_area_frame.pack(side=tk.LEFT, fill=tk.NONE, expand=False)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Board area
+        board_area_widget = QWidget()
+        board_area_widget.setStyleSheet(f"background-color: {ChessGameModelTkStyles.COLOR_WINDOW_BG}")
+        board_area_layout = QGridLayout()
+        board_area_layout.setSpacing(0)
         
         _label_font_obj_for_ui = self.app_coord_font 
         _label_fg = ChessGameModelTkStyles.COORDINATE_LABEL_FG
         _label_bg = ChessGameModelTkStyles.COORDINATE_LABEL_BG
-        _label_pad = ChessGameModelTkStyles.LABEL_AREA_PADDING
-
-        rank_label_width = _label_font_obj_for_ui.measure("W") + _label_pad * 2
-        file_label_height = _label_font_obj_for_ui.metrics('linespace') + _label_pad * 2
         
-        board_area_frame.grid_columnconfigure(0, minsize=rank_label_width)
-        board_area_frame.grid_rowconfigure(8, minsize=file_label_height)
+        # Rank labels
         for r_gui in range(8):
-            board_area_frame.grid_rowconfigure(r_gui, minsize=SQUARE_SIZE)
-            lbl = tk.Label(board_area_frame, text="", font=_label_font_obj_for_ui, fg=_label_fg, bg=_label_bg)
-            lbl.grid(row=r_gui, column=0, sticky=tk.NSEW)
+            lbl = QLabel("")
+            lbl.setFont(_label_font_obj_for_ui)
+            lbl.setStyleSheet(f"color: {_label_fg}; background-color: {_label_bg}")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            board_area_layout.addWidget(lbl, r_gui, 0)
             self.rank_labels_gui[r_gui] = lbl
+        
+        # File labels
         for c_gui in range(8):
-            board_area_frame.grid_columnconfigure(c_gui + 1, minsize=SQUARE_SIZE)
-            lbl = tk.Label(board_area_frame, text="", font=_label_font_obj_for_ui, fg=_label_fg, bg=_label_bg)
-            lbl.grid(row=8, column=c_gui + 1, sticky=tk.NSEW)
+            lbl = QLabel("")
+            lbl.setFont(_label_font_obj_for_ui)
+            lbl.setStyleSheet(f"color: {_label_fg}; background-color: {_label_bg}")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            board_area_layout.addWidget(lbl, 8, c_gui + 1)
             self.file_labels_gui[c_gui] = lbl
-        corner_lbl = tk.Label(board_area_frame, text="", bg=_label_bg)
-        corner_lbl.grid(row=8, column=0, sticky=tk.NSEW)
-        self.board_canvas = ChessBoardCanvas(board_area_frame, self.on_square_clicked_slot)
-        self.board_canvas.grid(row=0, column=1, rowspan=8, columnspan=8, sticky=tk.NSEW)
-        self._setup_board_squares()
-
-        control_panel_frame = tk.Frame(main_layout_frame, bg=ChessGameModelTkStyles.COLOR_PANEL_BG, padx=15, pady=15)
-        control_panel_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(20,0), expand=False)
         
-        self.btn_new_game_white = self._create_button(control_panel_frame, "Новая игра (Белыми)",
+        # Corner label
+        corner_lbl = QLabel("")
+        corner_lbl.setStyleSheet(f"background-color: {_label_bg}")
+        board_area_layout.addWidget(corner_lbl, 8, 0)
+        
+        # Chess board canvas
+        self.board_canvas = ChessBoardCanvas(board_area_widget, self.on_square_clicked_slot)
+        board_area_layout.addWidget(self.board_canvas, 0, 1, 8, 8)
+        
+        board_area_widget.setLayout(board_area_layout)
+        main_layout.addWidget(board_area_widget)
+        
+        # Control panel
+        control_panel_widget = QWidget()
+        control_panel_widget.setStyleSheet(f"background-color: {ChessGameModelTkStyles.COLOR_PANEL_BG}")
+        control_panel_layout = QVBoxLayout()
+        control_panel_layout.setContentsMargins(15, 15, 15, 15)
+        
+        self.btn_new_game_white = self._create_button(control_panel_widget, "Новая игра (Белыми)",
                                                       lambda: self.game_controller.new_game(player_is_white_gui_override=True) if self.game_controller else None)
-        self.btn_new_game_black = self._create_button(control_panel_frame, "Новая игра (Черными)",
-                                                      lambda: self.game_controller.new_game(player_is_white_gui_override=False) if self.game_controller else None)
+        control_panel_layout.addWidget(self.btn_new_game_white)
         
-        stretch_frame = tk.Frame(control_panel_frame, bg=ChessGameModelTkStyles.COLOR_PANEL_BG)
-        stretch_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        status_bar_container = tk.Frame(self, bg=ChessGameModelTkStyles.COLOR_WINDOW_BG)
-        status_bar_container.pack(side=tk.BOTTOM, fill=tk.X)
-        status_bar_top_border = tk.Frame(status_bar_container, height=1, bg=ChessGameModelTkStyles.COLOR_WINDOW_BG)
-        status_bar_top_border.pack(side=tk.TOP, fill=tk.X)
-        self.status_bar_label = tk.Label(status_bar_container, text="Инициализация GUI...",
-                                         font=ChessGameModelTkStyles.STATUS_FONT,
-                                         bg=ChessGameModelTkStyles.COLOR_PANEL_BG,
-                                         fg=ChessGameModelTkStyles.COLOR_TEXT_LIGHT,
-                                         anchor=tk.W, padx=5, pady=3)
-        self.status_bar_label.pack(side=tk.TOP, fill=tk.X)
+        self.btn_new_game_black = self._create_button(control_panel_widget, "Новая игра (Черными)",
+                                                      lambda: self.game_controller.new_game(player_is_white_gui_override=False) if self.game_controller else None)
+        control_panel_layout.addWidget(self.btn_new_game_black)
+        
+        control_panel_layout.addStretch()
+        
+        control_panel_widget.setLayout(control_panel_layout)
+        main_layout.addWidget(control_panel_widget)
+        
+        central_widget.setLayout(main_layout)
+        
+        # Status bar
+        self.status_bar_label = QLabel("Инициализация GUI...")
+        self.status_bar_label.setStyleSheet(f"""
+            color: {ChessGameModelTkStyles.COLOR_TEXT_LIGHT};
+            background-color: {ChessGameModelTkStyles.COLOR_PANEL_BG};
+            padding: 3px 5px;
+        """)
+        self.status_bar_label.setFont(QFont("Arial", 9))
+        self.statusBar().addPermanentWidget(self.status_bar_label, 1)
+        self.statusBar().setStyleSheet(f"background-color: {ChessGameModelTkStyles.COLOR_PANEL_BG}")
+        
         self._update_board_coordinates_labels()
 
     def _create_button(self, parent, text, command): 
-        button = tk.Button(parent, text=text, command=command, width=20)
+        button = QPushButton(text)
+        button.clicked.connect(command)
+        button.setFixedWidth(200)
+        
         normal_style = ChessGameModelTkStyles.get_button_normal_style()
-        hover_style = ChessGameModelTkStyles.get_button_hover_style()
-        button.config(**normal_style)
-        button.bind("<Enter>", lambda e, b=button, s=hover_style: b.config(**s))
-        button.bind("<Leave>", lambda e, b=button, s=normal_style: b.config(bg=s["bg"]))
-        button.pack(pady=6, fill=tk.X)
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {normal_style['bg']};
+                color: {normal_style['fg']};
+                border: none;
+                padding: {normal_style['pady']}px {normal_style['padx']}px;
+                font-family: {normal_style['font'][0]};
+                font-size: {normal_style['font'][1]}pt;
+            }}
+            QPushButton:hover {{
+                background-color: {ChessGameModelTkStyles.COLOR_BUTTON_HOVER_BG};
+            }}
+            QPushButton:pressed {{
+                background-color: {ChessGameModelTkStyles.COLOR_BUTTON_PRESSED_BG};
+            }}
+        """)
+        
         return button
 
     def _setup_board_squares(self):
         for r_gui in range(8):
             for c_gui in range(8):
-                x1, y1 = c_gui * SQUARE_SIZE, r_gui * SQUARE_SIZE
-                x2, y2 = x1 + SQUARE_SIZE, y1 + SQUARE_SIZE
                 color_idx = (c_gui + r_gui) % 2
                 fill_color = ChessGameModelTkStyles.COLOR_BOARD_LIGHT if color_idx == 0 else ChessGameModelTkStyles.COLOR_BOARD_DARK
                 self.square_original_colors[r_gui][c_gui] = fill_color
-                rect_id = self.board_canvas.create_rectangle(x1, y1, x2, y2, fill=fill_color, outline="")
-                self.square_bg_item_ids[r_gui][c_gui] = rect_id
 
     def _set_square_fill_color(self, r_gui, c_gui, color): 
-        item_id = self.square_bg_item_ids[r_gui][c_gui]
-        if item_id: self.board_canvas.itemconfig(item_id, fill=color)
+        self.board_canvas.set_square_color(r_gui, c_gui, color)
+        
     def _reset_square_fill_color(self, r_gui, c_gui): 
         original_color = self.square_original_colors[r_gui][c_gui]
         if original_color: self._set_square_fill_color(r_gui, c_gui, original_color)
+        
     def _set_piece_on_square(self, r_gui, c_gui, symbol, piece_color_is_white): 
-        old_piece_id = self.piece_item_ids[r_gui][c_gui]
-        if old_piece_id: self.board_canvas.delete(old_piece_id); self.piece_item_ids[r_gui][c_gui] = None
-        if not symbol: return
-        x_center, y_center = (c_gui + 0.5) * SQUARE_SIZE, (r_gui + 0.5) * SQUARE_SIZE
-        text_color = "#FFFFFF" if piece_color_is_white else "#1E1E1E"
-        new_piece_id = self.board_canvas.create_text(
-            x_center, y_center, text=symbol, font=ChessGameModelTkStyles.PIECE_FONT, fill=text_color,
-            tags=f"piece_{r_gui}_{c_gui}")
-        self.piece_item_ids[r_gui][c_gui] = new_piece_id
+        self.board_canvas.set_piece(r_gui, c_gui, symbol, piece_color_is_white)
 
     def _update_board_coordinates_labels(self):
         if not self.game_controller: return
@@ -255,18 +369,18 @@ class ChessGuiTkinter(tk.Tk):
         files_display = [chr(ord('A') + i) for i in range(8)]
         if not player_pov_white: files_display.reverse()
         for c_gui in range(8):
-            if self.file_labels_gui[c_gui]: self.file_labels_gui[c_gui].config(text=files_display[c_gui])
+            if self.file_labels_gui[c_gui]: self.file_labels_gui[c_gui].setText(files_display[c_gui])
         ranks_display = [str(8 - i) for i in range(8)]
         if not player_pov_white: ranks_display = [str(1 + i) for i in range(8)]
         for r_gui in range(8):
-            if self.rank_labels_gui[r_gui]: self.rank_labels_gui[r_gui].config(text=ranks_display[r_gui])
+            if self.rank_labels_gui[r_gui]: self.rank_labels_gui[r_gui].setText(ranks_display[r_gui])
 
     def update_board_display_slot(self):
         if not self.game_controller or self.is_closing : return
         current_elo_in_title = self.game_controller.current_maia_elo if self.game_controller else DEFAULT_MAIA_ELO
         expected_title = f"Шахматы против Maia ELO {current_elo_in_title}"
-        if self.title() != expected_title:
-            self.title(expected_title)
+        if self.windowTitle() != expected_title:
+            self.setWindowTitle(expected_title)
 
         self._update_board_coordinates_labels()
         current_board_obj = self.game_controller.get_current_board_object_for_gui()
@@ -298,17 +412,16 @@ class ChessGuiTkinter(tk.Tk):
             self._set_square_fill_color(r_sel, c_sel, ChessGameModelTkStyles.COLOR_HIGHLIGHT_SELECTED)
         for r_pm, c_pm in self.possible_moves_for_selected_gui_coords:
             self._set_square_fill_color(r_pm, c_pm, ChessGameModelTkStyles.COLOR_HIGHLIGHT_POSSIBLE)
-        self.board_canvas.update_idletasks()
 
     def show_game_over_message_slot(self, message):
         if self.is_closing: return
         self.update_status_bar_slot(message) 
-        messagebox.showinfo("Игра окончена", message, parent=self)
+        QMessageBox.information(self, "Игра окончена", message)
 
     def update_status_bar_slot(self, message):
         if self.is_closing: return
         if hasattr(self, 'status_bar_label'): 
-             self.status_bar_label.config(text=message)
+             self.status_bar_label.setText(message)
         else:
             print(f"DEBUG (chess_board GUI): status_bar_label not found, message: {message}")
 
@@ -366,8 +479,16 @@ class ChessGuiTkinter(tk.Tk):
                     if is_legal_promo_move:
                         items = {"Ферзь": "q", "Ладья": "r", "Слон": "b", "Конь": "n"}
                         dialog = PromotionDialog(self, "Превращение пешки", items)
-                        promo_piece_char = dialog.result_value
-                        if promo_piece_char: uci_move_str += promo_piece_char
+                        if dialog.exec() == QDialog.DialogCode.Accepted:
+                            promo_piece_char = dialog.get_result()
+                            if promo_piece_char: 
+                                uci_move_str += promo_piece_char
+                            else:
+                                self.update_status_bar_slot("Превращение отменено. Ход не сделан.")
+                                self.selected_square_gui_coords = None
+                                self.possible_moves_for_selected_gui_coords = []
+                                self.update_board_display_slot() 
+                                return
                         else:
                             self.update_status_bar_slot("Превращение отменено. Ход не сделан.")
                             self.selected_square_gui_coords = None
@@ -379,10 +500,16 @@ class ChessGuiTkinter(tk.Tk):
             self.possible_moves_for_selected_gui_coords = []
         self.update_board_display_slot()
 
-    def on_closing_event(self): 
-        if messagebox.askyesno("Выход", "Вы уверены, что хотите выйти из шахмат?", parent=self):
-            self.is_closing = True 
+    def closeEvent(self, event):
+        reply = QMessageBox.question(self, "Выход", "Вы уверены, что хотите выйти из шахмат?",
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                            QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.is_closing = True
             print("CONSOLE (chess_board GUI): Окно GUI закрывается пользователем.")
+            event.accept()
+        else:
+            event.ignore()
 
 def run_chess_gui_process(command_q: multiprocessing.Queue, state_q: multiprocessing.Queue,
                           initial_elo: int, player_is_white_gui: bool):
@@ -397,22 +524,26 @@ def run_chess_gui_process(command_q: multiprocessing.Queue, state_q: multiproces
     def _proxy_update_status(message):
         if app_instance_ref["instance"] and not app_instance_ref["instance"].is_closing and message is not None:
             gui_event_queue.put(("status_update", message))
-        # Removed direct app.after call
         return None 
         
     def _proxy_update_board():
         if app_instance_ref["instance"] and not app_instance_ref["instance"].is_closing:
             gui_event_queue.put(("board_update", None))
-        # Removed direct app.after call
                 
     def _proxy_game_over(message):
         if app_instance_ref["instance"] and not app_instance_ref["instance"].is_closing:
             gui_event_queue.put(("game_over", message))
-        # Removed direct app.after call
 
     game_controller = None
     app = None 
+    qt_app = None
     try:
+        print(f"CONSOLE (chess_board_process): [STAGE 0] Создание QApplication...")
+        qt_app = QApplication.instance()
+        if qt_app is None:
+            qt_app = QApplication(sys.argv)
+        print(f"CONSOLE (chess_board_process): [STAGE 0] QApplication создан.")
+
         print(f"CONSOLE (chess_board_process): [STAGE 1] Создание ChessGameController...")
         game_controller = ChessGameController(
             initial_elo=initial_elo,
@@ -434,14 +565,22 @@ def run_chess_gui_process(command_q: multiprocessing.Queue, state_q: multiproces
         print(f"CONSOLE (chess_board_process): [STAGE 3] Создание ChessGuiTkinter (окна)...")
         app = ChessGuiTkinter(game_controller)
         app_instance_ref["instance"] = app
+        app.show()
         print(f"CONSOLE (chess_board_process): [STAGE 3] ChessGuiTkinter (окно) СОЗДАНО.")
 
         print(f"CONSOLE (chess_board_process): [STAGE 4] Вызов game_controller.new_game()...")
         game_controller.new_game() 
         print(f"CONSOLE (chess_board_process): [STAGE 4] game_controller.new_game() ВЫПОЛНЕН.")
 
-        print(f"CONSOLE (chess_board_process): [STAGE 5] >>> ВХОД В ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ GUI...")
-        while not app.is_closing:
+        # Создаем таймер для обработки очередей
+        timer = QTimer()
+        
+        def process_queues():
+            if app_instance_ref["instance"] and app_instance_ref["instance"].is_closing:
+                timer.stop()
+                qt_app.quit()
+                return
+                
             # Process commands from the main application (if command_q is provided)
             try:
                 if command_q: 
@@ -450,13 +589,17 @@ def run_chess_gui_process(command_q: multiprocessing.Queue, state_q: multiproces
                         print(f"CONSOLE (chess_board_process): [LOOP] Получена команда: {command}")
                         if command.get("action") == "stop_gui_process": 
                             print(f"CONSOLE (chess_board_process): [LOOP] Команда stop_gui_process, выход из цикла.")
-                            app.is_closing = True
-                            break
+                            app_instance_ref["instance"].is_closing = True
+                            timer.stop()
+                            qt_app.quit()
+                            return
                         if command.get("action") == "resign" or command.get("action") == "stop": 
                              print(f"CONSOLE (chess_board_process): [LOOP] Команда resign/stop, обработка и выход.")
                              if game_controller: game_controller.process_command(command) 
-                             app.is_closing = True 
-                             break
+                             app_instance_ref["instance"].is_closing = True 
+                             timer.stop()
+                             qt_app.quit()
+                             return
                         if game_controller: game_controller.process_command(command)
                 else: 
                     if not logged_command_q_none_warning_for_this_run:
@@ -476,30 +619,22 @@ def run_chess_gui_process(command_q: multiprocessing.Queue, state_q: multiproces
                     if app_instance_ref["instance"] and not app_instance_ref["instance"].is_closing:
                         current_app_gui = app_instance_ref["instance"]
                         if event_type == "status_update":
-                            if hasattr(current_app_gui, 'update_status_bar_slot'):
-                                current_app_gui.update_status_bar_slot(data)
+                            current_app_gui.status_update_signal.emit(data)
                         elif event_type == "board_update":
-                            if hasattr(current_app_gui, 'update_board_display_slot'):
-                                current_app_gui.update_board_display_slot()
+                            current_app_gui.board_update_signal.emit()
                         elif event_type == "game_over":
-                            if hasattr(current_app_gui, 'show_game_over_message_slot'):
-                                current_app_gui.show_game_over_message_slot(data)
+                            current_app_gui.game_over_signal.emit(data)
             except queue.Empty:
                 pass # No GUI events to process
             except Exception as e_gui_event_loop:
                 print(f"CONSOLE (chess_board_process): [LOOP] Ошибка в цикле обработки GUI событий: {e_gui_event_loop}")
                 traceback.print_exc()
 
-
-            # Ensure app exists and is updated
-            if app: 
-                app.update_idletasks()
-                app.update()
-            else: 
-                print("CONSOLE (chess_board_process): [LOOP] CRITICAL: 'app' is None in main loop. Breaking.")
-                break
-            time.sleep(0.05) 
+        timer.timeout.connect(process_queues)
+        timer.start(50)  # 50ms интервал
         
+        print(f"CONSOLE (chess_board_process): [STAGE 5] >>> ВХОД В ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ GUI...")
+        qt_app.exec()
         print(f"CONSOLE (chess_board_process): [STAGE 5] <<< ВЫХОД ИЗ ГЛАВНОГО ЦИКЛА GUI.")
 
     except Exception as e_main_run_try:
@@ -517,21 +652,19 @@ def run_chess_gui_process(command_q: multiprocessing.Queue, state_q: multiproces
             game_controller.shutdown_engine_process()
         
         if app and app_instance_ref.get("instance"): 
-            print(f"CONSOLE (chess_board_process): [FINALLY] Попытка app.destroy(). is_closing={app.is_closing if hasattr(app, 'is_closing') else 'N/A'}")
+            print(f"CONSOLE (chess_board_process): [FINALLY] Попытка app.close(). is_closing={app.is_closing if hasattr(app, 'is_closing') else 'N/A'}")
             try:
-                 app.destroy()
-                 print(f"CONSOLE (chess_board_process): [FINALLY] app.destroy() вызван.")
-            except tk.TclError as e_destroy_tcl_app:
-                 print(f"CONSOLE (chess_board_process): [FINALLY] Ошибка TclError при app.destroy(): {e_destroy_tcl_app} (возможно, окно уже было уничтожено или не создано)")
+                 app.close()
+                 print(f"CONSOLE (chess_board_process): [FINALLY] app.close() вызван.")
             except Exception as e_destroy_generic_app:
-                print(f"CONSOLE (chess_board_process): [FINALLY] Непредвиденная ошибка при app.destroy(): {e_destroy_generic_app}")
+                print(f"CONSOLE (chess_board_process): [FINALLY] Непредвиденная ошибка при app.close(): {e_destroy_generic_app}")
                 traceback.print_exc()
         elif app_instance_ref.get("instance"): 
-            print(f"CONSOLE (chess_board_process): [FINALLY] app не был присвоен в try, но app_instance_ref['instance'] существует. Попытка destroy() для instance.")
+            print(f"CONSOLE (chess_board_process): [FINALLY] app не был присвоен в try, но app_instance_ref['instance'] существует. Попытка close() для instance.")
             try:
-                 app_instance_ref["instance"].destroy()
+                 app_instance_ref["instance"].close()
             except Exception as e_destroy_instance_alt:
-                 print(f"CONSOLE (chess_board_process): [FINALLY] Ошибка при app_instance_ref['instance'].destroy(): {e_destroy_instance_alt}")
+                 print(f"CONSOLE (chess_board_process): [FINALLY] Ошибка при app_instance_ref['instance'].close(): {e_destroy_instance_alt}")
                  traceback.print_exc()
 
         print(f"CONSOLE (chess_board_process): >>> ПРОЦЕСС GUI ЗАВЕРШЕН.")

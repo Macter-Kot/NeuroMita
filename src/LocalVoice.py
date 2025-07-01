@@ -89,6 +89,7 @@ class LocalVoice:
         # Создаем один экземпляр для всех RVC-моделей
         edge_rvc_handler = EdgeTTS_RVC_Model(self, "edge_rvc_handler")
         fish_handler = FishSpeechModel(self, "fish_handler", rvc_handler=edge_rvc_handler)
+        f5_handler = F5TTSModel(self, "f5_handler", rvc_handler=edge_rvc_handler)
 
         self.models: Dict[str, IVoiceModel] = {
             "low": edge_rvc_handler,
@@ -96,7 +97,8 @@ class LocalVoice:
             "medium":        fish_handler,
             "medium+":       fish_handler,
             "medium+low":    fish_handler,
-            "f5_tts": F5TTSModel(self, "f5_tts"),
+            "high": f5_handler,
+            "high+low": f5_handler,
         }
 
         self.pth_path: Optional[str] = None
@@ -289,7 +291,7 @@ class LocalVoice:
         return self.models["medium"].uninstall()
 
     def uninstall_f5_tts(self):
-        return self.models["f5_tts"].uninstall()
+        return self.models["high"].uninstall()
 
     def uninstall_triton_component(self):
         return self._uninstall_component("Triton", "triton-windows")
@@ -307,7 +309,7 @@ class LocalVoice:
             self.triton_installed = False
             self.triton_checks_performed = False
         elif removed_package_name == "f5-tts":
-            model_to_reset_ids = ["f5_tts"]
+            model_to_reset_ids = ["high", "high+low"]
             
         for model_id in model_to_reset_ids:
             if model := self.models.get(model_id):
@@ -1086,7 +1088,7 @@ class LocalVoice:
 
             update_progress(100)
             update_status(_("Установка F5-TTS завершена.", "F5-TTS installation complete."))
-            self.models["f5_tts"]._load_module()
+            self.models["high"]._load_module()
             return True
 
         except Exception as e:

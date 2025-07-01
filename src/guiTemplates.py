@@ -122,7 +122,6 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
                 if validation and not validation(widget.text()):
                     widget.setText(str(gui.settings.get(setting_key, default)))
                     return
-                # Не сохраняем пустое значение, если поле скрыто (чтобы не стереть реальные данные)
                 if not (hide and widget.text() == ''):
                      gui._save_setting(setting_key, widget.text())
                 if command: command(widget.text())

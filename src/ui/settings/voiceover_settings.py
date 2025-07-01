@@ -13,7 +13,8 @@ LOCAL_VOICE_MODELS = [
     {"id": "medium", "name": "Fish Speech", "min_vram": 4, "rec_vram": 6, "gpu_vendor": ["NVIDIA"], "size_gb": 5},
     {"id": "medium+", "name": "Fish Speech+", "min_vram": 4, "rec_vram": 6, "gpu_vendor": ["NVIDIA"], "size_gb": 10},
     {"id": "medium+low", "name": "Fish Speech+ + RVC", "min_vram": 6, "rec_vram": 8, "gpu_vendor": ["NVIDIA"], "size_gb": 15},
-    {"id": "f5_tts", "name": "F5-TTS", "min_vram": 6, "rec_vram": 8, "gpu_vendor": ["NVIDIA", "AMD"], "size_gb": 4}
+    {"id": "high", "name": "F5-TTS", "min_vram": 4, "rec_vram": 8, "gpu_vendor": ["NVIDIA", "AMD"], "size_gb": 4},
+    {"id": "high+low", "name": "F5-TTS + RVC", "min_vram": 6, "rec_vram": 8, "gpu_vendor": ["NVIDIA", "AMD"], "size_gb": 4}
 ]
 
 def setup_voiceover_controls(gui, parent_layout):

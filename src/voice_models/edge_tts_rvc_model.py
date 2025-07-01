@@ -156,8 +156,31 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         else:
             raise ValueError(f"Обработчик вызван с неизвестным режимом: {current_mode}")
 
-    async def apply_rvc_to_file(self, filepath: str, original_model_id: str) -> Optional[str]:
-        """Применяет RVC к существующему аудиофайлу."""
+    async def apply_rvc_to_file(self, filepath: str, 
+                               pitch: float = 0,
+                               index_rate: float = 0.75,
+                               protect: float = 0.33,
+                               filter_radius: int = 3,
+                               rms_mix_rate: float = 0.5,
+                               is_half: bool = True,
+                               f0method: Optional[str] = None,
+                               use_index_file: bool = True,
+                               original_model_id: Optional[str] = None) -> Optional[str]:
+        """
+        Применяет RVC к существующему аудиофайлу.
+        
+        Параметры:
+        - filepath: путь к входному аудиофайлу
+        - pitch: изменение высоты тона (-24 до 24)
+        - index_rate: коэффициент использования индексного файла (0.0 до 1.0)
+        - protect: защита консонант от изменений (0.0 до 0.5)
+        - filter_radius: радиус медианного фильтра (0 до 7)
+        - rms_mix_rate: коэффициент смешивания RMS (0.0 до 1.0)
+        - is_half: использовать половинную точность (только для NVIDIA)
+        - f0method: метод извлечения основного тона (rmvpe, pm, harvest, crepe)
+        - use_index_file: использовать индексный файл если доступен
+        - original_model_id: ID исходной модели для конфигурации (устарело)
+        """
         if not self.initialized:
             logger.info("Инициализация RVC компонента на лету...")
             if not self.initialize(init=False):
@@ -165,11 +188,90 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 return None
 
         logger.info(f"Вызов RVC для файла: {filepath}")
-        return await self._voiceover_edge_tts_rvc(
-            text=None, 
-            TEST_WITH_DONE_AUDIO=filepath,
-            settings_model_id=original_model_id
-        )
+        
+        try:
+            # Подготовка параметров инференса
+            inference_params = {
+                "pitch": pitch,
+                "index_rate": index_rate,
+                "protect": protect,
+                "filter_radius": filter_radius,
+                "rms_mix_rate": rms_mix_rate
+            }
+            
+            if self.parent.provider == "NVIDIA":
+                inference_params["is_half"] = is_half
+                
+            if f0method:
+                inference_params["f0method"] = f0method
+            
+            # Установка индексного файла
+            if use_index_file and self.parent.index_path and os.path.exists(self.parent.index_path):
+                self.current_tts_rvc.set_index_path(self.parent.index_path)
+            else:
+                self.current_tts_rvc.set_index_path("")
+            
+            # Обновление модели если необходимо
+            if os.path.abspath(self.parent.pth_path) != os.path.abspath(self.current_tts_rvc.current_model):
+                if self.parent.provider in ["NVIDIA"]:
+                    self.current_tts_rvc.current_model = self.parent.pth_path
+                elif self.parent.provider in ["AMD"]:
+                    self.current_tts_rvc.current_model = self.parent.pth_path
+            
+            # Применение RVC
+            output_file_rvc = self.current_tts_rvc.voiceover_file(input_path=filepath, **inference_params)
+            
+            if not output_file_rvc or not os.path.exists(output_file_rvc) or os.path.getsize(output_file_rvc) == 0:
+                return None
+            
+            # Конвертация в стерео
+            stereo_output_file = output_file_rvc.replace(".wav", "_stereo.wav")
+            converted_file = self.parent.convert_wav_to_stereo(
+                output_file_rvc, 
+                stereo_output_file, 
+                atempo=1.0, 
+                pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
+            )
+
+            if converted_file and os.path.exists(converted_file):
+                final_output_path = stereo_output_file
+                try: os.remove(output_file_rvc)
+                except OSError: pass
+            else:
+                final_output_path = output_file_rvc
+            
+            return final_output_path
+            
+        except Exception as error:
+            traceback.print_exc()
+            logger.info(f"Ошибка при применении RVC к файлу: {error}")
+            return None
+
+    # def _get_fsprvc_params(self, settings: dict) -> dict:
+    #     """
+    #     Получает параметры для FSP+RVC модели.
+    #     Эта функция закомментирована для напоминания о FSP+RVC параметрах.
+    #     
+    #     Параметры FSP+RVC из настроек:
+    #     - fsprvc_rvc_pitch: высота тона для RVC
+    #     - fsprvc_index_rate: коэффициент использования индекса 
+    #     - fsprvc_protect: защита консонант
+    #     - fsprvc_filter_radius: радиус медианного фильтра
+    #     - fsprvc_rvc_rms_mix_rate: коэффициент смешивания RMS
+    #     - fsprvc_is_half: использовать половинную точность
+    #     - fsprvc_f0method: метод извлечения F0
+    #     - fsprvc_use_index_file: использовать индексный файл
+    #     """
+    #     return {
+    #         "pitch": float(settings.get("fsprvc_rvc_pitch", 0)),
+    #         "index_rate": float(settings.get("fsprvc_index_rate", 0.75)),
+    #         "protect": float(settings.get("fsprvc_protect", 0.33)),
+    #         "filter_radius": int(settings.get("fsprvc_filter_radius", 3)),
+    #         "rms_mix_rate": float(settings.get("fsprvc_rvc_rms_mix_rate", 0.5)),
+    #         "is_half": settings.get("fsprvc_is_half", "True").lower() == "true",
+    #         "f0method": settings.get("fsprvc_f0method", None),
+    #         "use_index_file": settings.get("fsprvc_use_index_file", True)
+    #     }
 
     async def _voiceover_edge_tts_rvc(self, text, TEST_WITH_DONE_AUDIO: str = None, settings_model_id: Optional[str] = None):
         if self.current_tts_rvc is None:
@@ -179,29 +281,19 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             settings = self.parent.load_model_settings(config_id)
             logger.info(f"RVC использует конфигурацию от модели: '{config_id}'")
 
-            is_combined_model = config_id == "medium+low"
-            pitch_key = "fsprvc_rvc_pitch" if is_combined_model else "pitch"
-            index_rate_key = "fsprvc_index_rate" if is_combined_model else "index_rate"
-            protect_key = "fsprvc_protect" if is_combined_model else "protect"
-            filter_radius_key = "fsprvc_filter_radius" if is_combined_model else "filter_radius"
-            rms_mix_rate_key = "fsprvc_rvc_rms_mix_rate" if is_combined_model else "rms_mix_rate"
-            is_half_key = "fsprvc_is_half" if is_combined_model else "is_half"
-            f0method_key = "fsprvc_f0method" if is_combined_model else "f0method"
-            use_index_file_key = "fsprvc_use_index_file" if is_combined_model else "use_index_file"
-            tts_rate_key = "tts_rate"
-
-            pitch = float(settings.get(pitch_key, 0))
-            if self.parent.current_character_name == "Player" and not is_combined_model:
+            # Получаем параметры из настроек
+            pitch = float(settings.get("pitch", 0))
+            if self.parent.current_character_name == "Player" and config_id != "medium+low":
                 pitch = -12
             
-            index_rate = float(settings.get(index_rate_key, 0.75))
-            protect = float(settings.get(protect_key, 0.33))
-            filter_radius = int(settings.get(filter_radius_key, 3))
-            rms_mix_rate = float(settings.get(rms_mix_rate_key, 0.5))
-            is_half = settings.get(is_half_key, "True").lower() == "true"
-            use_index_file = settings.get(use_index_file_key, True)
-            f0method_override = settings.get(f0method_key, None)
-            tts_rate = int(settings.get(tts_rate_key, 0)) if not is_combined_model else 0
+            index_rate = float(settings.get("index_rate", 0.75))
+            protect = float(settings.get("protect", 0.33))
+            filter_radius = int(settings.get("filter_radius", 3))
+            rms_mix_rate = float(settings.get("rms_mix_rate", 0.5))
+            is_half = settings.get("is_half", "True").lower() == "true"
+            use_index_file = settings.get("use_index_file", True)
+            f0method_override = settings.get("f0method", None)
+            tts_rate = int(settings.get("tts_rate", 0)) if config_id != "medium+low" else 0
 
             if use_index_file and self.parent.index_path and os.path.exists(self.parent.index_path):
                 self.current_tts_rvc.set_index_path(self.parent.index_path)
@@ -219,9 +311,6 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 if self.parent.provider in ["NVIDIA"]:
                     self.current_tts_rvc.current_model = self.parent.pth_path
                 elif self.parent.provider in ["AMD"]:
-                    # if hasattr(self.current_tts_rvc, 'set_model'):
-                    #     self.current_tts_rvc.set_model(self.parent.pth_path)
-                    # else:
                     self.current_tts_rvc.current_model = self.parent.pth_path
 
             if not TEST_WITH_DONE_AUDIO:
@@ -302,25 +391,18 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             if not os.path.exists(temp_wav) or os.path.getsize(temp_wav) == 0:
                  return None
 
+            # Подготовка параметров RVC для Silero
             base_rvc_pitch_from_settings = float(settings.get("silero_rvc_pitch", 6))
             final_rvc_pitch = base_rvc_pitch_from_settings - (6 - character_base_rvc_pitch)
 
-            rvc_params = {
-                "pitch": final_rvc_pitch,
-                "index_rate": float(settings.get("silero_rvc_index_rate", 0.75)),
-                "protect": float(settings.get("silero_rvc_protect", 0.33)),
-                "filter_radius": int(settings.get("silero_rvc_filter_radius", 3)),
-                "rms_mix_rate": float(settings.get("silero_rvc_rms_mix_rate", 0.5)),
-            }
-            if self.parent.provider == "NVIDIA": rvc_params["is_half"] = settings.get("silero_rvc_is_half", "True").lower() == "true"
-            if f0method_override := settings.get("silero_rvc_f0method", None): rvc_params["f0method"] = f0method_override
-            
+            # Настройка модели RVC для персонажа
             is_nvidia = self.parent.provider in ["NVIDIA"]
             model_ext = 'pth' if is_nvidia else 'onnx'
             rvc_model_short_name = str(getattr(character, 'short_name', "Mila"))
             self.parent.pth_path = os.path.join(self.parent.clone_voice_folder, f"{rvc_model_short_name}.{model_ext}")
             self.parent.index_path = os.path.join(self.parent.clone_voice_folder, f"{rvc_model_short_name}.index")
-            if not os.path.exists(self.parent.pth_path): raise Exception(f"Файл модели RVC не найден: {self.parent.pth_path}")
+            if not os.path.exists(self.parent.pth_path): 
+                raise Exception(f"Файл модели RVC не найден: {self.parent.pth_path}")
 
             if os.path.abspath(self.parent.pth_path) != os.path.abspath(getattr(self.current_tts_rvc, 'current_model', '')):
                 logger.info(f"Смена RVC модели на: {self.parent.pth_path}")
@@ -333,34 +415,24 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                         self.current_tts_rvc.current_model = self.parent.pth_path
                         logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
 
-            if settings.get("use_index_file", True) and self.parent.index_path and os.path.exists(self.parent.index_path):
-                self.current_tts_rvc.set_index_path(self.parent.index_path)
-            else:
-                self.current_tts_rvc.set_index_path("")
-            
-            output_file_rvc = self.current_tts_rvc.voiceover_file(input_path=temp_wav, **rvc_params)
-
-            if not output_file_rvc or not os.path.exists(output_file_rvc) or os.path.getsize(output_file_rvc) == 0:
-                return None
-
-            stereo_output_file = output_file_rvc.replace(".wav", "_stereo.wav")
-
-            # For VinerX: в этом файле я использую ffmpeg rubberband питчинг - почитай про него. Но при прослушивании голос почему-то не меняется у шортхейр миты. Надо это посмотреть и исправить
-            # Что касается файла: он создаётся правильно, но воспроизводится незапитченная версия почему то в интерфейсе (в игре не тестил). Вот команда, которая хорошо отрабатывает: ffmpeg -i 05fbd3d5.wav -af "rubberband=pitch=1.3" out.mp3
-            # Посмотри её, если сможешь, исправь, пожалуйста. Это также и про silero/edge tts
-            converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, stereo_output_file, atempo=1.0, pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0))
-
-
-            if converted_file and os.path.exists(converted_file):
-                final_output_path = stereo_output_file
-                try: os.remove(output_file_rvc)
-                except OSError: pass
-            else:
-                final_output_path = output_file_rvc
+            # Применение RVC через общую функцию
+            final_output_path = await self.apply_rvc_to_file(
+                filepath=temp_wav,
+                pitch=final_rvc_pitch,
+                index_rate=float(settings.get("silero_rvc_index_rate", 0.75)),
+                protect=float(settings.get("silero_rvc_protect", 0.33)),
+                filter_radius=int(settings.get("silero_rvc_filter_radius", 3)),
+                rms_mix_rate=float(settings.get("silero_rvc_rms_mix_rate", 0.5)),
+                is_half=settings.get("silero_rvc_is_half", "True").lower() == "true" if self.parent.provider == "NVIDIA" else True,
+                f0method=settings.get("silero_rvc_f0method", None),
+                use_index_file=settings.get("use_index_file", True)
+            )
             
             if hasattr(self.parent.parent, 'ConnectedToGame') and self.parent.parent.ConnectedToGame:
                 self.parent.parent.patch_to_sound_file = final_output_path
+            
             return final_output_path
+            
         except Exception as error:
             traceback.print_exc()
             logger.info(f"Ошибка при создании озвучки с Silero + RVC: {error}")

@@ -32,7 +32,8 @@ model_descriptions = {
     "medium": "Модель Fish Speech для генерации речи с хорошим качеством. Требует больше ресурсов.",
     "medium+": "Скомпилированная на видеокарту версия Fish Speech. Требует больше места.",
     "medium+low": "Комбинация Fish Speech+ и RVC для высококачественного преобразования голоса.",
-    "f5_tts": "Лучшая эмоциональная модель. Дифузионная модель, так что самая требовательная к видеокарте."
+    "high": "Лучшая эмоциональная модель. Дифузионная модель, так что самая требовательная к видеокарте.",
+    "high+low": "Лучшая эмоциональная модель. Дифузионная модель, так что самая требовательная к видеокарте."
 }
 
 model_descriptions_en = {
@@ -41,7 +42,8 @@ model_descriptions_en = {
     "medium": "Fish Speech model for speech generation with good quality. Requires more resources.",
     "medium+": "GPU-compiled version of Fish Speech. Requires more disk space.",
     "medium+low": "Combination of Fish Speech+ and RVC for high-quality voice conversion.",
-    "f5_tts": "Best emotional model. A diffusion model, therefore the most GPU-demanding."
+    "high": "Best emotional model. A diffusion model, therefore the most GPU-demanding.",
+    "high+low": "Best emotional model with RVC. A diffusion model, therefore the most GPU-demanding."
 }
 
 setting_descriptions = {
@@ -86,6 +88,7 @@ setting_descriptions = {
     "fsprvc_filter_radius": "[FSP+RVC][RVC] Радиус фильтра F0 для части RVC.",
     "fsprvc_rvc_rms_mix_rate": "[FSP+RVC][RVC] Смешивание RMS для части RVC.",
 
+
     "speed": "[F5-TTS] Скорость генерируемой речи. 1.0 - нормальная скорость, >1.0 - быстрее, <1.0 - медленнее.",
     "remove_silence": "[F5-TTS] Автоматически удалять тишину в начале и конце сгенерированного аудио.",
     "nfe_step": "[F5-TTS] Количество шагов диффузии. Больше = лучше качество, но медленнее. Меньше = быстрее, но может быть хуже. (Рекомендуется: 3-10)",
@@ -94,6 +97,19 @@ setting_descriptions = {
     "target_rms": "[F5-TTS] Целевая громкость (RMS) для нормализации аудио. -1 отключает нормализацию. (Рекомендуется: -1)",
     "cross_fade_duration": "[F5-TTS] Длительность кроссфейда (в секундах) между аудио-чанками. (Рекомендуется: 0.015)",
     "fix_duration": "[F5-TTS] Фиксировать длительность фонем. Может улучшить стабильность, но снизить естественность. (Рекомендуется: False)",
+
+    "f5rvc_f5_device": "[F5+RVC][F5] Устройство для части F5-TTS.",
+    "f5rvc_f5_speed": "[F5+RVC][F5] Скорость речи для части F5-TTS.",
+    "f5rvc_f5_nfe_step": "[F5+RVC][F5] Количество шагов диффузии для части F5-TTS.",
+    "f5rvc_f5_remove_silence": "[F5+RVC][F5] Удаление тишины для части F5-TTS.",
+    "f5rvc_rvc_pitch": "[F5+RVC][RVC] Высота голоса для части RVC.",
+    "f5rvc_index_rate": "[F5+RVC][RVC] Соотношение индекса для части RVC.",
+    "f5rvc_protect": "[F5+RVC][RVC] Защита согласных для части RVC.",
+    "f5rvc_filter_radius": "[F5+RVC][RVC] Радиус фильтра F0 для части RVC.",
+    "f5rvc_rvc_rms_mix_rate": "[F5+RVC][RVC] Смешивание RMS для части RVC.",
+    "f5rvc_is_half": "[F5+RVC][RVC] Half-precision для части RVC.",
+    "f5rvc_f0method": "[F5+RVC][RVC] Метод F0 для части RVC.",
+    "f5rvc_use_index_file": "[F5+RVC][RVC] Использовать файл .index для улучшения соответствия тембра голоса модели.",
 
     "tmp_directory": "Папка для временных файлов, создаваемых в процессе работы (например, промежуточные аудиофайлы).",
     "verbose": "Включить вывод подробной отладочной информации в консоль для диагностики проблем.",
@@ -151,6 +167,19 @@ setting_descriptions_en = {
     "target_rms": "[F5-TTS] Target loudness (RMS) for audio normalization. -1 disables normalization. (Recommended: -1)",
     "cross_fade_duration": "[F5-TTS] Crossfade duration (in seconds) between audio chunks. (Recommended: 0.015)",
     "fix_duration": "[F5-TTS] Fix phoneme duration. May improve stability but reduce naturalness. (Recommended: False)",
+
+    "f5rvc_f5_device": "[F5+RVC][F5] Device for the F5-TTS part.",
+    "f5rvc_f5_speed": "[F5+RVC][F5] Speech speed for the F5-TTS part.",
+    "f5rvc_f5_nfe_step": "[F5+RVC][F5] Diffusion steps for the F5-TTS part.",
+    "f5rvc_f5_remove_silence": "[F5+RVC][F5] Remove silence for the F5-TTS part.",
+    "f5rvc_rvc_pitch": "[F5+RVC][RVC] Voice pitch for the RVC part.",
+    "f5rvc_index_rate": "[F5+RVC][RVC] Index rate for the RVC part.",
+    "f5rvc_protect": "[F5+RVC][RVC] Consonant protection for the RVC part.",
+    "f5rvc_filter_radius": "[F5+RVC][RVC] F0 filter radius for the RVC part.",
+    "f5rvc_rvc_rms_mix_rate": "[F5+RVC][RVC] RMS mixing for the RVC part.",
+    "f5rvc_is_half": "[F5+RVC][RVC] Half-precision for the RVC part.",
+    "f5rvc_f0method": "[F5+RVC][RVC] F0 method for the RVC part.",
+    "f5rvc_use_index_file": "[F5+RVC][RVC] Use the .index file to improve the model's voice timbre matching.",
 
     "tmp_directory": "Folder for temporary files created during operation (e.g., intermediate audio files).",
     "verbose": "Enable detailed debug information output to the console for diagnosing problems.",
@@ -543,9 +572,9 @@ class VoiceModelSettingsWindow(QWidget):
                 ]
             },
             {
-                "id": "f5_tts",
+                "id": "high",
                 "name": "F5-TTS",
-                "min_vram": 6,
+                "min_vram": 4,
                 "rec_vram": 8,
                 "gpu_vendor": ["NVIDIA"],
                 "size_gb": 4,
@@ -553,6 +582,28 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "speed", "label": _("Скорость речи", "Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
                     {"key": "nfe_step", "label": _("Шаги диффузии", "Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
                     {"key": "remove_silence", "label": _("Удалять тишину", "Remove Silence"), "type": "checkbutton", "options": {"default": True}}
+                ]
+            },
+            {
+                "id": "high+low",
+                "name": "F5-TTS + RVC",
+                "min_vram": 6,
+                "rec_vram": 8,
+                "gpu_vendor": ["NVIDIA"],
+                "size_gb": 7,
+                "settings": [
+                    {"key": "f5rvc_f5_device", "label": _("[F5] Устройство", "[F5] Device"), "type": "combobox", "options": {"values": ["cuda", "cpu"], "default": "cuda"}},
+                    {"key": "f5rvc_f5_speed", "label": _("[F5] Скорость речи", "[F5] Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
+                    {"key": "f5rvc_f5_nfe_step", "label": _("[F5] Шаги диффузии", "[F5] Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
+                    {"key": "f5rvc_f5_remove_silence", "label": _("[F5] Удалять тишину", "[F5] Remove Silence"), "type": "checkbutton", "options": {"default": True}},
+                    {"key": "f5rvc_rvc_pitch", "label": _("[RVC] Высота голоса (пт)", "[RVC] Pitch (semitones)"), "type": "entry", "options": {"default": "0"}},
+                    {"key": "f5rvc_index_rate", "label": _("[RVC] Соотн. индекса", "[RVC] Index Rate"), "type": "entry", "options": {"default": "0.75"}},
+                    {"key": "f5rvc_protect", "label": _("[RVC] Защита согласных", "[RVC] Consonant Protection"), "type": "entry", "options": {"default": "0.33"}},
+                    {"key": "f5rvc_filter_radius", "label": _("[RVC] Радиус фильтра F0", "[RVC] F0 Filter Radius"), "type": "entry", "options": {"default": "3"}},
+                    {"key": "f5rvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}},
+                    {"key": "f5rvc_is_half", "label": _("[RVC] Half-precision", "[RVC] Half-precision"), "type": "combobox", "options": {"values": ["True", "False"], "default": "True"}},
+                    {"key": "f5rvc_f0method", "label": _("[RVC] Метод F0", "[RVC] F0 Method"), "type": "combobox", "options": {"values": ["pm", "rmvpe", "crepe", "harvest", "fcpe", "dio"], "default": "rmvpe"}},
+                    {"key": "f5rvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}}
                 ]
             }
         ]
@@ -605,7 +656,8 @@ class VoiceModelSettingsWindow(QWidget):
                     elif model_id == "medium": is_installed = self.check_installed_func("fish_speech_lib")
                     elif model_id == "medium+": is_installed = self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
                     elif model_id == "medium+low": is_installed = self.check_installed_func("tts_with_rvc") and self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
-                    elif model_id == "f5_tts": is_installed = self.check_installed_func("f5_tts")
+                    elif model_id == "high": is_installed = self.check_installed_func("f5_tts")
+                    elif model_id == "high+low": is_installed = self.check_installed_func("f5_tts") and self.check_installed_func("tts_with_rvc")
 
                     if is_installed:
                         self.installed_models.add(model_id)
@@ -1320,7 +1372,7 @@ class VoiceModelSettingsWindow(QWidget):
             target_uninstall_func = self.local_voice.uninstall_fish_speech
         elif model_id in ["medium+", "medium+low"]:
             target_uninstall_func = self.local_voice.uninstall_triton_component
-        elif model_id == "f5_tts":
+        elif model_id == ["high", "high+low"]:
             target_uninstall_func = self.local_voice.uninstall_f5_tts
         else:
             logger.error(f"Неизвестный model_id для удаления: {model_id}")

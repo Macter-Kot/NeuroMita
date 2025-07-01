@@ -115,7 +115,7 @@ class FishSpeechModel(IVoiceModel):
             return False
 
         if self.current_fish_speech is None:
-            settings = self.load_model_settings()
+            settings = self.parent.load_model_settings(mode)
             device = settings.get(
                 "fsprvc_fsp_device" if mode == "medium+low" else "device",
                 "cuda")
@@ -217,9 +217,20 @@ class FishSpeechModel(IVoiceModel):
 
             if mode == "medium+low":
                 if self.rvc_handler:
-                    logger.info(f"Применяем RVC (через инъекцию) к файлу: {final_output_path}")
-                    # Используем метод родителя, который уже умеет обрабатывать RVC
-                    rvc_output_path = await self.rvc_handler.apply_rvc_to_file(final_output_path, original_model_id=self.model_id)
+                    logger.info(f"Применяем RVC с параметрами FSP+RVC к файлу: {final_output_path}")
+                    
+                    # Получаем fsp_rvc параметры из настроек
+                    rvc_output_path = await self.rvc_handler.apply_rvc_to_file(
+                        filepath=final_output_path,
+                        pitch=float(settings.get("fsprvc_rvc_pitch", 0)),
+                        index_rate=float(settings.get("fsprvc_index_rate", 0.75)),
+                        protect=float(settings.get("fsprvc_protect", 0.33)),
+                        filter_radius=int(settings.get("fsprvc_filter_radius", 3)),
+                        rms_mix_rate=float(settings.get("fsprvc_rvc_rms_mix_rate", 0.5)),
+                        is_half=settings.get("fsprvc_is_half", "True").lower() == "true",
+                        f0method=settings.get("fsprvc_f0method", None),
+                        use_index_file=settings.get("fsprvc_use_index_file", True)
+                    )
                     
                     if rvc_output_path and os.path.exists(rvc_output_path):
                         if final_output_path != rvc_output_path:

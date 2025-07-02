@@ -59,24 +59,24 @@ from ui.settings import (
 )
 
 
-class AsyncWorker(QObject):
-    """Worker для выполнения асинхронных задач"""
-    finished = pyqtSignal()
-    error = pyqtSignal(str)
-    result = pyqtSignal(object)
+# class AsyncWorker(QObject):
+#     """Worker для выполнения асинхронных задач"""
+#     finished = pyqtSignal()
+#     error = pyqtSignal(str)
+#     result = pyqtSignal(object)
 
-    def __init__(self, coro):
-        super().__init__()
-        self.coro = coro
+#     def __init__(self, coro):
+#         super().__init__()
+#         self.coro = coro
 
-    async def run(self):
-        try:
-            result = await self.coro
-            self.result.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            self.finished.emit()
+#     async def run(self):
+#         try:
+#             result = await self.coro
+#             self.result.emit(result)
+#         except Exception as e:
+#             self.error.emit(str(e))
+#         finally:
+#             self.finished.emit()
 
 
 class ChatGUI(QMainWindow):
@@ -307,14 +307,14 @@ class ChatGUI(QMainWindow):
             self.silero_connected = False
             self.bot_handler_ready = False
 
-    def run_in_thread(self, response):
-        """Запуск асинхронной задачи в отдельном потоке."""
-        self.loop_ready_event.wait()
-        if self.loop and self.loop.is_running():
-            logger.info("Запускаем асинхронную задачу в цикле событий...")
-            self.loop.create_task(self.run_send_and_receive(self.textToTalk, self.get_speaker_text()))
-        else:
-            logger.info("Ошибка: Цикл событий asyncio не готов.")
+    # def run_in_thread(self, response):
+    #     """Запуск асинхронной задачи в отдельном потоке."""
+    #     self.loop_ready_event.wait()
+    #     if self.loop and self.loop.is_running():
+    #         logger.info("Запускаем асинхронную задачу в цикле событий...")
+    #         self.loop.create_task(self.run_send_and_receive(self.textToTalk, self.get_speaker_text()))
+    #     else:
+    #         logger.info("Ошибка: Цикл событий asyncio не готов.")
 
     def get_speaker_text(self):
         if self.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
@@ -751,14 +751,14 @@ class ChatGUI(QMainWindow):
         char_format.setFont(font)
         cursor.insertText(text, char_format)
 
-    def append_message(self, text):
-        cursor = self.chat_window.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.MoveAnchor, 2)
-        cursor.insertText(text)
-        self.chat_window.verticalScrollBar().setValue(
-            self.chat_window.verticalScrollBar().maximum()
-        )
+    # def append_message(self, text):
+    #     cursor = self.chat_window.textCursor()
+    #     cursor.movePosition(QTextCursor.MoveOperation.End)
+    #     cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.MoveAnchor, 2)
+    #     cursor.insertText(text)
+    #     self.chat_window.verticalScrollBar().setValue(
+    #         self.chat_window.verticalScrollBar().maximum()
+    #     )
 
     def process_image_for_chat(self, has_image_content, item, processed_content_parts):
         image_data_base64 = item.get("image_url", {}).get("url", "")
@@ -882,9 +882,9 @@ class ChatGUI(QMainWindow):
         self.ConnectedToGame = is_connected
         QTimer.singleShot(0, self.update_status_colors)
 
-    def update_all(self):
-        self.update_status_colors()
-        self.update_debug_info()
+    # def update_all(self):
+    #     self.update_status_colors()
+    #     self.update_debug_info()
 
     def update_status_colors(self):
         """Обновляет цвета индикаторов статуса"""
@@ -1319,24 +1319,24 @@ class ChatGUI(QMainWindow):
         finally:
             self.loading_more_history = False
 
-    def _show_loading_popup(self, message):
-        """Показать окно загрузки"""
-        self.loading_popup = QDialog(self)
-        self.loading_popup.setWindowTitle(" ")
-        self.loading_popup.setFixedSize(300, 100)
-        self.loading_popup.setModal(True)
+    # def _show_loading_popup(self, message):
+    #     """Показать окно загрузки"""
+    #     self.loading_popup = QDialog(self)
+    #     self.loading_popup.setWindowTitle(" ")
+    #     self.loading_popup.setFixedSize(300, 100)
+    #     self.loading_popup.setModal(True)
         
-        layout = QVBoxLayout(self.loading_popup)
-        label = QLabel(message)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
+    #     layout = QVBoxLayout(self.loading_popup)
+    #     label = QLabel(message)
+    #     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    #     layout.addWidget(label)
         
-        self.loading_popup.show()
+    #     self.loading_popup.show()
 
-    def _close_loading_popup(self):
-        if hasattr(self, 'loading_popup') and self.loading_popup:
-            self.loading_popup.close()
-            self.loading_popup = None
+    # def _close_loading_popup(self):
+    #     if hasattr(self, 'loading_popup') and self.loading_popup:
+    #         self.loading_popup.close()
+    #         self.loading_popup = None
 
     def all_settings_actions(self, key, value):
         """Обработчик изменения настроек"""
@@ -1625,7 +1625,8 @@ class ChatGUI(QMainWindow):
                 except Exception as e:
                     logger.info(f"Ошибка при удалении файла {file}: {e}")
 
-        # region LocalVoice Functions
+
+    # region LocalVoice Functions
     async def run_local_voiceover(self, text):
         """Асинхронный метод для вызова локальной озвучки."""
         result_path = None
@@ -2167,6 +2168,7 @@ class ChatGUI(QMainWindow):
         modules_to_check = {
             "tts_with_rvc": "TTS_RVC",
             "fish_speech_lib.inference": "FishSpeech",
+            "f5_tts": None,
             "triton": None
         }
         

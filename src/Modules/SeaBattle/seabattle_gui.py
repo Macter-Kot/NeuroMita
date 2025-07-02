@@ -153,7 +153,7 @@ class SeaBattleWindow(QWidget):
                     self.send_state_update()
                     continue
 
-                if action == "llm_place_ship":
+                if action == "mita_place_ship":
                     spec = cmd.get("spec", "").split(',')
                     if len(spec) == 3:
                         try:
@@ -161,19 +161,19 @@ class SeaBattleWindow(QWidget):
                             x, y = from_alg(coord)
                             length = int(length)
                             orient = 'v' if orient_char.lower() == 'v' else 'h'
-                            self.game.engine.place_ship(self.game.llm_id, x, y, length, orient)
+                            self.game.engine.place_ship(self.game.mita_id, x, y, length, orient)
                         except Exception as e:
-                            print(f"LLM place ship error: {e}")
+                            print(f"Mita place ship error: {e}")
                 
-                if action == "llm_place_randomly":
-                    self.game.engine.place_all_llm_ships_randomly()
+                if action == "mita_place_randomly":
+                    self.game.engine.place_all_mita_ships_randomly()
 
-                if action == "llm_move":
+                if action == "mita_move":
                     try:
                         x, y = from_alg(cmd.get("coord"))
-                        self.game.engine.make_move(self.game.llm_id, x, y)
+                        self.game.engine.make_move(self.game.mita_id, x, y)
                     except Exception as e:
-                        print(f"LLM move error: {e}")
+                        print(f"Mita move error: {e}")
 
                 self.update_view()
                 self.send_state_update()
@@ -239,7 +239,7 @@ class SeaBattleWindow(QWidget):
                 data['btn'].setStyleSheet("background-color: #88C0D0;" if is_selected else "")
 
             if not ships_left:
-                self.status_label.setText("Ожидание LLM")
+                self.status_label.setText("Ожидание Миты")
                 self.info_label.setText("Все ваши корабли расставлены.")
             else:
                 self.status_label.setText("Расстановка кораблей")
@@ -253,17 +253,17 @@ class SeaBattleWindow(QWidget):
             self.controls_group.setVisible(False)
             self.my_board_widget.clear_preview()
             self.opponent_board_widget.setVisible(True)
-            self.status_label.setText("Ваш ход!" if state['is_player_turn'] else "Ход LLM")
+            self.status_label.setText("Ваш ход!" if state['is_player_turn'] else "Ход Миты")
             self.info_label.setText("Стреляйте по полю противника.")
             if state.get('last_move'):
                 last_move = state['last_move']
-                actor = "Вы" if last_move['attacker'] == self.game.player_id else "LLM"
+                actor = "Вы" if last_move['attacker'] == self.game.player_id else "Мита"
                 self.info_label.setText(f"Последний ход: {actor} на {last_move['coord_alg']} - {last_move['message']}")
 
         elif state['phase'] == 'game_over':
             self.controls_group.setVisible(False)
             self.my_board_widget.clear_preview()
-            winner_text = "Вы победили!" if state['winner'] == self.game.player_id else "LLM победил."
+            winner_text = "Вы победили!" if state['winner'] == self.game.player_id else "Мита победила."
             self.status_label.setText("Игра окончена")
             self.info_label.setText(winner_text)
 

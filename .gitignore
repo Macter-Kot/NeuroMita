@@ -1,2 +1,4 @@
 *.pyz
 __pycache__
+/.idea
+build_VinerX.py

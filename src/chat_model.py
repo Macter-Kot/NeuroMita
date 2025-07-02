@@ -629,6 +629,115 @@ class ChatModel:
             logger.error(f"Error in _generate_request_response dispatcher: {str(e)}", exc_info=True)
             return None
 
+    # region Generation final
+    def generate_request_gemini(self, combined_messages):
+        params = self.get_params()
+        self.clear_endline_sim(params)
+
+        contents = []
+        for msg in combined_messages:
+            role = "model" if msg["role"] == "assistant" else msg["role"]
+            # Если роль "system", преобразуем в "user" с префиксом
+            if role == "system":
+                role = "user"
+                if isinstance(msg["content"], list):
+                    # Если content уже список частей, добавляем системный промт как первую текстовую часть
+                    msg_content = [{"type": "text", "text": "[System Prompt]:"}] + msg["content"]
+                else:
+                    # Если content - строка, добавляем префикс к строке
+                    msg_content = f"[System Prompt]: {msg['content']}"
+            else:
+                msg_content = msg["content"]
+
+            contents.append({
+                "role": role,
+                "parts": self._format_multimodal_content_for_gemini(msg_content)
+            })
+
+        data = {
+            "contents": contents,
+            "generationConfig": params
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        logger.info("Отправляю запрос к Gemini.")
+        logger.debug(f"Отправляемые данные (Gemini): {data}")  # Добавляем логирование содержимого
+        save_combined_messages(data, "SavedMessages/last_gemini_log")
+        response = requests.post(self.api_url, headers=headers, json=data,
+                                 stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
+
+        if response.status_code == 200:
+            if self.gui.settings.get("ENABLE_STREAMING", False):
+                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                    if chunk:
+                        try:
+                            generated_text = \
+                            json.loads(chunk).get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
+                                "text", "")
+                            self.gui.append_message(generated_text)
+                        except:
+                            ...
+                return None
+            else:
+                response_data = response.json()
+                generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
+                    "text", "")
+                logger.info("Answer: \n" + generated_text)
+                return generated_text
+        else:
+            logger.error(f"Ошибка: {response.status_code}, {response.text}")
+            return None
+
+    def generate_request_common(self, combined_messages):
+        data = {
+            "model": self.gui.settings.get("NM_API_MODEL"),
+            "messages": [
+                {"role": msg["role"], "content": msg["content"]} for msg in combined_messages
+            ]
+        }
+
+        # Объединяем params в data
+        params = self.get_params()
+        self.clear_endline_sim(params)
+        data.update(params)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        logger.info("Отправляю запрос к RequestCommon.")
+        logger.debug(f"Отправляемые данные (RequestCommon): {data}")  # Добавляем логирование содержимого
+        save_combined_messages(data, "SavedMessages/last_request_common_log")
+        response = requests.post(self.api_url, headers=headers, json=data,
+                                 stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
+
+        if response.status_code == 200:
+            if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
+                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                    if chunk:
+                        try:
+                            response_data = json.loads(chunk)
+                            decoded_chunk = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                            logger.info("Chunk: \n" + decoded_chunk)
+                            self.gui.append_message(decoded_chunk)
+                        except:
+                            ...
+                return None
+            else:
+                response_data = response.json()
+                # Формат ответа DeepSeek отличается от Gemini
+                generated_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                logger.info("Common request: \n" + generated_text)
+                return generated_text
+        else:
+            logger.error(f"Ошибка: {response.status_code}, {response.text}")
+            return None
+
     def _generate_openapi_response(self, combined_messages, use_gpt4free=False):
         target_client = None
         model_to_use = ""
@@ -693,6 +802,7 @@ class ChatModel:
                 logger.error(f"API Error details: Status={e.response.status_code}, Body={e.response.text}")
             return None
 
+    # endregion
     def change_last_message_to_user_for_gemini(self, api_model, combined_messages):
         if combined_messages and ("gemini" in api_model.lower() or "gemma" in api_model.lower()) and \
                 combined_messages[-1]["role"] == "system":
@@ -862,92 +972,6 @@ class ChatModel:
 
         return updated_messages
 
-    # def generate_request_gemini(self, combined_messages):
-    #     params_for_gemini = self.get_params(model="gemini-pro")
-    #     self.clear_endline_sim(params_for_gemini) # Added from other versions
-
-    #     gemini_contents = []
-    #     for msg in combined_messages: 
-    #         role = "model" if msg["role"] == "assistant" else msg["role"]
-    #         if role not in ["user", "model"]: 
-    #             logger.warning(f"Invalid role '{role}' for Gemini, converting to 'user'. Content: {msg['content'][:50]}")
-    #             role = "user" 
-    #         gemini_contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-
-    #     data = {
-    #         "contents": gemini_contents,
-    #         "generationConfig": params_for_gemini
-    #     }
-
-    #     headers = {"Content-Type": "application/json"} 
-
-    #     api_url_with_key = self.api_url 
-    #     if ":generateContent" not in api_url_with_key and not api_url_with_key.endswith("/generateContent"):
-    #          api_url_with_key = api_url_with_key.replace("/v1beta/models/", "/v1beta/models/") + ":generateContent" # Ensure correct path
-    #          if "?key=" not in api_url_with_key and self.api_key: 
-    #              api_url_with_key += f"?key={self.api_key}"
-
-    #     logger.info(f"Sending request to Gemini API: {api_url_with_key}")
-
-    #     try:
-    #         response = requests.post(api_url_with_key, headers=headers, json=data, timeout=40)
-    #         response.raise_for_status() 
-
-    #         response_data = response.json()
-    #         if response_data.get("candidates"):
-    #             generated_text = response_data["candidates"][0].get("content", {}).get("parts", [{}])[0].get("text", "")
-    #             logger.info("Gemini response successful.")
-    #             return generated_text
-    #         else:
-    #             logger.warning(f"Gemini response missing candidates. Full response: {response_data}")
-    #             if "promptFeedback" in response_data:
-    #                 logger.warning(f"Gemini Prompt Feedback: {response_data['promptFeedback']}")
-    #             return None
-    #     except requests.exceptions.HTTPError as http_err:
-    #         logger.error(f"Gemini API HTTP error: {http_err} - Response: {http_err.response.text}")
-    #         return None
-    #     except Exception as e:
-    #         logger.error(f"Error during Gemini API request: {str(e)}", exc_info=True)
-    #         return None
-
-    # def generate_request_common(self, combined_messages):
-    #     model_name = self.gui.settings.get("NM_API_MODEL", self.api_model)
-    #     params_for_common = self.get_params(model=model_name)
-    #     self.clear_endline_sim(params_for_common) # Added from other versions
-
-    #     data = {
-    #         "model": model_name,
-    #         "messages": combined_messages, 
-    #         **params_for_common 
-    #     }
-
-    #     headers = {
-    #         "Content-Type": "application/json",
-    #     }
-    #     if self.api_key: 
-    #         headers["Authorization"] = f"Bearer {self.api_key}"
-
-    #     logger.info(f"Sending request to common API: {self.api_url} with model: {model_name}")
-
-    #     try:
-    #         response = requests.post(self.api_url, headers=headers, json=data, timeout=40)
-    #         response.raise_for_status()
-
-    #         response_data = response.json()
-    #         if response_data.get("choices"):
-    #             generated_text = response_data["choices"][0].get("message", {}).get("content", "")
-    #             logger.info("Common API response successful.")
-    #             return generated_text
-    #         else:
-    #             logger.warning(f"Common API response missing choices. Full response: {response_data}")
-    #             return None
-    #     except requests.exceptions.HTTPError as http_err:
-    #         logger.error(f"Common API HTTP error: {http_err} - Response: {http_err.response.text}")
-    #         return None
-    #     except Exception as e:
-    #         logger.error(f"Error during common API request: {str(e)}", exc_info=True)
-    #         return None
-
     def _get_provider_key(self, model_name: str) -> str:
         if not model_name: return 'openai'
         model_name_lower = model_name.lower()
@@ -957,55 +981,6 @@ class ChatModel:
         if 'deepseek' in model_name_lower: return 'deepseek'
         logger.info(f"Unknown provider for model '{model_name}', defaulting to 'openai' parameter naming conventions.")
         return 'openai'
-
-    # def get_params(self, model: str = None) -> Dict[str, Any]:
-    #     current_model_name = model if model is not None else self.api_model
-    #     provider_key = self._get_provider_key(current_model_name)
-
-    #     params: Dict[str, Any] = {}
-
-    #     if self.temperature is not None:
-    #         params['temperature'] = self.temperature
-
-    #     if self.max_response_tokens is not None:
-    #         if provider_key in ['openai', 'deepseek', 'anthropic']: 
-    #             params['max_tokens'] = self.max_response_tokens
-    #         elif provider_key == 'gemini':
-    #             params['maxOutputTokens'] = self.max_response_tokens
-
-    #     if self.presence_penalty is not None and bool(self.gui.settings.get("USE_MODEL_PRESENCE_PENALTY", False)):
-    #         if provider_key in ['openai', 'deepseek']:
-    #             params['presence_penalty'] = self.presence_penalty
-    #         elif provider_key == 'gemini': 
-    #             logger.info(f"Presence penalty not directly supported by Gemini config for model {current_model_name}. Skipping.")
-
-    #     params = self.remove_unsupported_params(current_model_name, params)
-    #     return params
-
-    # def get_final_params(self, model_name: str, messages: List[Dict]) -> Dict[str, Any]:
-    #     final_params = {
-    #         "model": model_name,
-    #         "messages": messages,
-    #         **self.get_params(model=model_name)
-    #     }
-    #     self.clear_endline_sim(final_params) # Added from other versions
-    #     return final_params
-
-    # def clear_endline_sim(self,params):
-    #     for key, value in params.items():
-    #         if isinstance(value, str):
-    #             params[key] = value.replace("'\x00", "") 
-
-    # def remove_unsupported_params(self,model,params):
-    #     """Тут удаляем все лишние параметры"""
-    #     if model in ("gemini-2.5-pro-exp-03-25","gemini-2.5-flash-preview-04-17"):
-    #         params.pop("presencePenalty", None) # This was for Gemini, but get_params already skips it.
-    #         # However, if presence_penalty (OpenAI style) was added by mistake, this would remove it.
-    #         # More robustly, check for actual Gemini param names if they were added by mistake.
-    #         # For now, keeping this as it was in the provided code.
-    #     return params
-
-
 
     def _compress_history(self, messages_to_compress: List[Dict]) -> Optional[str]:
         """
@@ -1198,7 +1173,6 @@ class ChatModel:
             parts.append({"text": message_content})
         return parts
 
-    # region невошедшие (из старых версий, но могут быть полезны или заменены)
     def get_room_name(self, room_id):  # This seems generally useful, kept.
         room_names = {
             0: "Кухня",
@@ -1209,8 +1183,6 @@ class ChatModel:
         }
         return room_names.get(room_id, "?")
 
-    # This method was in the "невошедшие" section of V1/V3 but has a different signature than add_temporary_system_info.
-    # The current `add_temporary_system_info` which uses `self.infos_to_add_to_history` is the primary mechanism in the new system.
     def add_temporary_system_message(self, messages: List[Dict], content: str):
         if not isinstance(messages, list):
             logger.error("add_temporary_system_message ожидает список сообщений.")
@@ -1221,114 +1193,6 @@ class ChatModel:
         }
         messages.append(system_message)
         logger.debug(f"Временно добавлено системное сообщение в переданный список: {content[:100]}...")
-
-    # endregion
-
-    # region Old but working
-
-    def generate_request_gemini(self, combined_messages):
-        params = self.get_params()
-        self.clear_endline_sim(params)
-
-        contents = []
-        for msg in combined_messages:
-            role = "model" if msg["role"] == "assistant" else msg["role"]
-            # Если роль "system", преобразуем в "user" с префиксом
-            if role == "system":
-                role = "user"
-                if isinstance(msg["content"], list):
-                    # Если content уже список частей, добавляем системный промт как первую текстовую часть
-                    msg_content = [{"type": "text", "text": "[System Prompt]:"}] + msg["content"]
-                else:
-                    # Если content - строка, добавляем префикс к строке
-                    msg_content = f"[System Prompt]: {msg['content']}"
-            else:
-                msg_content = msg["content"]
-
-            contents.append({
-                "role": role,
-                "parts": self._format_multimodal_content_for_gemini(msg_content)
-            })
-
-        data = {
-            "contents": contents,
-            "generationConfig": params
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-
-        logger.info("Отправляю запрос к Gemini.")
-        logger.debug(f"Отправляемые данные (Gemini): {data}")  # Добавляем логирование содержимого
-        save_combined_messages(data, "SavedMessages/last_gemini_log")
-        response = requests.post(self.api_url, headers=headers, json=data, stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
-
-        if response.status_code == 200:
-            if self.gui.settings.get("ENABLE_STREAMING", False):
-                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                    if chunk:
-                        try:
-                            generated_text = json.loads(chunk).get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                            self.gui.append_message(generated_text)
-                        except:
-                            ...
-                return None
-            else:
-                response_data = response.json()
-                generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
-                    "text", "")
-                logger.info("Answer: \n" + generated_text)
-                return generated_text
-        else:
-            logger.error(f"Ошибка: {response.status_code}, {response.text}")
-            return None
-
-    def generate_request_common(self, combined_messages):
-        data = {
-            "model": self.gui.settings.get("NM_API_MODEL"),
-            "messages": [
-                {"role": msg["role"], "content": msg["content"]} for msg in combined_messages
-            ]
-        }
-
-        # Объединяем params в data
-        params = self.get_params()
-        self.clear_endline_sim(params)
-        data.update(params)
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-
-        logger.info("Отправляю запрос к RequestCommon.")
-        logger.debug(f"Отправляемые данные (RequestCommon): {data}")  # Добавляем логирование содержимого
-        save_combined_messages(data, "SavedMessages/last_request_common_log")
-        response = requests.post(self.api_url, headers=headers, json=data, stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
-
-        if response.status_code == 200:
-            if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
-                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                    if chunk:
-                        try:
-                            response_data = json.loads(chunk)
-                            decoded_chunk = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                            logger.info("Chunk: \n" + decoded_chunk)
-                            self.gui.append_message(decoded_chunk)
-                        except:
-                            ...
-                return None
-            else:
-                response_data = response.json()
-                # Формат ответа DeepSeek отличается от Gemini
-                generated_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                logger.info("Common request: \n" + generated_text)
-                return generated_text
-        else:
-            logger.error(f"Ошибка: {response.status_code}, {response.text}")
-            return None
 
     def get_params(self, model=None):
         current_model = model if model is not None else self.api_model

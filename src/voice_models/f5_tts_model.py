@@ -10,6 +10,15 @@ from .base_model import IVoiceModel
 from typing import Optional, Any
 from Logger import logger
 
+from SettingsManager import SettingsManager
+def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
+_ = getTranslationVariant
+
+import requests
+import math
+from PyQt6.QtCore import QTimer
+from utils.PipInstaller import PipInstaller
+
 class F5TTSModel(IVoiceModel):
     def __init__(self, parent: 'LocalVoice', model_id: str, rvc_handler: Optional[IVoiceModel] = None):
         super().__init__(parent, model_id)
@@ -32,7 +41,7 @@ class F5TTSModel(IVoiceModel):
             return "F5-TTS + RVC"
         return None
 
-    def is_installed(self) -> bool:
+    def is_installed(self, model_id) -> bool:
         self._load_module()
         model_dir = os.path.join("checkpoints", "F5-TTS")
         ckpt_path = os.path.join(model_dir, "model.safetensors")
@@ -44,27 +53,159 @@ class F5TTSModel(IVoiceModel):
         if not (os.path.exists(ckpt_path) and os.path.exists(vocab_path)):
             return False
         
-        mode = self._mode()
+        mode = model_id
         if mode == "high+low":
-            if self.rvc_handler is None or not self.rvc_handler.is_installed():
+            if self.rvc_handler is None or not self.rvc_handler.is_installed("low"):
                 return False
         
         return True
 
-    def install(self) -> bool:
-        mode = self._mode()
+    def install(self, model_id) -> bool:
+        mode = model_id
         
+        # Устанавливаем сам F5-TTS, если его еще нет
+        self._load_module()
         if self.f5_pipeline_module is None:
-            if not self.parent.download_f5_tts_internal():
+            if not self._install_f5_dependencies():
                 return False
         
-        if mode == "high+low" and self.rvc_handler and not self.rvc_handler.is_installed():
-            return self.rvc_handler.install()
+        mode = model_id
+
+        # Для комбинированной модели доустанавливаем RVC
+        if mode == "high+low":
+            if self.rvc_handler and not self.rvc_handler.is_installed("low"):
+                logger.info("Компонент F5-TTS установлен, приступаем к установке RVC...")
+                return self.rvc_handler.install("low")
         
         return True
+    
+    def _install_f5_dependencies(self):
+        """
+        Установка F5-TTS.
 
-    def uninstall(self) -> bool:
-        mode = self._mode()
+        •  Если метод вызван в GUI-потоке без внешних колбэков – создаёт своё окно.
+        •  Если вызван из воркера и у LocalVoice присутствуют
+        _external_progress / _external_status / _external_log –
+        окно НЕ создаётся, все сообщения уводятся во внешние колбэки.
+        """
+        logger.info("[DEBUG] download_f5_tts_internal вошёл")
+        # ─────────────────────────────────────────────────────────
+        # 1.  Определяем режим работы
+        # ─────────────────────────────────────────────────────────
+        have_external = hasattr(self, "_external_log")
+        if have_external:
+            progress_window = None
+            update_progress = getattr(self, "_external_progress", lambda *_: None)
+            update_status   = getattr(self, "_external_status",   lambda *_: None)
+            update_log      = getattr(self, "_external_log",      lambda *_: None)
+        else:
+            gui = self.parent._create_installation_window(
+                title=_("Установка F5-TTS", "Installing F5-TTS"),
+                initial_status=_("Подготовка...", "Preparing...")
+            )
+            if not gui:
+                logger.error("Не удалось создать окно установки F5-TTS.")
+                return False
+
+            progress_window = gui["window"]
+            update_progress = gui["update_progress"]
+            update_status   = gui["update_status"]
+            update_log      = gui["update_log"]
+
+        # ─────────────────────────────────────────────────────────
+        # 2.  Основная логика установки
+        # ─────────────────────────────────────────────────────────
+        try:
+            installer = PipInstaller(
+                    script_path=r"libs\python\python.exe",
+                    libs_path="Lib",
+                    update_status=update_status,
+                    update_log=update_log,
+                    progress_window=progress_window,
+                    update_progress=update_progress        # ← новинка
+                )
+            logger.info("[DEBUG] PipInstaller создан, запускаем pip install")
+
+            update_progress(5)
+            update_log(_("Начало установки F5-TTS...", "Starting F5-TTS installation..."))
+
+            # PyTorch (если надо)
+            if self.parent.provider == "NVIDIA" and not self.parent.is_cuda_available():
+                update_status(_("Установка PyTorch (cu124)...", "Installing PyTorch (cu124)..."))
+                update_progress(10)
+                if not installer.install_package(
+                    ["torch==2.7.1", "torchaudio==2.7.1"],
+                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
+                    description="Install PyTorch cu128"
+                ):
+                    update_status(_("Ошибка PyTorch", "PyTorch error"))
+                    return False
+
+            update_progress(25)
+
+            if not installer.install_package(
+                ["f5-tts", "google-api-core"],
+                description=_("Установка f5-tts...", "Installing f5-tts...")
+            ):
+                return False
+
+            update_progress(50)
+
+            # Скачиваем веса
+            import requests, math, os
+            model_dir = os.path.join("checkpoints", "F5-TTS")
+            os.makedirs(model_dir, exist_ok=True)
+
+            def dl(url, dest, descr, start_prog, end_prog):
+                if os.path.exists(dest): return
+                update_status(descr)
+                r = requests.get(url, stream=True, timeout=30)
+                r.raise_for_status()
+                total = int(r.headers.get("content-length", 0))
+                done = 0
+                with open(dest, "wb") as fh:
+                    for chunk in r.iter_content(8192):
+                        fh.write(chunk)
+                        done += len(chunk)
+                        if total:
+                            pct = done / total
+                            prog = start_prog + (end_prog - start_prog) * pct
+                            update_progress(math.floor(prog))
+
+            dl(
+                "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/"
+                "F5TTS_v1_Base/model_240000_inference.safetensors?download=true",
+                os.path.join(model_dir, "model.safetensors"),
+                _("Загрузка весов модели...", "Downloading model weights..."),
+                50, 80
+            )
+
+            dl(
+                "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/"
+                "F5TTS_v1_Base/vocab.txt?download=true",
+                os.path.join(model_dir, "vocab.txt"),
+                _("Загрузка vocab.txt...", "Downloading vocab.txt..."),
+                80, 90
+            )
+
+            update_progress(100)
+            update_status(_("Установка F5-TTS завершена.", "F5-TTS installation complete."))
+            self._load_module()
+            return True
+
+        except Exception as e:
+            logger.error(f"Ошибка установки F5-TTS: {e}", exc_info=True)
+            update_log(f"ERROR: {e}")
+            return False
+
+        finally:
+            # закрываем своё окно, если оно было создано
+            if not have_external and progress_window:
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(3000, progress_window.close)
+
+    def uninstall(self, model_id) -> bool:
+        mode = model_id
         if mode == "high":
             return self.parent._uninstall_component("F5-TTS", "f5-tts")
         elif mode == "high+low":

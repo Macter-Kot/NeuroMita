@@ -17,17 +17,17 @@ class IVoiceModel(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def is_installed(self) -> bool:
+    def is_installed(self, model_id) -> bool:
         """Проверяет, установлены ли необходимые пакеты для модели."""
         pass
 
     @abc.abstractmethod
-    def install(self) -> bool:
+    def install(self, model_id) -> bool:
         """Устанавливает модель и ее зависимости."""
         pass
 
     @abc.abstractmethod
-    def uninstall(self) -> bool:
+    def uninstall(self, model_id) -> bool:
         """Удаляет модель и ее зависимости."""
         pass
 

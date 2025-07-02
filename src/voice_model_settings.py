@@ -17,7 +17,7 @@ from Logger import logger
 import traceback
 
 from SettingsManager import SettingsManager
-from pyqt_styles.styles import get_stylesheet
+from pyqt_styles.voice_model_styles import get_stylesheet
 
 def getTranslationVariant(ru_str, en_str=""):
     if en_str and SettingsManager.get("LANGUAGE") == "EN":
@@ -267,6 +267,7 @@ class VoiceCollapsibleSection(QFrame):
         self.content_frame.setObjectName("VoiceCollapsibleContent")
         self.content_layout = QVBoxLayout(self.content_frame)
         self.content_layout.setContentsMargins(1, 0, 1, 1)
+        self.content_layout.setSpacing(1)
         
         main_layout.addWidget(self.header_frame)
         main_layout.addWidget(self.content_frame)
@@ -322,7 +323,7 @@ class VoiceCollapsibleSection(QFrame):
         label_layout.setContentsMargins(10, 3, 10, 3)
         
         label = QLabel(label_text)
-        label.setStyleSheet(f"color: {'#888888' if is_locked else 'white'}; font-size: 9pt;")
+        label.setStyleSheet(f"color: {'#888888' if is_locked else 'white'}; font-size: 8pt;")
         label_layout.addWidget(label)
         
         # Widget container
@@ -972,20 +973,29 @@ class VoiceModelSettingsWindow(QWidget):
         self.models_layout.addStretch()
         QTimer.singleShot(50, self._update_models_scrollregion)
 
+
+    def _clear_settings_layout(self):
+        while self.settings_layout.count():
+            item = self.settings_layout.takeAt(0) 
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
     def display_installed_models_settings(self):
         """Display settings for installed models"""
         if not self.scrollable_frame_settings:
             return
             
         # Clear existing settings (except top frame)
-        for i in reversed(range(self.settings_layout.count())):
-            item = self.settings_layout.itemAt(i)
-            if item.widget() and item.widget() != self.top_frame_settings:
-                item.widget().deleteLater()
+        self._clear_settings_layout()
                 
         self.settings_sections.clear()
         
         # Re-add top frame first
+        self.top_frame_settings = QFrame()
+        top_layout = QVBoxLayout(self.top_frame_settings)
+        top_layout.setContentsMargins(0, 0, 0, 5)
+        self._check_and_display_dependencies_status(top_layout)
         self.settings_layout.addWidget(self.top_frame_settings)
         
         if not self.installed_models:
@@ -1311,57 +1321,19 @@ class VoiceModelSettingsWindow(QWidget):
     #   ЗАПУСК УСТАНОВКИ  (однопоточный, без statusBar)
     # =========================================================
     def start_download(self, model_id, button_widget):
-        """
-        Упрощённый синхронный запуск установки.
-
-        1.  Создаём окно прогресса (GUI-поток).
-        2.  Передаём его функции (update_progress / update_status / update_log)
-            прямо в LocalVoice.download_model().
-        3.  Запускаем установку в этом же потоке.
-        Благодаря QApplication.processEvents() в PipInstaller интерфейс
-        продолжает обновляться, приложение не зависает.
-        4.  После завершения – обновляем кнопку и закрываем окно.
-        """
-        # 1) создаём окно
-        gui = self.local_voice._create_installation_window(
-            title=_("Установка модели", "Installing model"),
-            initial_status=_("Подготовка...", "Preparing...")
-        )
-        if not gui:
-            logger.error("Не удалось создать окно установки.")
-            return
-
-        progress_window = gui["window"]
-        update_progress = gui["update_progress"]
-        update_status   = gui["update_status"]
-        update_log      = gui["update_log"]
-
-        # 2) подготавливаем кнопку
+        # 1)  Кнопка
         if button_widget:
             button_widget.setText(_("Загрузка...", "Downloading..."))
             button_widget.setEnabled(False)
 
-        # 3) запускаем установку (GUI-поток)
+        # 2)  Запускаем установку — окно создастся внутри install()
         success = False
         try:
-            success = self.local_voice.download_model(
-                model_id,
-                progress_cb=update_progress,
-                status_cb=update_status,
-                log_cb=update_log
-            )
-        except Exception as e:
-            import traceback, io
-            buf = io.StringIO()
-            traceback.print_exc(file=buf)
-            logger.error(buf.getvalue())
-            update_log("[EXCEPTION]\n" + buf.getvalue())
-            success = False
-
-        # 4) обновляем результат и кнопку
+            success = self.local_voice.download_model(model_id)
+        except Exception:
+            logger.exception("download_model exception")
+        # 3)  Обновляем UI
         self.handle_download_result(success, model_id)
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(3000, progress_window.close)
 
     def start_uninstall(self, model_id):
         button_widget = self.model_action_buttons.get(model_id)

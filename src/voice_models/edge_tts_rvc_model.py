@@ -12,6 +12,14 @@ from .base_model import IVoiceModel
 from typing import Optional, Any
 from Logger import logger
 
+import re
+from PyQt6.QtCore import QTimer
+from utils.PipInstaller import PipInstaller
+
+from SettingsManager import SettingsManager
+def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
+_ = getTranslationVariant
+
 class EdgeTTS_RVC_Model(IVoiceModel):
     def __init__(self, parent: 'LocalVoice', model_id: str):
         # model_id здесь больше не используется для определения режима,
@@ -33,14 +41,114 @@ class EdgeTTS_RVC_Model(IVoiceModel):
     def get_display_name(self) -> str:
         return "EdgeTTS+RVC / Silero+RVC"
 
-    def is_installed(self) -> bool:
+    def is_installed(self, model_id) -> bool:
         self._load_module()
         return self.tts_rvc_module is not None
 
-    def install(self) -> bool:
-        return self.parent.download_edge_tts_rvc_internal()
+    def install(self, model_id) -> bool:
+        gui_elements = None
+        try:
+            gui_elements = self.parent._create_installation_window(
+                title=_("Скачивание Edge-TTS + RVC", "Downloading Edge-TTS + RVC"),
+                initial_status=_("Подготовка...", "Preparing...")
+            )
+            if not gui_elements:
+                return False
 
-    def uninstall(self) -> bool:
+            progress_window = gui_elements["window"]
+            update_progress = gui_elements["update_progress"]
+            update_status = gui_elements["update_status"]
+            update_log = gui_elements["update_log"]
+
+            installer = PipInstaller(
+                script_path=r"libs\python\python.exe",
+                libs_path="Lib",
+                update_status=update_status,
+                update_log=update_log,
+                progress_window=progress_window
+            )
+
+            update_progress(10)
+            update_log(_("Начало установки Edge-TTS + RVC...", "Starting Edge-TTS + RVC installation..."))
+
+            if self.parent.provider in ["NVIDIA"] and not self.parent.is_cuda_available():
+                update_status(_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."))
+                update_progress(20)
+                success = installer.install_package(
+                    ["torch==2.7.1", "torchaudio==2.7.1"],
+                    description=_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."),
+                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
+                )
+
+                if not success:
+                    update_status(_("Ошибка при установке PyTorch", "Error installing PyTorch"))
+                    QTimer.singleShot(5000, progress_window.close)
+                    return False
+                update_progress(50)
+            else:
+                update_progress(50) 
+
+            update_status(_("Установка зависимостей...", "Installing dependencies..."))
+            success = installer.install_package(
+                "omegaconf",
+                description=_("Установка omegaconf...", "Installing omegaconf...")
+            )
+            if not success:
+                update_status(_("Ошибка при установке omegaconf", "Error installing omegaconf"))
+                QTimer.singleShot(5000, progress_window.close)
+                return False
+
+            update_progress(70)
+
+            package_url = None
+            desc = ""
+            if self.parent.provider in ["NVIDIA"]:
+                package_url = "tts_with_rvc"
+                desc = _("Установка основной библиотеки tts-with-rvc (NVIDIA)...", "Installing main library tts-with-rvc (NVIDIA)...")
+            elif self.parent.provider in ["AMD"]:
+                package_url = "tts_with_rvc_onnx[dml]"
+                desc = _("Установка основной библиотеки tts-with-rvc (AMD)...", "Installing main library tts-with-rvc (AMD)...")
+            else:
+                update_log(_(f"Ошибка: не найдена подходящая видеокарта: {self.parent.provider}", f"Error: suitable graphics card not found: {self.parent.provider}"))
+                QTimer.singleShot(5000, progress_window.close)
+                return False
+
+            success = installer.install_package(package_url, description=desc)
+
+            if not success:
+                update_status(_("Ошибка при установке tts-with-rvc", "Error installing tts-with-rvc"))
+                QTimer.singleShot(5000, progress_window.close)
+                return False
+
+            libs_path_abs = os.path.abspath("Lib")
+            update_progress(95)
+            update_status(_("Применение патчей...", "Applying patches..."))
+            config_path = os.path.join(libs_path_abs, "fairseq", "dataclass", "configs.py")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        source = f.read()
+                    patched_source = re.sub(r"metadata=\{(.*?)help:", r'metadata={\1"help":', source)
+                    with open(config_path, "w", encoding="utf-8") as f:
+                        f.write(patched_source)
+                    update_log(_("Патч успешно применен к configs.py", "Patch successfully applied to configs.py"))
+                except Exception as e:
+                    update_log(_(f"Ошибка при патче configs.py: {e}", f"Error patching configs.py: {e}"))
+            
+            update_progress(100)
+            update_status(_("Установка успешно завершена!", "Installation successful!"))
+            
+            self._load_module()
+            
+            QTimer.singleShot(3000, progress_window.close)
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка при установке Edge-TTS + RVC: {e}", exc_info=True)
+            if gui_elements and gui_elements["window"]:
+                gui_elements["window"].close()
+            return False
+
+    def uninstall(self, model_id) -> bool:
         return self.parent._uninstall_component("EdgeTTS+RVC", "tts-with-rvc")
 
     def cleanup_state(self):

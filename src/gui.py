@@ -47,7 +47,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QSplitter, QMessageBox, QComboBox, QCheckBox, QDialog,
                              QProgressBar, QTextBrowser, QVBoxLayout )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
-from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QPixmap, QIcon, QFontMetrics
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon
 
 from ui import chat_area, status_indicators, debug_area, news_area
 from ui.settings import (
@@ -439,9 +439,9 @@ class ChatGUI(QMainWindow):
         self.user_input = ""
         self.user_entry.clear()
 
-    def on_enter_pressed(self):
-        """Обработчик нажатия клавиши Enter в поле ввода."""
-        self.send_message()
+    # def on_enter_pressed(self):
+    #     """Обработчик нажатия клавиши Enter в поле ввода."""
+    #     self.send_message()
 
     def start_server(self):
         """Запускает сервер в отдельном потоке."""
@@ -2386,25 +2386,25 @@ class ChatGUI(QMainWindow):
             self._insert_formatted_text(cursor, f"{MitaName}: ", QColor("hot pink"), bold=True)
             cursor.insertText(f"{response}\n\n")
 
-    def on_chat_scroll(self, event):
-        """Обработчик события прокрутки чата."""
-        if self.loading_more_history:
-            return
+    # def on_chat_scroll(self, event):
+    #     """Обработчик события прокрутки чата."""
+    #     if self.loading_more_history:
+    #         return
 
-        scrollbar = self.chat_window.verticalScrollBar()
-        if scrollbar.value() == scrollbar.minimum():
-            self.load_more_history()
+    #     scrollbar = self.chat_window.verticalScrollBar()
+    #     if scrollbar.value() == scrollbar.minimum():
+    #         self.load_more_history()
 
-    def trim_chat_display(self):
-        """Удаляет сообщения из начала чата, оставляя только видимые + запас."""
-        # Для PyQt6 эта функция может быть реализована иначе или не нужна
-        pass
+    # def trim_chat_display(self):
+    #     """Удаляет сообщения из начала чата, оставляя только видимые + запас."""
+    #     # Для PyQt6 эта функция может быть реализована иначе или не нужна
+    #     pass
 
-    def keypress(self, e):
-        """Обработчик горячих клавиш"""
-        # В PyQt6 обработка горячих клавиш обычно делается через QShortcut
-        # Этот метод может быть не нужен
-        pass
+    # def keypress(self, e):
+    #     """Обработчик горячих клавиш"""
+    #     # В PyQt6 обработка горячих клавиш обычно делается через QShortcut
+    #     # Этот метод может быть не нужен
+    #     pass
 
     def cmd_copy(self, widget):
         self.copy_to_clipboard()

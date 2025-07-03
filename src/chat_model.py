@@ -672,16 +672,7 @@ class ChatModel:
 
         if response.status_code == 200:
             if self.gui.settings.get("ENABLE_STREAMING", False):
-                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                    if chunk:
-                        try:
-                            generated_text = \
-                            json.loads(chunk).get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
-                                "text", "")
-                            self.gui.append_message(generated_text)
-                        except:
-                            ...
-                return None
+                return self._handle_gemini_stream(response)
             else:
                 response_data = response.json()
                 generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
@@ -718,16 +709,7 @@ class ChatModel:
 
         if response.status_code == 200:
             if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
-                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                    if chunk:
-                        try:
-                            response_data = json.loads(chunk)
-                            decoded_chunk = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                            logger.info("Chunk: \n" + decoded_chunk)
-                            self.gui.append_message(decoded_chunk)
-                        except:
-                            ...
-                return None
+                return self._handle_common_stream(response)
             else:
                 response_data = response.json()
                 # Формат ответа DeepSeek отличается от Gemini
@@ -776,18 +758,7 @@ class ChatModel:
             completion = target_client.chat.completions.create(**final_params, stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
 
             if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
-                # Handle streaming response
-                for chunk in completion:
-                    if chunk.choices:
-                        try:
-                            response_content = chunk.candidates[0].content.parts[0].text
-                        except:
-                            response_content = chunk.choices[0].delta.content or ""
-                        if response_content:
-                            decoded_content = response_content.encode('utf-8', 'ignore').decode('utf-8')
-                            self.gui.append_message(decoded_content)
-                            logger.info("Completion successful.")
-                return None, True
+                return self._handle_openai_stream(completion)
             elif completion and completion.choices:
                 response_content = completion.choices[0].message.content
                 logger.info("Completion successful.")
@@ -803,6 +774,110 @@ class ChatModel:
             return None
 
     # endregion
+
+    # region Stream Handlers
+    def _handle_gemini_stream(self, response) -> Optional[str]:
+        """
+        Обрабатывает потоковый ответ от Gemini-совместимого API.
+        Корректно работает с JSON-объектами, которые могут приходить по частям.
+        """
+        full_response_parts = []
+        json_buffer = ''
+        decoder = json.JSONDecoder()
+        try:
+            # Используем iter_content для получения "сырых" кусков данных
+            self.gui.insert_speaker_name()
+            for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                json_buffer += chunk
+                # Пытаемся парсить буфер, пока в нем есть данные
+                while json_buffer.strip():
+                    try:
+                        # raw_decode находит первый полный JSON в строке
+                        result, index = decoder.raw_decode(json_buffer)
+
+                        # Извлекаем текст из успешно распарсенного объекта
+                        generated_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[
+                            0].get("text", "")
+                        if generated_text:
+                            self.gui.append_message(generated_text)
+                            full_response_parts.append(generated_text)
+
+                        # Удаляем из буфера обработанный JSON и пробелы после него
+                        json_buffer = json_buffer[index:].lstrip()
+
+                    except json.JSONDecodeError:
+                        # Если JSON в буфере неполный, выходим из внутреннего цикла
+                        # и ждем следующий кусок данных от API
+                        break
+
+            full_text = "".join(full_response_parts)
+            logger.info("Gemini stream finished. Full text accumulated.")
+            return full_text
+        except Exception as e:
+            logger.error(f"Error processing Gemini stream: {e}", exc_info=True)
+            return "".join(full_response_parts)  # Возвращаем то, что успели собрать
+
+    def _handle_common_stream(self, response) -> Optional[str]:
+        """Обрабатывает потоковый ответ в формате Server-Sent Events (SSE)."""
+        full_response_parts = []
+        try:
+            self.gui.insert_speaker_name()
+            for line in response.iter_lines(decode_unicode=True):
+                if line and line.startswith('data: '):
+                    line_data = line[6:]
+                    if line_data.strip() == '[DONE]':
+                        break
+                    try:
+                        response_json = json.loads(line_data)
+                        delta = response_json.get("choices", [{}])[0].get("delta", {})
+                        decoded_chunk = delta.get("content", "")
+                        if decoded_chunk:
+                            self.gui.append_message(decoded_chunk)
+                            full_response_parts.append(decoded_chunk)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not decode JSON from SSE streaming line: {line_data}")
+                    except (IndexError, KeyError) as e:
+                        logger.warning(f"Could not parse SSE streaming chunk structure: {line_data}, error: {e}")
+
+            full_text = "".join(full_response_parts)
+            logger.info("Common request stream finished. Full text accumulated.")
+            return full_text
+        except Exception as e:
+            logger.error(f"Error processing common (SSE) stream: {e}", exc_info=True)
+            return "".join(full_response_parts)  # Return what we have
+
+    def _handle_openai_stream(self, completion) -> Optional[str]:
+        """Обрабатывает потоковый ответ от openai-python SDK."""
+        full_response_parts = []
+        try:
+            self.gui.insert_speaker_name()
+            for chunk in completion:
+                response_content = ""
+                try:
+                    # Standard OpenAI / DeepSeek format
+                    if chunk.choices and chunk.choices[0].delta:
+                        response_content = chunk.choices[0].delta.content or ""
+                    # Gemini-like format (sometimes used by g4f or other proxies)
+                    elif hasattr(chunk, 'candidates') and chunk.candidates and chunk.candidates[0].content and \
+                            chunk.candidates[0].content.parts:
+                        response_content = chunk.candidates[0].content.parts[0].text or ""
+                except (AttributeError, IndexError) as e:
+                    logger.debug(f"Could not extract content from stream chunk: {chunk}, error: {e}")
+                    continue
+
+                if response_content:
+                    self.gui.append_message(response_content)
+                    full_response_parts.append(response_content)
+
+            full_text = "".join(full_response_parts)
+            logger.info("OpenAPI/g4f stream finished.")
+            return full_text
+        except Exception as e:
+            logger.error(f"Error processing OpenAI/g4f stream: {e}", exc_info=True)
+            return "".join(full_response_parts)  # Return what we have
+
+        # endregion
+
     def change_last_message_to_user_for_gemini(self, api_model, combined_messages):
         if combined_messages and ("gemini" in api_model.lower() or "gemma" in api_model.lower()) and \
                 combined_messages[-1]["role"] == "system":

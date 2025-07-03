@@ -255,7 +255,7 @@ class TelegramBotHandler:
                 code_dialog.setLayout(layout)
 
                 code_entry = QLineEdit()
-                code_entry.setAlignment(Qt.AlignCenter)
+                code_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 code_entry.setPlaceholderText("Введите код подтверждения")
                 layout.addWidget(code_entry)
 
@@ -293,14 +293,14 @@ class TelegramBotHandler:
                         password_dialog = QDialog()
                         password_dialog.setWindowTitle("Двухфакторная аутентификация")
                         password_dialog.setFixedSize(300, 150)
-                        password_dialog.setWindowFlags(password_dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+                        password_dialog.setWindowFlags(password_dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
                         layout = QVBoxLayout()
                         password_dialog.setLayout(layout)
 
                         password_entry = QLineEdit()
-                        password_entry.setAlignment(Qt.AlignCenter)
-                        password_entry.setEchoMode(QLineEdit.Password)
+                        password_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                        password_entry.setEchoMode(QLineEdit.EchoMode.Password)
                         password_entry.setPlaceholderText("Введите пароль")
                         layout.addWidget(password_entry)
 
@@ -322,7 +322,7 @@ class TelegramBotHandler:
                         password_entry.returnPressed.connect(submit_password)
 
                         # Показываем диалог в основном потоке
-                        await loop.run_in_executor(None, password_dialog.exec_)
+                        await loop.run_in_executor(None, password_dialog.exec)
                         
                         # Получаем пароль от пользователя
                         password = await password_future
@@ -333,7 +333,7 @@ class TelegramBotHandler:
                     raise
 
             await self.client.send_message(self.tg_bot, "/start")
-            self.gui.silero_connected.set(True)
+            self.gui.silero_connected = True
 
             if self.tg_bot == "@silero_voice_bot":
                 await asyncio.sleep(0.35)

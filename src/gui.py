@@ -1025,7 +1025,7 @@ class ChatGUI(QMainWindow):
         logger.info(f"[{time.strftime('%H:%M:%S')}] Загружено {self.loaded_messages_offset} последних сообщений.")
 
         self.update_debug_info()
-        self.update_token_count()
+        # self.update_token_count() временно закомментировал - лучше хранить в json кол-во токенов и подгружать - а то каждый раз пересчитывать системный промпт и всё остальное...
         
         # Автоматическая прокрутка вниз
         self.chat_window.verticalScrollBar().setValue(

@@ -1135,10 +1135,13 @@ class ChatModel:
 
         # 1. Системные промпты / память
         separate_prompts = bool(self.gui.settings.get("SEPARATE_PROMPTS", True))
-        messages = self.current_character.get_full_system_setup_for_llm(separate_prompts)
+        messages = self.current_character.get_cached_system_setup()
         combined_messages.extend(messages)
 
+        if not messages:
+            messages = self.current_character.get_full_system_setup_for_llm(separate_prompts)
 
+            
         # Добавляем шахматы (если сформировано) - для точного подсчета нужно бы формировать, но пока заглушка
         # В реальной ситуации здесь нужно было бы вызвать логику формирования chess_system_message_for_llm_content
         # Для простоты пока не включаем, так как это усложнит подсчет без реального запроса

@@ -74,6 +74,8 @@ class Character:
         self.is_cartridge = is_cartridge
         self.system_messages = []
 
+        self._cached_system_setup: List[Dict] = []
+
         # Compose initial variables: Base -> Subclass Overrides -> Passed-in Overrides
         composed_initials = Character.BASE_DEFAULTS.copy()
         # Subclass overrides (defined in subclasses like CrazyMita)
@@ -182,7 +184,12 @@ class Character:
         memory_message_content = self.memory_system.get_memories_formatted()
         if memory_message_content and memory_message_content.strip():
             messages.append({"role": "system", "content": memory_message_content})
+
+        self._cached_system_setup = [m.copy() for m in messages]
         return messages
+    
+    def get_cached_system_setup(self) -> List[Dict]:
+        return [m.copy() for m in self._cached_system_setup]  # пустой список, если ещё не считали
 
     def get_system_infos(self,clear=True):
         messages = self.system_messages.copy()
@@ -401,6 +408,7 @@ class Character:
             self.set_variable(key, value)
 
         self.memory_system.clear_memories()
+        self._cached_system_setup = []
         self.history_manager.clear_history() # This saves an empty history file
         logger.info(f"[{self.char_id}] History cleared and state reset to initial defaults/overrides.")
 

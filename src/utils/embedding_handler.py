@@ -41,17 +41,17 @@ except ImportError:
         raise Exception("PipInstaller не инициализирован - установку нельзя осуществить")
     if current_gpu in ["NVIDIA"]:
         success = pip_installer.install_package(
-                ["torch==2.6.0", "torchaudio==2.6.0"],
-                description=_("Установка PyTorch с поддержкой CUDA 12.4...", "Installing PyTorch with CUDA 12.4 support..."),
-                extra_args=["--index-url", "https://download.pytorch.org/whl/cu124"]
+                ["torch==2.7.1", "torchaudio==2.7.1"],
+                description=_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."),
+                extra_args=["--index-url", "https://download.pytorch.org/whl/cu128"]
             )
     else:
         success = pip_installer.install_package(
-                ["torch==2.6.0", "torchaudio==2.6.0"],
+                ["torch==2.7.1", "torchaudio==2.7.1"],
                 description=_("Установка PyTorch CPU", "Installing PyTorch CPU"),
             )
     if not success:
-        raise Exception("Не удалось установить torch+cuda12.4")
+        raise Exception("Не удалось установить torch+cuda12.8")
     
     try:
         import torch

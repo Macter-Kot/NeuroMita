@@ -45,7 +45,7 @@ import functools
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QTextEdit, QPushButton, QLabel, QScrollArea, QFrame,
                              QSplitter, QMessageBox, QComboBox, QCheckBox, QDialog,
-                             QProgressBar, QTextBrowser, QVBoxLayout )
+                             QProgressBar, QTextBrowser, QVBoxLayout, QLineEdit)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon
 
@@ -78,6 +78,10 @@ from ui.settings import (
 #         finally:
 #             self.finished.emit()
 
+
+class TelegramAuthSignals(QObject):
+    code_required = pyqtSignal(object)
+    password_required = pyqtSignal(object)
 
 class ChatGUI(QMainWindow):
     # Сигналы для обновления UI из других потоков
@@ -211,6 +215,10 @@ class ChatGUI(QMainWindow):
         self.asyncio_thread = threading.Thread(target=self.start_asyncio_loop, daemon=True)
         self.asyncio_thread.start()
 
+        self.auth_signals = TelegramAuthSignals()
+        self.auth_signals.code_required.connect(self.prompt_for_code)
+        self.auth_signals.password_required.connect(self.prompt_for_password)
+
         self.start_silero_async()
 
         # Загружаем настройки распознавания речи при запуске
@@ -265,6 +273,80 @@ class ChatGUI(QMainWindow):
         except Exception as e:
             logger.info(f"Ошибка при запуске цикла событий asyncio: {e}")
             self.loop_ready_event.set()
+
+    def prompt_for_code(self, code_future):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Подтверждение Telegram")
+        dialog.setFixedSize(300, 150)
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+
+        layout = QVBoxLayout(dialog)
+        label = QLabel("Введите код подтверждения:")
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(label)
+
+        code_entry = QLineEdit()
+        code_entry.setMaxLength(10)
+        code_entry.setFocus()
+        layout.addWidget(code_entry)
+
+        def submit_code():
+            code = code_entry.text().strip()
+            if code:
+                if self.loop and self.loop.is_running():
+                    self.loop.call_soon_threadsafe(code_future.set_result, code)
+                dialog.accept()
+            else:
+                QMessageBox.critical(dialog, "Ошибка", "Введите код подтверждения")
+        
+        def on_reject():
+            if self.loop and self.loop.is_running() and not code_future.done():
+                self.loop.call_soon_threadsafe(code_future.set_exception, asyncio.CancelledError("Ввод кода отменен"))
+
+        btn = QPushButton("Подтвердить")
+        btn.clicked.connect(submit_code)
+        layout.addWidget(btn)
+        code_entry.returnPressed.connect(submit_code)
+        
+        dialog.rejected.connect(on_reject)
+        dialog.exec()
+
+    def prompt_for_password(self, password_future):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Двухфакторная аутентификация")
+        dialog.setFixedSize(300, 150)
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+
+        layout = QVBoxLayout(dialog)
+        label = QLabel("Введите пароль:")
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(label)
+
+        password_entry = QLineEdit()
+        password_entry.setEchoMode(QLineEdit.EchoMode.Password)
+        password_entry.setFocus()
+        layout.addWidget(password_entry)
+
+        def submit_password():
+            pwd = password_entry.text().strip()
+            if pwd:
+                if self.loop and self.loop.is_running():
+                    self.loop.call_soon_threadsafe(password_future.set_result, pwd)
+                dialog.accept()
+            else:
+                QMessageBox.critical(dialog, "Ошибка", "Введите пароль")
+                
+        def on_reject():
+            if self.loop and self.loop.is_running() and not password_future.done():
+                self.loop.call_soon_threadsafe(password_future.set_exception, asyncio.CancelledError("Ввод пароля отменен"))
+
+        btn = QPushButton("Подтвердить")
+        btn.clicked.connect(submit_password)
+        layout.addWidget(btn)
+        password_entry.returnPressed.connect(submit_password)
+        
+        dialog.rejected.connect(on_reject)
+        dialog.exec()
 
     def start_silero_async(self):
         """Отправляет задачу для запуска Silero в цикл событий."""

@@ -710,10 +710,7 @@ class ChatGUI(QMainWindow):
         if show_timestamps:
             self._insert_formatted_text(cursor, timestamp_str, QColor("#888888"), italic=True)
 
-        if role == "user":
-            self._insert_formatted_text(cursor, _("Вы: ", "You: "), QColor("gold"), bold=True)
-        elif role == "assistant":
-            self._insert_formatted_text(cursor, f"{self.model.current_character.name}: ", QColor("hot pink"), bold=True)
+        self.insert_speaker_name(cursor, role)
 
         for part in processed_text_parts:
             if part["type"] == "text":
@@ -725,15 +722,30 @@ class ChatGUI(QMainWindow):
                 cursor.insertImage(part["content"])
                 cursor.insertText("\n")
 
-        if role == "user":
-            cursor.insertText("\n")
-        elif role in {"assistant", "system"}:
-            cursor.insertText("\n\n")
+        self.insert_message_end(cursor, role)
 
         if not insert_at_start:
             self.chat_window.verticalScrollBar().setValue(
                 self.chat_window.verticalScrollBar().maximum()
             )
+
+    def insert_message_end(self, cursor = None, role = "assistant"):
+        if not cursor:
+            cursor = self.chat_window.textCursor()
+
+        if role == "user":
+            cursor.insertText("\n")
+        elif role in {"assistant", "system"}:
+            cursor.insertText("\n\n")
+
+    def insert_speaker_name(self, cursor = None, role = "assistant"):
+        if not cursor:
+            cursor = self.chat_window.textCursor()
+        if role == "user":
+            self._insert_formatted_text(cursor, _("Вы: ", "You: "), QColor("gold"), bold=True)
+        elif role == "assistant":
+            self._insert_formatted_text(cursor, f"{self.model.current_character.name}: ", QColor("hot pink"), bold=True)
+
 
     def _insert_formatted_text(self, cursor, text, color=None, bold=False, italic=False):
         """Вставляет форматированный текст в позицию курсора"""
@@ -751,14 +763,14 @@ class ChatGUI(QMainWindow):
         char_format.setFont(font)
         cursor.insertText(text, char_format)
 
-    # def append_message(self, text):
-    #     cursor = self.chat_window.textCursor()
-    #     cursor.movePosition(QTextCursor.MoveOperation.End)
-    #     cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.MoveAnchor, 2)
-    #     cursor.insertText(text)
-    #     self.chat_window.verticalScrollBar().setValue(
-    #         self.chat_window.verticalScrollBar().maximum()
-    #     )
+    def append_message(self, text):
+        cursor = self.chat_window.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        #cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.MoveAnchor, 2)
+        self._insert_formatted_text(cursor,text)
+        self.chat_window.verticalScrollBar().setValue(
+            self.chat_window.verticalScrollBar().maximum()
+        )
 
     def process_image_for_chat(self, has_image_content, item, processed_content_parts):
         image_data_base64 = item.get("image_url", {}).get("url", "")
@@ -1194,7 +1206,10 @@ class ChatGUI(QMainWindow):
             )
 
             # --- ОБНОВЛЯЕМ GUI ЧЕРЕЗ СИГНАЛ ---
-            self.update_chat_signal.emit("assistant", response, False, "")
+            if bool(self.settings.get("ENABLE_STREAMING")):
+                self.update_chat_signal.emit("None", "\n\n", False, "")
+            else:
+                self.update_chat_signal.emit("assistant", response, False, "")
 
             # Дополнительные обновления (статусы, токены, отладка)
             self.update_status_signal.emit()

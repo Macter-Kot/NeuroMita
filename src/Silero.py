@@ -245,18 +245,23 @@ class TelegramBotHandler:
 
             # Проверяем, авторизован ли уже клиент
             if not await self.client.is_user_authorized():
-                # Создаем диалог для ввода кода подтверждения
+                # ───────────────  Диалог ввода КОДА ───────────────
                 code_dialog = QDialog()
                 code_dialog.setWindowTitle("Подтверждение Telegram")
                 code_dialog.setFixedSize(300, 150)
-                code_dialog.setWindowFlags(code_dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+                code_dialog.setWindowFlags(code_dialog.windowFlags() &
+                                        ~Qt.WindowType.WindowContextHelpButtonHint)
 
-                layout = QVBoxLayout()
-                code_dialog.setLayout(layout)
+                c_layout = QVBoxLayout(code_dialog)
+
+                c_label = QLabel("Введите код подтверждения:")
+                c_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                c_layout.addWidget(c_label)
 
                 code_entry = QLineEdit()
-
-                layout.addWidget(code_entry)
+                code_entry.setMaxLength(10)
+                code_entry.setFocus()                         # ← сразу фокус
+                c_layout.addWidget(code_entry)
 
                 code_future = asyncio.Future()
 
@@ -268,69 +273,55 @@ class TelegramBotHandler:
                     else:
                         QMessageBox.critical(code_dialog, "Ошибка", "Введите код подтверждения")
 
-                submit_button = QPushButton("Подтвердить")
-                submit_button.clicked.connect(submit_code)
-                layout.addWidget(submit_button)
-
-                # Обработка Enter
+                c_btn = QPushButton("Подтвердить")
+                c_btn.clicked.connect(submit_code)
+                c_layout.addWidget(c_btn)
                 code_entry.returnPressed.connect(submit_code)
 
                 # Ждем код подтверждения
                 try:
+                    # --- запрашиваем код у Telegram и показываем диалог ---
                     await self.client.sign_in(phone=self.phone)
-                    
-                    # Показываем диалог в основном потоке
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, code_dialog.exec)
-                    
+                    code_dialog.exec()                            # ← БЕЗ executor'а!
                     verification_code = await code_future
 
                     try:
                         await self.client.sign_in(phone=self.phone, code=verification_code)
                     except SessionPasswordNeededError:
-                        # Если требуется пароль двухфакторной аутентификации
+                        # ───────────── Диалог двухфакторного ПАРОЛЯ ─────────────
                         password_dialog = QDialog()
                         password_dialog.setWindowTitle("Двухфакторная аутентификация")
                         password_dialog.setFixedSize(300, 150)
-                        password_dialog.setWindowFlags(password_dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+                        password_dialog.setWindowFlags(password_dialog.windowFlags() &
+                                                    ~Qt.WindowType.WindowContextHelpButtonHint)
 
-                        p_layout = QVBoxLayout()
+                        p_layout = QVBoxLayout(password_dialog)
 
-                        p_title_lbl = QLabel("Введите пароль:")               # ⬅ новая подпись
-                        p_title_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-                        p_layout.addWidget(p_title_lbl)
-
-                        title_lbl = QLabel("Введите код подтверждения:")
-                        title_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-                        p_layout.addWidget(title_lbl)
-
-                        password_dialog.setLayout(p_layout)
+                        p_label = QLabel("Введите пароль:")
+                        p_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                        p_layout.addWidget(p_label)
 
                         password_entry = QLineEdit()
                         password_entry.setEchoMode(QLineEdit.EchoMode.Password)
-                        layout.addWidget(password_entry)
+                        password_entry.setFocus()
+                        p_layout.addWidget(password_entry)
 
                         password_future = asyncio.Future()
 
                         def submit_password():
-                            password = password_entry.text().strip()
-                            if password:
-                                password_future.set_result(password)
+                            pwd = password_entry.text().strip()
+                            if pwd:
+                                password_future.set_result(pwd)
                                 password_dialog.accept()
                             else:
                                 QMessageBox.critical(password_dialog, "Ошибка", "Введите пароль")
 
-                        submit_button = QPushButton("Подтвердить")
-                        submit_button.clicked.connect(submit_password)
-                        layout.addWidget(submit_button)
-
-                        # Обработка Enter
+                        p_btn = QPushButton("Подтвердить")
+                        p_btn.clicked.connect(submit_password)
+                        p_layout.addWidget(p_btn)
                         password_entry.returnPressed.connect(submit_password)
 
-                        # Показываем диалог в основном потоке
-                        await loop.run_in_executor(None, password_dialog.exec)
-                        
-                        # Получаем пароль от пользователя
+                        password_dialog.exec()                        # ← тоже без executor'а
                         password = await password_future
                         await self.client.sign_in(password=password)
 

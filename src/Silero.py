@@ -9,7 +9,7 @@ import asyncio
 from telethon.tl.types import MessageMediaDocument, DocumentAttributeAudio
 from telethon.errors import SessionPasswordNeededError
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QPushButton, QMessageBox
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QPushButton, QMessageBox, QLabel
 from PyQt6.QtCore import Qt, QEventLoop
 import platform
 
@@ -255,8 +255,7 @@ class TelegramBotHandler:
                 code_dialog.setLayout(layout)
 
                 code_entry = QLineEdit()
-                code_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                code_entry.setPlaceholderText("Введите код подтверждения")
+
                 layout.addWidget(code_entry)
 
                 code_future = asyncio.Future()
@@ -295,13 +294,20 @@ class TelegramBotHandler:
                         password_dialog.setFixedSize(300, 150)
                         password_dialog.setWindowFlags(password_dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
-                        layout = QVBoxLayout()
-                        password_dialog.setLayout(layout)
+                        p_layout = QVBoxLayout()
+
+                        p_title_lbl = QLabel("Введите пароль:")               # ⬅ новая подпись
+                        p_title_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                        p_layout.addWidget(p_title_lbl)
+
+                        title_lbl = QLabel("Введите код подтверждения:")
+                        title_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                        p_layout.addWidget(title_lbl)
+
+                        password_dialog.setLayout(p_layout)
 
                         password_entry = QLineEdit()
-                        password_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
                         password_entry.setEchoMode(QLineEdit.EchoMode.Password)
-                        password_entry.setPlaceholderText("Введите пароль")
                         layout.addWidget(password_entry)
 
                         password_future = asyncio.Future()

@@ -79,4 +79,5 @@ uvicorn
 google-cloud-storage
 python-chess
 google-api-core
+qtawesome 
 pyqt6

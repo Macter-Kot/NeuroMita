@@ -149,7 +149,7 @@ class CameraCapture:
                 try:
                     with self._lock:
                         self._error_count = 0
-                        logger.info("loop before read")
+                        #logger.info("loop before read")
                         ret, frame = self._video_capture.read()
                         if not ret:
                             logger.error("Error: Could not read frame")

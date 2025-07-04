@@ -664,7 +664,6 @@ class ChatModel:
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
         }
 
         logger.info("Отправляю запрос к Gemini.")
@@ -683,6 +682,7 @@ class ChatModel:
                 logger.info("Answer: \n" + generated_text)
                 return generated_text
         else:
+            logger.warning(f"{headers}, {self.api_url}")
             logger.error(f"Ошибка: {response.status_code}, {response.text}")
             return None
 

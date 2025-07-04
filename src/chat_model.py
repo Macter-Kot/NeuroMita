@@ -250,7 +250,8 @@ class ChatModel:
             self,
             user_input : str,
             system_input : str = "",
-            image_data : list[bytes] | None = None
+            image_data : list[bytes] | None = None,
+            stream_callback: callable = None
     ):
         # 0. Подготовка -----------------------------------------------------------------
         if image_data is None:
@@ -357,7 +358,7 @@ class ChatModel:
 
         # 8. Генерация ответа -----------------------------------------------------------
         try:
-            llm_response_content, success = self._generate_chat_response(combined_messages)
+            llm_response_content, success = self._generate_chat_response(combined_messages,stream_callback)
 
             if not success or not llm_response_content:
                 logger.warning("LLM generation failed or returned empty.")
@@ -523,7 +524,7 @@ class ChatModel:
             logger.warning(f"Attempted to change to unknown character: {self.current_character_to_change}")
             self.current_character_to_change = ""
 
-    def _generate_chat_response(self, combined_messages):
+    def _generate_chat_response(self, combined_messages,stream_callback: callable = None):
         max_attempts = self.max_request_attempts
         retry_delay = self.request_delay
         request_timeout = 45
@@ -544,7 +545,8 @@ class ChatModel:
                     response_text = self._execute_with_timeout(
                         self._generate_request_response,
                         args=(formatted_for_request,),
-                        timeout=request_timeout
+                        timeout=request_timeout,
+                        stream_callback=stream_callback
                     )
                 else:
                     use_gpt4free_for_this_attempt = bool(self.gui.settings.get("gpt4free")) or \
@@ -558,7 +560,8 @@ class ChatModel:
                         self.update_openai_client(reserve_key_token=self.GetOtherKey())
 
                     response_text = self._generate_openapi_response(combined_messages,
-                                                                    use_gpt4free=use_gpt4free_for_this_attempt)
+                                                                    use_gpt4free=use_gpt4free_for_this_attempt,
+                                                                    stream_callback=stream_callback)
 
                 if response_text:
                     cleaned_response = self._clean_response(response_text)
@@ -630,7 +633,7 @@ class ChatModel:
             return None
 
     # region Generation final
-    def generate_request_gemini(self, combined_messages):
+    def generate_request_gemini(self, combined_messages, stream_callback: callable = None):
         params = self.get_params()
         self.clear_endline_sim(params)
 
@@ -672,7 +675,7 @@ class ChatModel:
 
         if response.status_code == 200:
             if self.gui.settings.get("ENABLE_STREAMING", False):
-                return self._handle_gemini_stream(response)
+                return self._handle_gemini_stream(response,stream_callback)
             else:
                 response_data = response.json()
                 generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
@@ -683,7 +686,7 @@ class ChatModel:
             logger.error(f"Ошибка: {response.status_code}, {response.text}")
             return None
 
-    def generate_request_common(self, combined_messages):
+    def generate_request_common(self, combined_messages, stream_callback: callable = None):
         data = {
             "model": self.gui.settings.get("NM_API_MODEL"),
             "messages": [
@@ -709,7 +712,7 @@ class ChatModel:
 
         if response.status_code == 200:
             if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
-                return self._handle_common_stream(response)
+                return self._handle_common_stream(response,stream_callback)
             else:
                 response_data = response.json()
                 # Формат ответа DeepSeek отличается от Gemini
@@ -720,7 +723,7 @@ class ChatModel:
             logger.error(f"Ошибка: {response.status_code}, {response.text}")
             return None
 
-    def _generate_openapi_response(self, combined_messages, use_gpt4free=False):
+    def _generate_openapi_response(self, combined_messages, use_gpt4free=False,stream_callback: callable = None):
         target_client = None
         model_to_use = ""
 
@@ -758,7 +761,7 @@ class ChatModel:
             completion = target_client.chat.completions.create(**final_params, stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
 
             if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
-                return self._handle_openai_stream(completion)
+                return self._handle_openai_stream(completion,stream_callback)
             elif completion and completion.choices:
                 response_content = completion.choices[0].message.content
                 logger.info("Completion successful.")
@@ -776,7 +779,7 @@ class ChatModel:
     # endregion
 
     # region Stream Handlers
-    def _handle_gemini_stream(self, response) -> Optional[str]:
+    def _handle_gemini_stream(self, response, stream_callback: callable = None) -> Optional[str]:
         """
         Обрабатывает потоковый ответ от Gemini-совместимого API.
         Корректно работает с JSON-объектами, которые могут приходить по частям.
@@ -786,7 +789,6 @@ class ChatModel:
         decoder = json.JSONDecoder()
         try:
             # Используем iter_content для получения "сырых" кусков данных
-            self.gui.insert_speaker_name()
             for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
                 json_buffer += chunk
                 # Пытаемся парсить буфер, пока в нем есть данные
@@ -799,7 +801,8 @@ class ChatModel:
                         generated_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[
                             0].get("text", "")
                         if generated_text:
-                            self.gui.append_message(generated_text)
+                            if stream_callback:
+                                stream_callback(generated_text)
                             full_response_parts.append(generated_text)
 
                         # Удаляем из буфера обработанный JSON и пробелы после него
@@ -817,11 +820,10 @@ class ChatModel:
             logger.error(f"Error processing Gemini stream: {e}", exc_info=True)
             return "".join(full_response_parts)  # Возвращаем то, что успели собрать
 
-    def _handle_common_stream(self, response) -> Optional[str]:
+    def _handle_common_stream(self, response, stream_callback: callable = None) -> Optional[str]:
         """Обрабатывает потоковый ответ в формате Server-Sent Events (SSE)."""
         full_response_parts = []
         try:
-            self.gui.insert_speaker_name()
             for line in response.iter_lines(decode_unicode=True):
                 if line and line.startswith('data: '):
                     line_data = line[6:]
@@ -832,7 +834,8 @@ class ChatModel:
                         delta = response_json.get("choices", [{}])[0].get("delta", {})
                         decoded_chunk = delta.get("content", "")
                         if decoded_chunk:
-                            self.gui.append_message(decoded_chunk)
+                            if stream_callback:  # <<< ИСПОЛЬЗУЕМ CALLBACK
+                                stream_callback(decoded_chunk)
                             full_response_parts.append(decoded_chunk)
                     except json.JSONDecodeError:
                         logger.warning(f"Could not decode JSON from SSE streaming line: {line_data}")
@@ -846,11 +849,10 @@ class ChatModel:
             logger.error(f"Error processing common (SSE) stream: {e}", exc_info=True)
             return "".join(full_response_parts)  # Return what we have
 
-    def _handle_openai_stream(self, completion) -> Optional[str]:
+    def _handle_openai_stream(self, completion, stream_callback: callable = None) -> Optional[str]:
         """Обрабатывает потоковый ответ от openai-python SDK."""
         full_response_parts = []
         try:
-            self.gui.insert_speaker_name()
             for chunk in completion:
                 response_content = ""
                 try:
@@ -866,7 +868,8 @@ class ChatModel:
                     continue
 
                 if response_content:
-                    self.gui.append_message(response_content)
+                    if stream_callback:
+                        stream_callback(response_content)
                     full_response_parts.append(response_content)
 
             full_text = "".join(full_response_parts)

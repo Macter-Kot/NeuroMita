@@ -1,7 +1,7 @@
 
 import io
 import uuid
-from win32 import  win32gui
+from win32 import win32gui
 import guiTemplates
 from AudioHandler import AudioHandler
 from Logger import logger
@@ -88,7 +88,12 @@ class ChatGUI(QMainWindow):
     update_chat_signal = pyqtSignal(str, str, bool, str)  # role, content, insert_at_start, message_time
     update_status_signal = pyqtSignal()
     update_debug_signal = pyqtSignal()
-    
+
+    # --- СИГНАЛЫ ДЛЯ СТРИМИНГА ---
+    prepare_stream_signal = pyqtSignal() # Сигнал для подготовки чата (вставка имени)
+    append_stream_chunk_signal = pyqtSignal(str) # Сигнал для добавления части текста
+    finish_stream_signal = pyqtSignal() # Сигнал для завершения сообщения (вставка \n\n)
+
     def __init__(self):
         super().__init__()
         
@@ -199,6 +204,10 @@ class ChatGUI(QMainWindow):
         self.update_chat_signal.connect(self._insert_message_slot)
         self.update_status_signal.connect(self.update_status_colors)
         self.update_debug_signal.connect(self.update_debug_info)
+
+        self.prepare_stream_signal.connect(self._prepare_stream_slot)
+        self.append_stream_chunk_signal.connect(self._append_stream_chunk_slot)
+        self.finish_stream_signal.connect(self._finish_stream_slot)
 
         self.setup_ui()
         self.load_chat_history()
@@ -854,6 +863,24 @@ class ChatGUI(QMainWindow):
             self.chat_window.verticalScrollBar().maximum()
         )
 
+    # ---  СЛОТЫ ДЛЯ ОБРАБОТКИ СТРИМИНГОВЫХ СИГНАЛОВ ---
+    def _prepare_stream_slot(self):
+        """Готовит чат к приему стримингового ответа."""
+        self.insert_speaker_name(role="assistant")
+
+    def _append_stream_chunk_slot(self, chunk):
+        """Добавляет кусок текста от стрима в чат."""
+        self.append_message(chunk)
+
+    def _finish_stream_slot(self):
+        """Завершает сообщение в чате, добавляя отступы."""
+        self.insert_message_end(role="assistant")
+
+    # Этот метод тоже нужно добавить, чтобы не вызывать его напрямую
+    def _insert_message_slot(self, role, content, insert_at_start, message_time):
+        """Слот для вставки сообщения в UI потоке"""
+        self.insert_message(role, content, insert_at_start, message_time)
+
     def process_image_for_chat(self, has_image_content, item, processed_content_parts):
         image_data_base64 = item.get("image_url", {}).get("url", "")
         if image_data_base64.startswith("data:image/jpeg;base64,"):
@@ -1274,34 +1301,51 @@ class ChatGUI(QMainWindow):
             Снимки экрана / камеры, если есть.
         """
         try:
-            # Генерация ответа модели в пуле потоков
+            is_streaming = bool(self.settings.get("ENABLE_STREAMING", False))
+
+            # Определяем callback-функцию, которая будет вызываться для каждого куска стрима
+            # Она будет работать в фоновом потоке, но ее задача - просто послать сигнал.
+            def stream_callback_handler(chunk: str):
+                self.append_stream_chunk_signal.emit(chunk)
+
+            # Если стриминг включен, заранее готовим UI
+            if is_streaming:
+                self.prepare_stream_signal.emit()
+
+            # Запускаем генерацию в фоновом потоке
             response = await asyncio.wait_for(
                 self.loop.run_in_executor(
-                    None,
+                    None,  # Используем executor по умолчанию
                     lambda: self.model.generate_response(
-                        user_input,
-                        system_input,
-                        image_data
+                        user_input=user_input,
+                        system_input=system_input,
+                        image_data=image_data,
+                        # Передаем наш callback только если включен стриминг
+                        stream_callback=stream_callback_handler if is_streaming else None
                     )
                 ),
-                timeout=60.0
+                timeout=120.0  # Увеличим таймаут для долгих генераций
             )
 
             # --- ОБНОВЛЯЕМ GUI ЧЕРЕЗ СИГНАЛ ---
-            if bool(self.settings.get("ENABLE_STREAMING")):
-                self.update_chat_signal.emit("None", "\n\n", False, "")
+            if is_streaming:
+                # В режиме стриминга `response` может быть полным текстом или None.
+                # Завершаем сообщение в чате.
+                self.finish_stream_signal.emit()
             else:
+                # В обычном режиме просто вставляем готовый ответ.
                 self.update_chat_signal.emit("assistant", response, False, "")
 
             # Дополнительные обновления (статусы, токены, отладка)
             self.update_status_signal.emit()
-            self.update_debug_signal.emit() # Восстанавливаем обновление отладки
+            self.update_debug_signal.emit()
             QTimer.singleShot(0, self.update_token_count)
 
             # Отдаём ответ в сервер (игра)
             if self.server and self.server.client_socket:
+                final_response_text = response if response else "..."
                 try:
-                    self.server.send_message_to_server(response)
+                    self.server.send_message_to_server(final_response_text)
                     logger.info("Ответ отправлен в игру.")
                 except Exception as e:
                     logger.error(f"Не удалось отправить ответ в игру: {e}")

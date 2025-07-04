@@ -45,7 +45,8 @@ import functools
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QTextEdit, QPushButton, QLabel, QScrollArea, QFrame,
                              QSplitter, QMessageBox, QComboBox, QCheckBox, QDialog,
-                             QProgressBar, QTextBrowser, QVBoxLayout, QLineEdit)
+                             QProgressBar, QTextBrowser, QVBoxLayout, QLineEdit,
+                             QFileDialog, QStyle)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon
 
@@ -183,6 +184,13 @@ class ChatGUI(QMainWindow):
         self.total_messages_in_history = 0
         self.loaded_messages_offset = 0
         self.loading_more_history = False
+
+        # Прикрепленные изображения
+        self.staged_images = []  # Список путей к прикрепленным файлам
+        self.attachment_label = None
+        self.attach_button = None
+        self.send_screen_button = None
+
 
         # Установка иконки и заголовка
         self.setWindowTitle(_("Чат с NeuroMita", "NeuroMita Chat"))
@@ -647,6 +655,39 @@ class ChatGUI(QMainWindow):
         input_row_layout.addWidget(self.send_button)
         
         input_layout.addLayout(input_row_layout)
+
+        # --- НОВАЯ ПАНЕЛЬ КНОПОК ---
+        button_bar_layout = QHBoxLayout()
+        button_bar_layout.setContentsMargins(0, 5, 0, 0)
+
+        # Кнопка "Прикрепить изображение"
+        self.attach_button = QPushButton(" " + _("Прикрепить", "Attach"))
+        # Используем стандартную иконку скрепки
+        attach_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+        self.attach_button.setIcon(attach_icon)
+        self.attach_button.clicked.connect(self.attach_images)
+        self.attach_button.setMaximumHeight(28)
+        button_bar_layout.addWidget(self.attach_button)
+
+        # Кнопка "Отправить скриншот"
+        self.send_screen_button = QPushButton(" " + _("Скриншот", "Screenshot"))
+        # Используем стандартную иконку камеры
+        screen_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon)
+        self.send_screen_button.setIcon(screen_icon)
+        self.send_screen_button.setToolTip(_("Отправить текущий экран", "Send current screen"))
+        self.send_screen_button.clicked.connect(self.send_screen_capture)
+        self.attach_button.setMaximumHeight(28)
+        button_bar_layout.addWidget(self.send_screen_button)
+
+        # Метка для отображения количества прикрепленных файлов
+        self.attachment_label = QLabel("")
+        self.attachment_label.setStyleSheet("font-size: 10px; color: #888888; margin-left: 5px;")
+        button_bar_layout.addWidget(self.attachment_label)
+
+        button_bar_layout.addStretch()  # Прижимает все элементы влево
+
+        input_layout.addLayout(button_bar_layout)
+
         layout.addWidget(input_frame)
 
     def eventFilter(self, obj, event):
@@ -1240,7 +1281,22 @@ class ChatGUI(QMainWindow):
     def send_message(self, system_input: str = "", image_data: list[bytes] = None):
         user_input = self.user_entry.toPlainText().strip()
         current_image_data = []
-        
+        staged_image_data = []
+
+        # 1. Сбор данных (эта часть была правильной)
+        if self.staged_images:
+            try:
+                for image_path in self.staged_images:
+                    with open(image_path, "rb") as f:
+                        staged_image_data.append(f.read())
+                logger.info(f"Загружено {len(staged_image_data)} байт-кодов из прикрепленных изображений.")
+            except Exception as e:
+                logger.error(f"Ошибка чтения прикрепленного файла: {e}")
+                QMessageBox.critical(self, _("Ошибка файла", "File Error"),
+                                     _("Не удалось прочитать один из прикрепленных файлов.",
+                                       "Could not read one of the attached files."))
+                return
+
         if self.settings.get("ENABLE_SCREEN_ANALYSIS", False):
             history_limit = int(self.settings.get("SCREEN_CAPTURE_HISTORY_LIMIT", 1))
             frames = self.screen_capture_instance.get_recent_frames(history_limit)
@@ -1249,7 +1305,8 @@ class ChatGUI(QMainWindow):
             else:
                 logger.info("Анализ экрана включен, но кадры не готовы или история пуста.")
 
-        all_image_data = (image_data if image_data is not None else []) + current_image_data
+        # Собираем ВСЕ изображения в один список для отправки модели
+        all_image_data = (image_data or []) + current_image_data + staged_image_data
 
         if self.settings.get("ENABLE_CAMERA_CAPTURE", False):
             if hasattr(self, 'camera_capture') and self.camera_capture is not None and self.camera_capture.is_running():
@@ -1261,26 +1318,47 @@ class ChatGUI(QMainWindow):
                 else:
                     logger.info("Захват с камеры включен, но кадры не готовы или история пуста.")
 
-        if not user_input and not system_input:
+        # 2. Проверка, есть ли что отправлять
+        if not user_input and not system_input and not all_image_data:
             return
 
         self.last_image_request_time = time.time()
 
+        # 3. Единая логика отображения в UI
+        # Сначала вставляем текст, если он есть
         if user_input:
             self.insert_message("user", user_input)
             self.user_entry.clear()
 
+        # Затем ОДИН РАЗ вставляем все изображения, если они есть
         if all_image_data:
+            # Готовим контент для отображения
             image_content_for_display = [{"type": "image_url", "image_url": {
                 "url": f"data:image/jpeg;base64,{base64.b64encode(img).decode('utf-8')}"}} for img in all_image_data]
+
+            # Если текста не было, добавляем заголовок для изображений
             if not user_input:
-                image_content_for_display.insert(0, {"type": "text",
-                                                     "content": _("<Изображение экрана>", "<Screen Image>") + "\n"})
+                # Определяем, какой заголовок лучше
+                label = _("<Изображения>", "<Images>")  # Общий случай
+                if staged_image_data and not current_image_data and not (image_data or []):
+                    label = _("<Прикрепленные изображения>", "<Attached Images>")
+                elif (current_image_data or (image_data or [])) and not staged_image_data:
+                    label = _("<Изображение экрана>", "<Screen Image>")
+
+                image_content_for_display.insert(0, {"type": "text", "content": label + "\n"})
+
             self.insert_message("user", image_content_for_display)
 
+        # 4. Асинхронная отправка
         if self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self.async_send_message(user_input, system_input, all_image_data),
                                              self.loop)
+
+        # 5. Очистка прикрепленных файлов 
+        if self.staged_images:
+            self.staged_images.clear()
+            self.attachment_label.setText("")
+            logger.info("Список прикрепленных изображений очищен.")
 
     async def async_send_message(
         self,
@@ -2526,6 +2604,49 @@ class ChatGUI(QMainWindow):
         if response != "":
             self._insert_formatted_text(cursor, f"{MitaName}: ", QColor("hot pink"), bold=True)
             cursor.insertText(f"{response}\n\n")
+
+    def attach_images(self):
+        """Открывает диалог для выбора изображений и сохраняет пути."""
+        file_paths, t = QFileDialog.getOpenFileNames(
+            self,
+            _("Выберите изображения", "Select Images"),
+            "",
+            _("Файлы изображений (*.png *.jpg *.jpeg *.bmp *.gif)", "Image Files (*.png *.jpg *.jpeg *.bmp *.gif)")
+        )
+
+        if file_paths:
+            self.staged_images.extend(file_paths)
+            self.attachment_label.setText(
+                _("{count} изображений прикреплено", "{count} images attached").format(
+                    count=len(self.staged_images))
+            )
+            logger.info(f"Прикреплены изображения: {self.staged_images}")
+
+    def send_screen_capture(self):
+        """Захватывает экран и немедленно отправляет его без текста."""
+        logger.info("Запрошена отправка скриншота.")
+        # Получаем 1 последний кадр
+        frames = self.screen_capture_instance.get_recent_frames(1)
+
+        if not frames:
+            QMessageBox.warning(self, _("Ошибка", "Error"),
+                                _("Не удалось захватить экран. Убедитесь, что анализ экрана включен в настройках.",
+                                  "Failed to capture the screen. Make sure screen analysis is enabled in settings."))
+            return
+
+        # Вставляем изображение в чат для обратной связи
+        image_content_for_display = [{"type": "image_url", "image_url": {
+            "url": f"data:image/jpeg;base64,{base64.b64encode(img).decode('utf-8')}"}} for img in frames]
+        image_content_for_display.insert(0, {"type": "text",
+                                             "content": _("<Изображение экрана>", "<Screen Image>") + "\n"})
+        self.insert_message("user", image_content_for_display)
+
+        # Отправляем асинхронно
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self.async_send_message(user_input="", system_input="", image_data=frames),
+                self.loop
+            )
 
     # def on_chat_scroll(self, event):
     #     """Обработчик события прокрутки чата."""

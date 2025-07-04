@@ -48,7 +48,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QProgressBar, QTextBrowser, QVBoxLayout, QLineEdit,
                              QFileDialog, QStyle)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
-from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon,QPalette
 import qtawesome as qta
 
 from ui import chat_area, status_indicators, debug_area, news_area
@@ -882,6 +882,9 @@ class ChatGUI(QMainWindow):
         
         if color:
             char_format.setForeground(color)
+        else:
+            default_text_color = self.chat_window.palette().color(QPalette.ColorRole.Text)
+            char_format.setForeground(default_text_color)
         
         font = QFont("Arial", int(self.settings.get("CHAT_FONT_SIZE", 12)))
         if bold:
@@ -1351,7 +1354,6 @@ class ChatGUI(QMainWindow):
             asyncio.run_coroutine_threadsafe(self.async_send_message(user_input, system_input, all_image_data),
                                              self.loop)
 
-        # 5. Очистка прикрепленных файлов 
         if self.staged_images:
             self.staged_images.clear()
             self.attachment_label.setText("")

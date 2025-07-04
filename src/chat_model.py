@@ -544,9 +544,9 @@ class ChatModel:
 
                     response_text = self._execute_with_timeout(
                         self._generate_request_response,
-                        args=(formatted_for_request,),
+                        args=(formatted_for_request,stream_callback),
                         timeout=request_timeout,
-                        stream_callback=stream_callback
+
                     )
                 else:
                     use_gpt4free_for_this_attempt = bool(self.gui.settings.get("gpt4free")) or \
@@ -620,14 +620,14 @@ class ChatModel:
                 formatted_messages.append(msg)
         return formatted_messages
 
-    def _generate_request_response(self, formatted_messages):
+    def _generate_request_response(self, formatted_messages,stream_callback):
         try:
             if bool(self.gui.settings.get("GEMINI_CASE", False)):
                 logger.info("Dispatching to Gemini request generation.")
-                return self.generate_request_gemini(formatted_messages)
+                return self.generate_request_gemini(formatted_messages,stream_callback)
             else:
                 logger.info("Dispatching to common request generation.")
-                return self.generate_request_common(formatted_messages)
+                return self.generate_request_common(formatted_messages,stream_callback)
         except Exception as e:
             logger.error(f"Error in _generate_request_response dispatcher: {str(e)}", exc_info=True)
             return None

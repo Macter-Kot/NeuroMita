@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtGui import QPainter, QColor, QPen
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
-from Modules.SeaBattle.seabattle_logic import GameStateProvider, to_alg, from_alg
+from modules.SeaBattle.seabattle_logic import GameStateProvider, to_alg, from_alg
 
 STYLESHEET = """
 QWidget { background-color: #2E3440; color: #ECEFF4; font-family: Arial; }

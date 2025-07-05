@@ -4,7 +4,7 @@ import requests
 import zipfile
 import io
 from urllib.parse import urlparse
-from Logger import logger
+from main_logger import logger
 
 class PromptDownloader:
     def __init__(self):

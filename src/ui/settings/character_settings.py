@@ -5,10 +5,10 @@ from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
-from guiTemplates import create_settings_section
+from gui_templates import create_settings_section
 from ui.settings.prompt_catalogue_settings import list_prompt_sets
 from utils.prompt_catalogue_manager import copy_prompt_set, get_prompt_catalogue_folder_name
-from Logger import logger
+from main_logger import logger
 from utils import getTranslationVariant as _
 
 def setup_mita_controls(gui, parent_layout):

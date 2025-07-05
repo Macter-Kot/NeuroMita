@@ -2,8 +2,8 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdi
                              QCheckBox, QPushButton, QTextEdit, QSizePolicy)
 from PyQt6.QtCore import Qt
 
-from Logger import logger
-from SettingsManager import CollapsibleSection
+from main_logger import logger
+from settings_manager import CollapsibleSection
 from utils import getTranslationVariant as _
 
 def create_settings_section(gui, parent_layout, title, settings_config):

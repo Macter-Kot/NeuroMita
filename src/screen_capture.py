@@ -3,18 +3,18 @@ import mss.tools
 import numpy as np
 import time
 import threading
-from Logger import logger
+from main_logger import logger
 from win32 import win32gui
 # import win32con
 
 # Добавляем необходимые импорты для PipInstaller
 import sys
 import os
-from utils.PipInstaller import PipInstaller
+from utils.pip_installer import PipInstaller
 
 # Функция для перевода
 def getTranslationVariant(ru_str, en_str=""):
-    from SettingsManager import SettingsManager
+    from settings_manager import SettingsManager
     lang = SettingsManager.get("LANGUAGE", "RU")
     if en_str and lang == "EN":
         return en_str

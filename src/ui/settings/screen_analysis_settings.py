@@ -1,7 +1,7 @@
 
-from guiTemplates import create_settings_section
+from gui_templates import create_settings_section
 from utils import getTranslationVariant as _
-from Logger import logger
+from main_logger import logger
 
 def get_camera_list():
     try:

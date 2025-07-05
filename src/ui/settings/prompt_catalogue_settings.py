@@ -10,7 +10,7 @@ from utils.prompt_catalogue_manager import (
     list_prompt_sets, read_info_json, write_info_json,
     copy_prompt_set, create_new_set, delete_prompt_set
 )
-from SettingsManager import CollapsibleSection
+from settings_manager import CollapsibleSection
 
 def setup_prompt_catalogue_controls(gui, parent_layout):
     catalogue_path = "PromptsCatalogue"

@@ -5,7 +5,7 @@ import uvicorn
 import os
 import sys
 import re
-from Logger import logger
+from main_logger import logger
 
 from dotenv import load_dotenv
 ENV_FILENAME = "features.env" 

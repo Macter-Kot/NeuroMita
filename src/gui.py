@@ -2,13 +2,13 @@
 import io
 import uuid
 from win32 import win32gui
-import guiTemplates
-from AudioHandler import AudioHandler
-from Logger import logger
-from SettingsManager import SettingsManager, CollapsibleSection
+import gui_templates
+from audio_handler import AudioHandler
+from main_logger import logger
+from settings_manager import SettingsManager, CollapsibleSection
 from chat_model import ChatModel
 from server import ChatServer
-from Silero import TelegramBotHandler
+from silero import TelegramBotHandler
 
 from pyqt_styles.styles import get_stylesheet
 import gettext
@@ -31,13 +31,13 @@ from utils import _
 from utils import SH, process_text_to_voice
 import sys
 
-from ScreenCapture import ScreenCapture
+from screen_capture import ScreenCapture
 import requests
 import importlib
-from LocalVoice import LocalVoice
+from local_voice import LocalVoice
 import time
-from SpeechRecognition import SpeechRecognition
-from utils.PipInstaller import PipInstaller
+from speech_recognition import SpeechRecognition
+from utils.pip_installer import PipInstaller
 
 import functools
 
@@ -1391,7 +1391,7 @@ class ChatGUI(QMainWindow):
 
     def start_camera_capture_thread(self):
         if not hasattr(self, 'camera_capture') or self.camera_capture is None:
-            from CameraCapture import CameraCapture
+            from camera_capture import CameraCapture
             self.camera_capture = CameraCapture()
 
         if not self.camera_capture.is_running():
@@ -1743,13 +1743,13 @@ class ChatGUI(QMainWindow):
 
 
     def create_settings_section(self, parent_layout, title, settings_config):
-        return guiTemplates.create_settings_section(self, parent_layout, title, settings_config)
+        return gui_templates.create_settings_section(self, parent_layout, title, settings_config)
 
     def create_setting_widget(self, parent, label, setting_key='', widget_type='entry',
                               options=None, default='', default_checkbutton=False, validation=None, tooltip=None,
                               width=None, height=None, command=None, hide=False):
         # Теперь используется guiTemplates
-        return guiTemplates.create_setting_widget(self, parent, label, setting_key, widget_type,
+        return gui_templates.create_setting_widget(self, parent, label, setting_key, widget_type,
                                                   options, default, default_checkbutton, validation, tooltip,
                                                   width, height, command, hide)
 

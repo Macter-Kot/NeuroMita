@@ -4,8 +4,8 @@ import threading
 import multiprocessing
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Type
-from Logger import logger
-from Modules.game_interface import GameInterface
+from main_logger import logger
+from modules.game_interface import GameInterface
 
 class ChessGame(GameInterface):
     """Реализация игры в шахматы."""
@@ -24,7 +24,7 @@ class ChessGame(GameInterface):
             self.stop({})
 
         try:
-            from Modules.Chess.chess_board import run_chess_gui_process
+            from modules.Chess.chess_board import run_chess_gui_process
 
             difficulty = params.get("difficulty", "medium")
             self.current_elo = self.elo_mapping.get(difficulty, self.elo_mapping["medium"])

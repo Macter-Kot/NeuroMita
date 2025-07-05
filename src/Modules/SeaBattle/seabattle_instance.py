@@ -5,8 +5,8 @@ import multiprocessing
 from typing import Dict, Any, Optional
 
 # Предполагается, что эти импорты находятся в корневом каталоге проекта
-from Logger import logger
-from Modules.game_interface import GameInterface
+from main_logger import logger
+from modules.game_interface import GameInterface
 
 class SeaBattleGame(GameInterface):
     """Реализация игры в 'Морской бой' для взаимодействия с LLM."""
@@ -24,7 +24,7 @@ class SeaBattleGame(GameInterface):
 
         try:
             # Важно: seabattle_gui должен быть импортируем
-            from Modules.SeaBattle.seabattle_gui import run_seabattle_gui_process
+            from modules.SeaBattle.seabattle_gui import run_seabattle_gui_process
 
             self.character.set_variable("playingGame", True)
             self.character.set_variable("game_id", self.game_id)

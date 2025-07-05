@@ -1,9 +1,9 @@
 from FSM.BaseState import BaseState
 from FSM.Events.MitaEvents import MitaEvents
 from FSM.Events.PlayerEvents import PlayerEvents
-from Logger import logger
+from main_logger import logger
 
-from promptPart import PromptPart, PromptType
+from prompt_part import PromptPart, PromptType
 
 
 class MitaHelloState(BaseState):

@@ -3,7 +3,7 @@ import json
 import socket
 from datetime import datetime
 
-from Logger import logger
+from main_logger import logger
 
 class ChatServer:
     def __init__(self, gui, chat_model, host='127.0.0.1', port=12345):

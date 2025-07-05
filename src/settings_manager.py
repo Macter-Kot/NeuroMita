@@ -5,7 +5,7 @@ import os
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PyQt6.QtCore import Qt
 
-from Logger import logger
+from main_logger import logger
 
 class SettingsManager:
     instance = None

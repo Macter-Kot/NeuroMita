@@ -4,7 +4,7 @@ import threading
 
 import pygame
 
-from Logger import logger
+from main_logger import logger
 
 
 class AudioHandler:

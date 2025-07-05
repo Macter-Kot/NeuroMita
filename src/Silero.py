@@ -8,9 +8,9 @@ import asyncio
 from telethon.tl.types import MessageMediaDocument, DocumentAttributeAudio
 from telethon.errors import SessionPasswordNeededError
 
-from AudioConverter import AudioConverter
-from AudioHandler import AudioHandler
-from Logger import logger
+from audio_converter import AudioConverter
+from audio_handler import AudioHandler
+from main_logger import logger
 from utils import SH
 import platform
 

@@ -110,7 +110,7 @@ class GameMaster(Character):
 
     def get_llm_system_prompts(self) -> list:
         try:
-            from SettingsManager import SettingsManager as settings
+            from settings_manager import SettingsManager as settings
             current_instruction = settings.get("GM_SMALL_PROMPT", "")
             self.set_variable("GM_INSTRUCTION", current_instruction)
         except ImportError:

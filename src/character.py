@@ -11,8 +11,8 @@ from typing import Dict, List, Any, Optional
 from DSL.dsl_engine import DslInterpreter # PROMPTS_ROOT is managed by DslInterpreter
 from DSL.path_resolver import LocalPathResolver
 from DSL.post_dsl_engine import PostDslInterpreter
-from MemorySystem import MemorySystem
-from HistoryManager import HistoryManager
+from memory_system import MemorySystem
+from history_manager import HistoryManager
 from utils import clamp, SH # SH for masking keys if needed elsewhere
 
 import multiprocessing # Оставляем для Queue, т.к. они process-safe и thread-safe
@@ -23,7 +23,7 @@ import os
 from game_manager import GameManager
 
 # Setup logger for this module
-from Logger import logger
+from main_logger import logger
 
 # ANSI Escape Codes
 RED_COLOR = "\033[91m"

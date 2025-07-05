@@ -42,12 +42,13 @@ from utils.pip_installer import PipInstaller
 import functools
 
 # PyQt6 imports
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QTextEdit, QPushButton, QLabel, QScrollArea, QFrame,
-                             QSplitter, QMessageBox, QComboBox, QCheckBox, QDialog,
-                             QProgressBar, QTextBrowser, QVBoxLayout, QLineEdit,
-                             QFileDialog, QStyle)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject, QPoint, QPropertyAnimation
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QTextEdit, QPushButton, QLabel, QScrollArea, QFrame, QSplitter,
+    QMessageBox, QComboBox, QCheckBox, QDialog, QProgressBar,
+    QTextBrowser, QLineEdit, QFileDialog, QStyle, QGraphicsOpacityEffect   # ← NEW
+)
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon,QPalette
 import qtawesome as qta
 
@@ -596,6 +597,8 @@ class ChatGUI(QMainWindow):
         self.chat_window.setFont(font)
         
         layout.addWidget(self.chat_window, 1)
+
+        self._create_scroll_to_bottom_button()
         
         # Инпут секция
         input_frame = QFrame()
@@ -653,12 +656,94 @@ class ChatGUI(QMainWindow):
 
         layout.addWidget(input_frame)
 
-    def eventFilter(self, obj, event):
-        """Обработчик событий для перехвата Enter в QTextEdit"""
-        from PyQt6.QtCore import QEvent
+    def _create_scroll_to_bottom_button(self):
+        """Плавающая кнопка «в самый низ» для окна чата."""
+        btn = QPushButton(qta.icon('fa6s.angle-down', color='white'), '', self.chat_window)
+        btn.setObjectName("ScrollToBottomButton")
+        btn.setFixedSize(34, 34)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton#ScrollToBottomButton{
+                border:none;
+                border-radius:17px;
+                background-color:#9146ff;
+            }
+            QPushButton#ScrollToBottomButton:hover{
+                background-color:#a96dff;
+            }
+        """)
+        # графический эффект для плавной анимации
+        opacity = QGraphicsOpacityEffect(btn)
+        btn.setGraphicsEffect(opacity)
+        anim = QPropertyAnimation(opacity, b"opacity", btn)
+        anim.setDuration(250)
+        btn._opacity_anim = anim     # маленький трюк, чтобы не потерять ссылку
+        btn.hide()
 
+        # клик -> скроллим в самый низ
+        btn.clicked.connect(
+            lambda: self.chat_window.verticalScrollBar().setValue(
+                self.chat_window.verticalScrollBar().maximum())
+        )
+
+        # храним ссылки
+        self.scroll_to_bottom_btn   = btn
+        self.scroll_to_bottom_anim  = anim
+
+        # следим за скроллом и ресайзом
+        self.chat_window.verticalScrollBar().valueChanged.connect(self._handle_chat_scroll)
+        self.chat_window.viewport().installEventFilter(self)   # для ресайза
+        self._handle_chat_scroll()      # одноразовая инициализация
+
+    def _handle_chat_scroll(self):
+        """Показывает / скрывает кнопку в зависимости от позиции скролла."""
+        bar = self.chat_window.verticalScrollBar()
+        at_bottom = bar.value() >= bar.maximum() - 5
+        if at_bottom:
+            self._fade_out_scroll_button()
+        else:
+            self._fade_in_scroll_button()
+        # позиционируем каждый раз на случай, если меняется ширина/высота
+        self._reposition_scroll_button()
+
+    def _fade_in_scroll_button(self):
+        if not self.scroll_to_bottom_btn.isVisible():
+            self.scroll_to_bottom_btn.show()
+        self.scroll_to_bottom_anim.stop()
+        self.scroll_to_bottom_anim.setStartValue(self.scroll_to_bottom_btn.graphicsEffect().opacity())
+        self.scroll_to_bottom_anim.setEndValue(1.0)
+        self.scroll_to_bottom_anim.start()
+
+    def _fade_out_scroll_button(self):
+        if not self.scroll_to_bottom_btn.isVisible():
+            return
+        self.scroll_to_bottom_anim.stop()
+        self.scroll_to_bottom_anim.setStartValue(self.scroll_to_bottom_btn.graphicsEffect().opacity())
+        self.scroll_to_bottom_anim.setEndValue(0.0)
+        self.scroll_to_bottom_anim.start()
+        # прячем в конце анимации, чтобы не перехватывала клики
+        self.scroll_to_bottom_anim.finished.connect(
+            lambda: self.scroll_to_bottom_btn.hide() if
+            self.scroll_to_bottom_btn.graphicsEffect().opacity() == 0 else None)
+
+    def _reposition_scroll_button(self):
+        """Размещает кнопку внизу-справа от видимой области текста."""
+        margin = 12
+        vp = self.chat_window.viewport()
+        x = vp.width()  - self.scroll_to_bottom_btn.width()  - margin
+        y = vp.height() - self.scroll_to_bottom_btn.height() - margin
+        self.scroll_to_bottom_btn.move(QPoint(x, y))
+
+    def eventFilter(self, obj, event):
+        from PyQt6.QtCore import QEvent
+        if obj == self.chat_window.viewport() and event.type() in (
+                QEvent.Type.Resize, QEvent.Type.Paint):
+            if hasattr(self, 'scroll_to_bottom_btn'):
+                self._reposition_scroll_button()
+        # ---- существующая обработка Enter ----
         if obj == self.user_entry and event.type() == QEvent.Type.KeyPress:
-            if event.key() == Qt.Key.Key_Return and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            if event.key() == Qt.Key.Key_Return and not (
+                    event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
                 self.send_message()
                 return True
         return super().eventFilter(obj, event)

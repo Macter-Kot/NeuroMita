@@ -49,6 +49,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QFileDialog, QStyle)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon,QPalette
+import qtawesome as qta
 
 from ui import chat_area, status_indicators, debug_area, news_area
 from ui.settings import (
@@ -661,19 +662,15 @@ class ChatGUI(QMainWindow):
         button_bar_layout.setContentsMargins(0, 5, 0, 0)
 
         # Кнопка "Прикрепить изображение"
-        self.attach_button = QPushButton(" " + _("Прикрепить", "Attach"))
+        self.attach_button = QPushButton(qta.icon('fa6s.paperclip', color='white'), _("Прикрепить", "Attach"))
         # Используем стандартную иконку скрепки
-        attach_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
-        self.attach_button.setIcon(attach_icon)
         self.attach_button.clicked.connect(self.attach_images)
         self.attach_button.setMaximumHeight(28)
         button_bar_layout.addWidget(self.attach_button)
 
         # Кнопка "Отправить скриншот"
-        self.send_screen_button = QPushButton(" " + _("Скриншот", "Screenshot"))
+        self.send_screen_button = QPushButton(qta.icon('fa6s.camera', color='white'), _("Скриншот", "Screenshot"))
         # Используем стандартную иконку камеры
-        screen_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon)
-        self.send_screen_button.setIcon(screen_icon)
         self.send_screen_button.setToolTip(_("Отправить текущий экран", "Send current screen"))
         self.send_screen_button.clicked.connect(self.send_screen_capture)
         self.attach_button.setMaximumHeight(28)

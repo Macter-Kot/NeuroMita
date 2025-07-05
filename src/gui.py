@@ -659,6 +659,7 @@ class ChatGUI(QMainWindow):
     def _create_scroll_to_bottom_button(self):
         """Плавающая кнопка «в самый низ» для окна чата."""
         btn = QPushButton(qta.icon('fa6s.angle-down', color='white'), '', self.chat_window)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn.setObjectName("ScrollToBottomButton")
         btn.setFixedSize(34, 34)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -670,6 +671,10 @@ class ChatGUI(QMainWindow):
             }
             QPushButton#ScrollToBottomButton:hover{
                 background-color:#a96dff;
+            }
+            QPushButton#ScrollToBottomButton:focus{
+                outline:none;
+                border:none;
             }
         """)
         # графический эффект для плавной анимации

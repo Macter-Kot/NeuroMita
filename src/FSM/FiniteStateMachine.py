@@ -1,7 +1,7 @@
 from FSM.Events.MitaEvents import MitaEvents
 from FSM.Events.PlayerEvents import PlayerEvents
 from FSM.BaseState import BaseState
-from Logger import logger
+from main_logger import logger
 
 
 class FiniteStateMachine:

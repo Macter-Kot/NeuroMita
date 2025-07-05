@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QMessageBox
 import logging
 
 # Initialize logger
-from Logger import logger
+from main_logger import logger
 
 def list_prompt_sets(catalogue_path, character_name=None):
     """

@@ -3,7 +3,7 @@ import os
 import ffmpeg
 import sys
 
-from Logger import logger
+from main_logger import logger
 
 
 class AudioConverter:

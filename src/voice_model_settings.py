@@ -13,10 +13,10 @@ import copy
 import json
 import threading
 from docs import DocsManager
-from Logger import logger
+from main_logger import logger
 import traceback
 
-from SettingsManager import SettingsManager
+from settings_manager import SettingsManager
 from pyqt_styles.voice_model_styles import get_stylesheet
 
 def getTranslationVariant(ru_str, en_str=""):
@@ -197,7 +197,7 @@ default_description_text = "Наведите курсор на элемент и
 default_description_text_en = "Hover over an interface element to get a description."
 
 try:
-    from utils.GpuUtils import check_gpu_provider, get_cuda_devices, get_gpu_name_by_id
+    from utils.gpu_utils import check_gpu_provider, get_cuda_devices, get_gpu_name_by_id
 except ImportError:
     logger.info(_("Предупреждение: Модуль GpuUtils не найден. Функции определения GPU не будут работать.", "Warning: GpuUtils module not found. GPU detection functions will not work."))
     def check_gpu_provider(): return None

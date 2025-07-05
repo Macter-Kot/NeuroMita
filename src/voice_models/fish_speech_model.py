@@ -8,7 +8,7 @@ import asyncio
 
 from .base_model import IVoiceModel
 from typing import Optional, Any
-from Logger import logger
+from main_logger import logger
 
 from .edge_tts_rvc_model import EdgeTTS_RVC_Model
 import importlib.util
@@ -16,9 +16,9 @@ import importlib.util
 import subprocess
 from PyQt6.QtCore import QTimer, Qt
 
-from utils.PipInstaller import PipInstaller
+from utils.pip_installer import PipInstaller
 
-from SettingsManager import SettingsManager
+from settings_manager import SettingsManager
 def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
 _ = getTranslationVariant
 

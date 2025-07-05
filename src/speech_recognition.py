@@ -7,9 +7,10 @@ import wave
 from collections import deque
 from threading import Lock
 from io import BytesIO
+import numpy as np
 
 # Используем стандартный логгер
-from Logger import logger
+from main_logger import logger
 
 #os.environ['TORCH_FORCE_WEIGHTS_ONLY_LOAD'] = '1'
 

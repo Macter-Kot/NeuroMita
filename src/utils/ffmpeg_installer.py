@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 import sys
-from Logger import logger
+from main_logger import logger
 
 def install_ffmpeg(target_directory=".",
                    url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"):

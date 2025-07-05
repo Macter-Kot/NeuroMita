@@ -1,7 +1,7 @@
 # OpenMita/DSL/post_dsl_engine.py
 import re
 from typing import List, Dict, Any, Tuple, Callable, TYPE_CHECKING
-from Logger import logger  # Use OpenMita's logger
+from main_logger import logger  # Use OpenMita's logger
 
 if TYPE_CHECKING:
     from character import Character  # OpenMita's Character

@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, Type
-from Logger import logger
-from Modules.available_games import get_available_games
-from Modules.game_interface import GameInterface
+from main_logger import logger
+from modules.available_games import get_available_games
+from modules.game_interface import GameInterface
 
 
 class GameManager:

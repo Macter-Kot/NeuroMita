@@ -8,16 +8,16 @@ import asyncio
 
 from .base_model import IVoiceModel
 from typing import Optional, Any
-from Logger import logger
+from main_logger import logger
 
-from SettingsManager import SettingsManager
+from settings_manager import SettingsManager
 def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
 _ = getTranslationVariant
 
 import requests
 import math
 from PyQt6.QtCore import QTimer
-from utils.PipInstaller import PipInstaller
+from utils.pip_installer import PipInstaller
 
 class F5TTSModel(IVoiceModel):
     def __init__(self, parent: 'LocalVoice', model_id: str, rvc_handler: Optional[IVoiceModel] = None):

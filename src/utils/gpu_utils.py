@@ -3,7 +3,7 @@ import subprocess
 import platform
 import os
 import re # Импортируем модуль для регулярных выражений
-from Logger import logger
+from main_logger import logger
 
 def check_gpu_provider():
     """

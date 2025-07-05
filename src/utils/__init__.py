@@ -5,8 +5,8 @@ import re
 
 from num2words import num2words
 
-from Logger import logger
-from SettingsManager import SettingsManager
+from main_logger import logger
+from settings_manager import SettingsManager
 
 
 def clamp(value, min_value, max_value):

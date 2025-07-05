@@ -1,12 +1,12 @@
 # Файл с моделью для эмбеддингов
 
-from utils.GpuUtils import check_gpu_provider
-from utils.PipInstaller import PipInstaller
+from utils.gpu_utils import check_gpu_provider
+from utils.pip_installer import PipInstaller
 import sys, os
 
 current_gpu = check_gpu_provider()
 
-from SettingsManager import SettingsManager
+from settings_manager import SettingsManager
 
 script_dir = os.path.dirname(sys.executable)  
 checkpoints_dir = os.path.join(script_dir, "checkpoints")
@@ -20,7 +20,7 @@ def getTranslationVariant(ru_str, en_str=""):
 
 _ = getTranslationVariant
 
-from Logger import logger
+from main_logger import logger
 
 try:
     pip_installer = PipInstaller(
@@ -76,7 +76,7 @@ except ImportError:
     except ImportError:
         raise ImportError("Даже после установки TRANSFORMERS - не получилось импортировать.")
     
-from Logger import logger
+from main_logger import logger
 import numpy as np
 import time
 import os

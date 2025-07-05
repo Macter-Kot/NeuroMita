@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QFont, QTextCursor
 import time
 import ffmpeg
-from utils.GpuUtils import check_gpu_provider
+from utils.gpu_utils import check_gpu_provider
 
 import hashlib
 from datetime import datetime
@@ -29,8 +29,8 @@ from xml.sax.saxutils import escape
 from typing import Dict, Optional, Any
 
 from packaging.utils import canonicalize_name, NormalizedName
-from utils.PipInstaller import PipInstaller, DependencyResolver
-from SettingsManager import SettingsManager
+from utils.pip_installer import PipInstaller, DependencyResolver
+from settings_manager import SettingsManager
 
 # --- Новые импорты для модульной структуры ---
 from voice_models.base_model import IVoiceModel
@@ -39,7 +39,7 @@ from voice_models.fish_speech_model import FishSpeechModel
 from voice_models.f5_tts_model import F5TTSModel
 
 from docs import DocsManager
-from Logger import logger
+from main_logger import logger
 
 def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
 _ = getTranslationVariant

@@ -4,7 +4,7 @@ from FSM.Events.MitaEvents import MitaEvents
 from FSM.Events.PlayerEvents import PlayerEvents
 
 import re
-from promptPart import PromptPart, PromptType
+from prompt_part import PromptPart, PromptType
 
 
 class BaseState(ABC):

@@ -14,11 +14,11 @@ import queue
 import os  # Added for os.environ
 from io import BytesIO # Добавлено для обработки изображений
 
-from Logger import logger
+from main_logger import logger
 from characters import CrazyMita, KindMita, ShortHairMita, CappyMita, MilaMita, CreepyMita, SleepyMita, GameMaster, \
     SpaceCartridge, DivanCartridge  # Updated imports
 from character import Character  # Character base
-from utils.PipInstaller import PipInstaller
+from utils.pip_installer import PipInstaller
 
 from utils import SH, save_combined_messages, calculate_cost_for_combined_messages, process_text_to_voice # Keep utils
 

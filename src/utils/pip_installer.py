@@ -8,7 +8,7 @@ from pathlib import Path
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name, NormalizedName
 from packaging.version import parse as parse_version
-from Logger import logger
+from main_logger import logger
 
 
 class DependencyResolver:

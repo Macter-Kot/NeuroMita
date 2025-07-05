@@ -135,7 +135,7 @@ class ChatServer:
                     logger.info(f"Получено system_message {system_message} id {message_id}")
                     self.gui.id_sound = message_id
                     response = self.generate_response("", system_message, decoded_image_data)
-                    self.gui.insert_dialog("", response)
+                    self.gui.update_chat_signal.emit("assistant", response, False, "")
                 elif self.messages_to_say:
                     response = self.messages_to_say.pop(0)
             elif message == "boring":
@@ -145,14 +145,15 @@ class ChatServer:
                 response = self.generate_response("",
                                                   f"Время {date_now}, Игрок долго молчит( Ты можешь что-то сказать или предпринять",
                                                   decoded_image_data)
-                self.gui.insert_dialog("", response)
+                self.gui.update_chat_signal.emit("assistant", response, False, "")
                 logger.info("Отправлено Мите на озвучку: " + response)
             else:
                 logger.info(f"Получено message id {message_id}")
                 # Если игрок отправил внутри игры, message его
                 self.gui.id_sound = message_id
+                self.gui.update_chat_signal.emit("user", message, False, "")
                 response = self.generate_response(message, "", decoded_image_data)
-                #self.gui.insertDialog(message,response)
+                self.gui.update_chat_signal.emit("assistant", response, False, "")
                 logger.info("Отправлено Мите на озвучку: " + response)
 
                 if not character:
@@ -227,9 +228,6 @@ class ChatServer:
             self.gui.waiting_answer = True
 
             response = self.chat_model.generate_response(input_text, system_input_text, image_data)
-
-            if input_text != "":
-                self.gui.insert_dialog(input_text, response, system_input_text)
 
 
         except Exception as e:

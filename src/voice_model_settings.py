@@ -232,6 +232,12 @@ class VoiceCollapsibleSection(QFrame):
     def __init__(self, parent, title, collapsed=False, update_scrollregion_func=None, clear_description_func=None):
         super().__init__(parent)
         
+        def _angle_icon(kind: str, size: int = 10):
+            """kind: 'right' | 'down'"""
+            import qtawesome as qta
+            name = "fa6s.angle-right" if kind == "right" else "fa6s.angle-down"
+            return qta.icon(name, color="#f0f0f0").pixmap(size, size)
+
         self.update_scrollregion = update_scrollregion_func
         self.clear_description = clear_description_func or (lambda event=None: None)
         
@@ -246,9 +252,12 @@ class VoiceCollapsibleSection(QFrame):
         header_layout = QHBoxLayout(self.header_frame)
         header_layout.setContentsMargins(5, 2, 5, 2)
         
-        self.arrow = QLabel("▶" if collapsed else "▼")
+        # ► / ▼  →  иконки
+        self.arrow = QLabel()
+        self.arrow_pix_right = _angle_icon("right", 10)
+        self.arrow_pix_down  = _angle_icon("down",  10)
+        self.arrow.setPixmap(self.arrow_pix_right if collapsed else self.arrow_pix_down)
         self.arrow.setFixedWidth(15)
-        self.arrow.setStyleSheet("color: white; font-size: 8pt;")
         
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet("color: white; font-weight: bold; font-size: 9pt;")
@@ -291,13 +300,13 @@ class VoiceCollapsibleSection(QFrame):
             QTimer.singleShot(10, self.update_scrollregion)
 
     def collapse(self, update_scroll=True):
-        self.arrow.setText("▶")
+        self.arrow.setPixmap(self.arrow_pix_right)
         self.content_frame.setVisible(False)
         if update_scroll and self.update_scrollregion:
             QTimer.singleShot(10, self.update_scrollregion)
 
     def expand(self, update_scroll=True):
-        self.arrow.setText("▼")
+        self.arrow.setPixmap(self.arrow_pix_down)
         self.content_frame.setVisible(True)
         if update_scroll and self.update_scrollregion:
             QTimer.singleShot(10, self.update_scrollregion)

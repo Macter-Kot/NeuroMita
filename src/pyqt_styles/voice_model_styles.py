@@ -58,7 +58,8 @@ def get_stylesheet():
             background-color: #3c3c3c;
             color: white;
             border: 1px solid #333333;
-            padding: 5px 8px;
+            /* ↓ было 5px 8px;  стало 3px 8px ↓ */
+            padding: 3px 8px;
             font-family: "Segoe UI";
             font-size: 9pt;
             border-radius: 0px;
@@ -79,7 +80,8 @@ def get_stylesheet():
             background-color: #3c3c3c;
             color: white;
             border: 1px solid #333333;
-            padding: 6px 8px;
+            /* ↓ было 6px 8px;  стало 3px 8px ↓ */
+            padding: 3px 8px;
             font-family: "Segoe UI";
             font-size: 9pt;
             border-radius: 0px;

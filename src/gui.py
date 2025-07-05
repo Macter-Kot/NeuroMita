@@ -60,27 +60,6 @@ from ui.settings import (
     prompt_catalogue_settings
 )
 
-
-# class AsyncWorker(QObject):
-#     """Worker для выполнения асинхронных задач"""
-#     finished = pyqtSignal()
-#     error = pyqtSignal(str)
-#     result = pyqtSignal(object)
-
-#     def __init__(self, coro):
-#         super().__init__()
-#         self.coro = coro
-
-#     async def run(self):
-#         try:
-#             result = await self.coro
-#             self.result.emit(result)
-#         except Exception as e:
-#             self.error.emit(str(e))
-#         finally:
-#             self.finished.emit()
-
-
 class TelegramAuthSignals(QObject):
     code_required = pyqtSignal(object)
     password_required = pyqtSignal(object)
@@ -407,15 +386,6 @@ class ChatGUI(QMainWindow):
             self.silero_connected = False
             self.bot_handler_ready = False
 
-    # def run_in_thread(self, response):
-    #     """Запуск асинхронной задачи в отдельном потоке."""
-    #     self.loop_ready_event.wait()
-    #     if self.loop and self.loop.is_running():
-    #         logger.info("Запускаем асинхронную задачу в цикле событий...")
-    #         self.loop.create_task(self.run_send_and_receive(self.textToTalk, self.get_speaker_text()))
-    #     else:
-    #         logger.info("Ошибка: Цикл событий asyncio не готов.")
-
     def get_speaker_text(self):
         if self.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
             return self.textSpeakerMiku
@@ -538,10 +508,6 @@ class ChatGUI(QMainWindow):
     def clear_user_input(self):
         self.user_input = ""
         self.user_entry.clear()
-
-    # def on_enter_pressed(self):
-    #     """Обработчик нажатия клавиши Enter в поле ввода."""
-    #     self.send_message()
 
     def start_server(self):
         """Запускает сервер в отдельном потоке."""
@@ -690,12 +656,8 @@ class ChatGUI(QMainWindow):
     def eventFilter(self, obj, event):
         """Обработчик событий для перехвата Enter в QTextEdit"""
         from PyQt6.QtCore import QEvent
-        # Импорт QKeyEvent здесь больше не нужен, но можно и оставить
-        from PyQt6.QtGui import QKeyEvent
-        
+
         if obj == self.user_entry and event.type() == QEvent.Type.KeyPress:
-            # 'event' уже является нужным нам объектом QKeyEvent.
-            # Используем его напрямую.
             if event.key() == Qt.Key.Key_Return and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
                 self.send_message()
                 return True
@@ -1043,10 +1005,6 @@ class ChatGUI(QMainWindow):
     def update_game_connection(self, is_connected):
         self.ConnectedToGame = is_connected
         QTimer.singleShot(0, self.update_status_colors)
-
-    # def update_all(self):
-    #     self.update_status_colors()
-    #     self.update_debug_info()
 
     def update_status_colors(self):
         """Обновляет цвета индикаторов статуса"""
@@ -2646,42 +2604,6 @@ class ChatGUI(QMainWindow):
                 self.async_send_message(user_input="", system_input="", image_data=frames),
                 self.loop
             )
-
-    # def on_chat_scroll(self, event):
-    #     """Обработчик события прокрутки чата."""
-    #     if self.loading_more_history:
-    #         return
-
-    #     scrollbar = self.chat_window.verticalScrollBar()
-    #     if scrollbar.value() == scrollbar.minimum():
-    #         self.load_more_history()
-
-    # def trim_chat_display(self):
-    #     """Удаляет сообщения из начала чата, оставляя только видимые + запас."""
-    #     # Для PyQt6 эта функция может быть реализована иначе или не нужна
-    #     pass
-
-    # def keypress(self, e):
-    #     """Обработчик горячих клавиш"""
-    #     # В PyQt6 обработка горячих клавиш обычно делается через QShortcut
-    #     # Этот метод может быть не нужен
-    #     pass
-
-    def cmd_copy(self, widget):
-        self.copy_to_clipboard()
-
-    def cmd_cut(self, widget):
-        # Для QTextEdit
-        self.user_entry.cut()
-
-    def cmd_paste(self, widget):
-        self.paste_from_clipboard()
-
-    def run(self):
-        """Метод для совместимости с tkinter версией"""
-        # В PyQt6 этот метод не нужен, так как запуск происходит через app.exec()
-        pass
-
 
 # Точка входа
 if __name__ == "__main__":

@@ -19,6 +19,9 @@ def setup_api_controls(self, parent):
             "NM_API_URL":   api_url_entry.text().strip(),
             "NM_API_MODEL": api_model_entry.text().strip(),
             "NM_API_KEY":   api_key_entry.text().strip(),
+            "NM_API_KEY_RES":  self.settings.get("NM_API_KEY_RES", ""),
+            "NM_API_REQ":      nm_api_req_checkbox.isChecked(),
+            "GEMINI_CASE":     gemini_case_checkbox.isChecked(),
         }
         # моментально в settings (без вызова all_settings_actions)
         self.settings.set("API_PROVIDER_DATA", provider_data)
@@ -30,9 +33,17 @@ def setup_api_controls(self, parent):
             api_url_entry.setText(stored.get("NM_API_URL", ""))
             api_model_entry.setText(stored.get("NM_API_MODEL", ""))
             api_key_entry.setText(stored.get("NM_API_KEY", ""))
+
+            nm_api_req_checkbox.setChecked(stored.get("NM_API_REQ", False))
+            gemini_case_checkbox.setChecked(stored.get("GEMINI_CASE", False))
+
             self._save_setting("NM_API_URL",   api_url_entry.text())
             self._save_setting("NM_API_MODEL", api_model_entry.text())
             self._save_setting("NM_API_KEY",   api_key_entry.text())
+            self._save_setting("NM_API_REQ",   nm_api_req_checkbox.isChecked())
+            self._save_setting("GEMINI_CASE",  gemini_case_checkbox.isChecked())
+            self._save_setting("NM_API_KEY_RES", stored.get("NM_API_KEY_RES", ""))
+
         elif fallback:
             api_key_entry.setText("")                 
             self._save_setting("NM_API_KEY", "")
@@ -77,7 +88,7 @@ def setup_api_controls(self, parent):
         if not preset:
             return
         api_model_entry.setText(preset["model"])
-        api_key_entry.setText("")                     # <-- NEW (очистка)
+        api_key_entry.setText("")
         self._save_setting("NM_API_MODEL", preset["model"])
         self._save_setting("NM_API_KEY", "")
         update_url(force=True)
@@ -91,7 +102,7 @@ def setup_api_controls(self, parent):
         cur_provider = api_provider_combo.currentText()
 
         # --- 1. определяем имя, под которым сохраним -------------------
-        if cur_provider in ('Custom', 'Google AI Studio', 'ProxiApi'):
+        if cur_provider in list(API_PRESETS.keys())+['Custom', 'Google AI Studio', 'ProxiApi']:
             name, ok = QInputDialog.getText(
                 self, _("Имя пресета", "Preset name"),
                 _("Название нового пресета:", "New preset name:"))
@@ -132,7 +143,9 @@ def setup_api_controls(self, parent):
                 return
             # удаляем
             custom_api_presets.pop(cur_provider, None)
+            provider_data.pop(cur_provider, None)
             self.settings.set("CUSTOM_API_PRESETS", custom_api_presets)
+            self.settings.set("API_PROVIDER_DATA", provider_data)
             self.settings.save_settings()
 
             # убираем из combo
@@ -184,11 +197,13 @@ def setup_api_controls(self, parent):
          'key': 'NM_API_KEY_RES',
          'type': 'text',
          'hide': bool(self.settings.get("HIDE_PRIVATE")),
-         'default': ""},
+         'default': "",
+         'widget_name': 'nm_api_key_res_label'},  # <—
 
         {'label': _('Через Request', 'Using Request'),
          'key': 'NM_API_REQ',
-         'type': 'checkbutton'},
+         'type': 'checkbutton',
+         'widget_name': 'nm_api_req_checkbox'},  # <—
 
         {'label': _('Гемини для ProxiAPI', 'Gemini for ProxiAPI'),
          'key': 'GEMINI_CASE',
@@ -207,12 +222,20 @@ def setup_api_controls(self, parent):
     api_url_entry           = getattr(self, 'api_url_entry')
     api_key_entry           = getattr(self, 'api_key_entry')
     gemini_case_checkbox    = getattr(self, 'gemini_case_checkbox')
+    nm_api_req_checkbox = getattr(self, 'nm_api_req_checkbox')  # NEW
+    gemini_case_checkbox = getattr(self, 'gemini_case_checkbox')
 
+    # стало
     def _auto_gemini_case(provider_name: str):
-        auto_state = (provider_name == "Google AI Studio")
-        gemini_case_checkbox.setChecked(auto_state)
-        self._save_setting("GEMINI_CASE", auto_state)
-
+        """
+        Автовключаем чекбокс ТОЛЬКО для Google AI Studio.
+        Для остальных провайдеров сохраняем то, что уже выставил
+        load_provider_state (или сам пользователь).
+        """
+        if provider_name == "Google AI Studio":
+            if not gemini_case_checkbox.isChecked():
+                gemini_case_checkbox.setChecked(True)
+                self._save_setting("GEMINI_CASE", True)
     # подключаем «живой» сигнал
     api_provider_combo.currentTextChanged.connect(_auto_gemini_case)
 

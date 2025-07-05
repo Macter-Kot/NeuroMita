@@ -3,41 +3,50 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdi
 from PyQt6.QtCore import Qt
 
 from main_logger import logger
-from settings_manager import CollapsibleSection
+from settings_manager import CollapsibleSection, InnerCollapsibleSection
 from utils import getTranslationVariant as _
 
-def create_settings_section(gui, parent_layout, title, settings_config):
-    """Создает сворачиваемую секцию с набором настроек."""
-    section = CollapsibleSection(title, gui)
-    parent_layout.addWidget(section)
-    
-    for config in settings_config:
-        widget = None
-        widget_type = config.get('type')
-        
-        if widget_type == 'button_group':
-            widget = create_button_group(gui, section.content_frame, config.get('buttons', []))
+def create_settings_section(gui, parent_layout, title, cfg_list, *, icon_name=None):
+    root = CollapsibleSection(title, gui, icon_name=icon_name)
+    parent_layout.addWidget(root)
+    current_sub = None
+
+    for cfg in cfg_list:
+        t = cfg.get('type')
+
+        if t == 'subsection':
+            current_sub = InnerCollapsibleSection(cfg.get('label', ''), gui)
+            root.add_widget(current_sub)
+            continue
+
+        if t == 'end':
+            current_sub = None
+            continue
+
+        if t == 'text':
+            lbl = QLabel(cfg['label'])
+            lbl.setObjectName('SeparatorLabel')
+            (current_sub or root).add_widget(lbl)
+            continue
+
+        parent = (current_sub or root).content
+
+        if t == 'button_group':
+            w = create_button_group(gui, parent, cfg.get('buttons', []))
         else:
-            widget = create_setting_widget(
-                gui=gui,
-                parent=section.content_frame,
-                label=config.get('label'),
-                setting_key=config.get('key', ''),
-                widget_type=widget_type,
-                options=config.get('options'),
-                default=config.get('default', ''),
-                default_checkbutton=config.get('default_checkbutton', False),
-                validation=config.get('validation'),
-                tooltip=config.get('tooltip'),
-                hide=config.get('hide', False),
-                command=config.get('command'),
-                widget_name=config.get('widget_name', config.get('key'))
+            w = create_setting_widget(
+                gui=gui, parent=parent, label=cfg.get('label'),
+                setting_key=cfg.get('key', ''), widget_type=t,
+                options=cfg.get('options'), default=cfg.get('default', ''),
+                default_checkbutton=cfg.get('default_checkbutton', False),
+                validation=cfg.get('validation'), tooltip=cfg.get('tooltip'),
+                hide=cfg.get('hide', False), command=cfg.get('command'),
+                widget_name=cfg.get('widget_name', cfg.get('key')),
             )
-        
-        if widget:
-            section.add_widget(widget)
-    
-    return section
+        if w:
+            (current_sub or root).add_widget(w)
+
+    return root
 
 def create_button_group(gui, parent, buttons_config):
     """Создает горизонтальную группу кнопок."""
@@ -58,9 +67,7 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
                           options=None, default='', default_checkbutton=False, validation=None, tooltip=None,
                           hide=False, command=None, widget_name=None, **kwargs):
     """Создает один виджет настройки (строку) с меткой и элементом управления."""
-    # ИЗМЕНЕНИЕ: Эта проверка удалена, так как виджет должен создаваться в любом случае.
-    # if hide:
-    #     return None
+
     
     if setting_key and gui.settings.get(setting_key) is None:
         initial_value = default_checkbutton if widget_type == 'checkbutton' else default

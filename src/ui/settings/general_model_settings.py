@@ -4,7 +4,9 @@ from utils import getTranslationVariant as _
 def setup_general_settings_control(self, parent):
     general_config = [
         # здесь настройки из setup_model_controls
-        {'label': _('Настройки сообщений', 'Message settings'), 'type': 'text'},
+        
+        # подсекция 1
+        {'label': _('Настройки сообщений', 'Message settings'), 'type': 'subsection'},
         {'label': _('Промты раздельно', 'Separated prompts'), 'key': 'SEPARATE_PROMPTS',
          'type': 'checkbutton', 'default_checkbutton': True},
 
@@ -24,15 +26,21 @@ def setup_general_settings_control(self, parent):
         {'label': _('Использовать gpt4free последней попыткой ', 'Use gpt4free as last attempt'),
          'key': 'GPT4FREE_LAST_ATTEMPT', 'type': 'checkbutton', 'default_checkbutton': False},
 
-        {'label': _('Настройки ожидания', 'Waiting settings'), 'type': 'text'},
+        {'type': 'end'}, # конец подсекции 1
+
+        # подсекция 2
+        {'label': _('Настройки ожидания', 'Waiting settings'), 'type': 'subsection'},
         {'label': _('Время ожидания текста (сек)', 'Text waiting time (sec)'),
          'key': 'TEXT_WAIT_TIME', 'type': 'entry', 'default': 40,
          'tooltip': _('время ожидания ответа', 'response waiting time')},
         {'label': _('Время ожидания звука (сек)', 'Voice waiting time (sec)'),
          'key': 'VOICE_WAIT_TIME', 'type': 'entry', 'default': 40,
          'tooltip': _('время ожидания озвучки', 'voice generation waiting time')},
+        
+        {'type': 'end'}, # конец подсекции 2
 
-        {'label': _('Настройки генерации текста', 'Text Generation Settings'), 'type': 'text'},
+        # подсекция 3
+        {'label': _('Настройки генерации текста', 'Text Generation Settings'), 'type': 'subsection'},
 
         {'label': _('Использовать Макс.Токены', 'Use Max response tokens'), 'key': 'USE_MODEL_MAX_RESPONSE_TOKENS',
          'type': 'checkbutton', 'default_checkbutton': self.settings.get('USE_MODEL_MAX_RESPONSE_TOKENS', True),
@@ -103,8 +111,10 @@ def setup_general_settings_control(self, parent):
              'Параметр, влияющий на логарифмическую вероятность выбора токенов (-2.0 = поощрять, 2.0 = штрафовать)',
              'Parameter influencing the logarithmic probability of token selection (-2.0 = encourage, 2.0 = penalize)')},
 
+        {'type': 'end'}, # конец подсекции 3
+
     ]
 
     self.create_settings_section(parent,
                                  _("Общие настройки моделей", "General settings for models"),
-                                 general_config)
+                                 general_config, icon_name='fa5s.cogs')

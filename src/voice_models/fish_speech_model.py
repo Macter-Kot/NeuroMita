@@ -19,8 +19,8 @@ from PyQt6.QtCore import QTimer, Qt
 from utils.pip_installer import PipInstaller
 
 from settings_manager import SettingsManager
-def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
-_ = getTranslationVariant
+
+from utils import getTranslationVariant as _
 
 class FishSpeechModel(IVoiceModel):
     def __init__(self, parent: 'LocalVoice', model_id: str, rvc_handler: Optional[IVoiceModel] = None):

@@ -2,6 +2,7 @@ import base64
 import json
 import os
 
+import qtawesome as qta
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PyQt6.QtCore import Qt
 
@@ -60,56 +61,75 @@ class SettingsManager:
             logger.error("SettingsManager.set() called before instance was created. Cannot set value.")
 
 
+# ────────────────────────────────────────────────────
+# универсальный маленький помощник-иконки
+def _angle_icon(kind: str, size: int = 10):
+    """kind: 'right' | 'down'"""
+    name = 'fa6s.angle-right' if kind == 'right' else 'fa6s.angle-down'
+    return qta.icon(name, color='#f0f0f0').pixmap(size, size)
+# ────────────────────────────────────────────────────
+
+
 class CollapsibleSection(QWidget):
-    def __init__(self, title, parent=None):
+    """Внешняя секция"""
+    def __init__(self, title, parent=None, *, icon_name=None):
         super().__init__(parent)
-        self.is_collapsed = True
-        self.init_ui(title)
+        self.is_collapsed = False
 
-    def init_ui(self, title):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
 
-        self.header = QWidget()
-        self.header.setObjectName("CollapsibleHeader")
-        header_layout = QHBoxLayout(self.header)
-        header_layout.setContentsMargins(5, 3, 5, 3)
+        # Header
+        self.header = QWidget(self, objectName='CollapsibleHeader')
 
-        self.arrow_label = QLabel("▶")
-        self.arrow_label.setObjectName("CollapsibleArrow")
-        self.arrow_label.setFixedWidth(15)
+        h = QHBoxLayout(self.header)
+        h.setContentsMargins(4, 2, 4, 2)
+        h.setSpacing(3)
 
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("CollapsibleTitle")
+        self.arrow_label = QLabel(self.header)
+        self.arrow_pix_right = _angle_icon('right', 10)
+        self.arrow_pix_down  = _angle_icon('down',  10)
+        self.arrow_label.setPixmap(self.arrow_pix_right)
+        self.arrow_label.setFixedWidth(11)
+
+        self.title_label = QLabel(title, self.header, objectName='CollapsibleTitle')
+        h.addWidget(self.arrow_label)
+        h.addWidget(self.title_label)
+
         
-        self.warning_label = QLabel("⚠️")
-        self.warning_label.setObjectName("WarningIcon")
-        self.warning_label.setVisible(False)
-        # The translation function might not be available here, so using a plain string.
-        self.warning_label.setToolTip("Model not initialized or not installed.")
+        h.addStretch()
 
-        header_layout.addWidget(self.arrow_label)
-        header_layout.addWidget(self.warning_label)
-        header_layout.addWidget(self.title_label)
-        header_layout.addStretch()
-
-        self.content_frame = QWidget()
-        self.content_frame.setObjectName("CollapsibleContent")
-        self.content_layout = QVBoxLayout(self.content_frame)
-        self.content_layout.setContentsMargins(10, 5, 10, 5)
-        self.content_frame.setVisible(False)
-
-        main_layout.addWidget(self.header)
-        main_layout.addWidget(self.content_frame)
+        if icon_name:
+            h.addWidget(self._make_icon(icon_name))
+            h.addSpacing(8)
 
         self.header.mousePressEvent = self.toggle
 
-    def toggle(self, event=None):
-        self.is_collapsed = not self.is_collapsed
-        self.arrow_label.setText("▶" if self.is_collapsed else "▼")
-        self.content_frame.setVisible(not self.is_collapsed)
+        # Content
+        self.content_frame = QWidget(self, objectName='CollapsibleContent')
+        self.content_layout = QVBoxLayout(self.content_frame)
+        self.content_layout.setContentsMargins(12, 5, 12, 5)
+        self.content = self.content_frame
 
+        v.addWidget(self.header)
+        v.addWidget(self.content_frame)
+        self.content_frame.hide()
+
+    def _make_icon(self, name):
+        # немного юзлесс функция, обрезается и тому подобное.
+        lbl = QLabel(self.header)
+        lbl.setPixmap(qta.icon(name, color='#f0f0f0').pixmap(15, 15))
+        lbl.setFixedSize(18, 18)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        return lbl
+
+    def toggle(self, _=None):
+        self.is_collapsed = not self.is_collapsed
+        self.content_frame.setVisible(not self.is_collapsed)
+        self.arrow_label.setPixmap(self.arrow_pix_right if self.is_collapsed else self.arrow_pix_down)
+
+    # --- API ---
     def collapse(self):
         if not self.is_collapsed:
             self.toggle()
@@ -117,6 +137,26 @@ class CollapsibleSection(QWidget):
     def expand(self):
         if self.is_collapsed:
             self.toggle()
-            
-    def add_widget(self, widget):
-        self.content_layout.addWidget(widget)
+    
+    def add_widget(self, w):
+        self.content_layout.addWidget(w)
+        if self.is_collapsed:
+            self.content_frame.hide()
+
+
+
+class InnerCollapsibleSection(CollapsibleSection):
+    """Под-секция: кликабельный текст без фона"""
+    def __init__(self, title, parent=None):
+        super().__init__(title, parent)
+        self.is_collapsed = False
+        self.header.setObjectName('InnerCollapsibleHeader')
+        self.header.setStyleSheet('background: transparent;')
+        self.arrow_pix_right = _angle_icon('right', 8)
+        self.arrow_pix_down  = _angle_icon('down',  8)
+        self.arrow_label.setPixmap(self.arrow_pix_right)
+        self.header.layout().setSpacing(3)
+        self.arrow_label.setFixedWidth(9) 
+        self.title_label.setStyleSheet('font-size:9pt;')
+        # больший отступ строк внутри подп-секции
+        self.content_layout.setContentsMargins(24, 5, 12, 5)

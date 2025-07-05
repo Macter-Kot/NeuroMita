@@ -11,8 +11,7 @@ from typing import Optional, Any
 from main_logger import logger
 
 from settings_manager import SettingsManager
-def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
-_ = getTranslationVariant
+from utils import getTranslationVariant as _
 
 import requests
 import math

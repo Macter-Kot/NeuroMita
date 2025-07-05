@@ -1832,8 +1832,8 @@ class ChatGUI(QMainWindow):
             self.update_token_count()
 
 
-    def create_settings_section(self, parent_layout, title, settings_config):
-        return gui_templates.create_settings_section(self, parent_layout, title, settings_config)
+    def create_settings_section(self, parent_layout, title, settings_config, icon_name=None):
+        return gui_templates.create_settings_section(self, parent_layout, title, settings_config, icon_name=icon_name)
 
     def create_setting_widget(self, parent, label, setting_key='', widget_type='entry',
                               options=None, default='', default_checkbutton=False, validation=None, tooltip=None,

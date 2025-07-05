@@ -41,8 +41,7 @@ from voice_models.f5_tts_model import F5TTSModel
 from docs import DocsManager
 from main_logger import logger
 
-def getTranslationVariant(ru_str, en_str=""): return en_str if en_str and SettingsManager.get("LANGUAGE") == "EN" else ru_str
-_ = getTranslationVariant
+from utils import getTranslationVariant as _
 
 
 # ──────────────────────────────────────────────────────────────

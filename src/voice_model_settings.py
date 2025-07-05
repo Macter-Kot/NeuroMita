@@ -19,12 +19,7 @@ import traceback
 from settings_manager import SettingsManager
 from pyqt_styles.voice_model_styles import get_stylesheet
 
-def getTranslationVariant(ru_str, en_str=""):
-    if en_str and SettingsManager.get("LANGUAGE") == "EN":
-        return en_str
-    return ru_str
-
-_ = getTranslationVariant
+from utils import getTranslationVariant as _
 
 model_descriptions = {
     "low": "Быстрая модель, комбинация Edge-TTS для генерации речи и RVC для преобразования голоса. Низкие требования.",

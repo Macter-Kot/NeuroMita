@@ -178,6 +178,13 @@ def get_stylesheet():
         QWidget#CollapsibleHeader:hover {
             background-color: #404040;
         }
+
+        QWidget#InnerCollapsibleHeader {
+            background: transparent;
+            border-bottom: 1px solid #3a3a3a;
+            padding-bottom: 2px;     
+        }
+
         QLabel#CollapsibleArrow, QLabel#CollapsibleTitle {
             font-weight: bold;
             color: #f0f0f0;

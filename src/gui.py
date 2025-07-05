@@ -8,7 +8,7 @@ from main_logger import logger
 from settings_manager import SettingsManager, CollapsibleSection
 from chat_model import ChatModel
 from server import ChatServer
-from silero import TelegramBotHandler
+from telegram_handler import TelegramBotHandler
 
 from pyqt_styles.styles import get_stylesheet
 import gettext

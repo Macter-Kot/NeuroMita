@@ -1,7 +1,7 @@
 PRICING_SYMBOLS = {
-    'free':  '🕊️',
-    'paid':  '💲',
-    'mixed': '🕊️/💲',
+    'free':  '[FREE]',
+    'paid':  '$',
+    'mixed': '[FREE] / $',
 }
 
 API_PRESETS: dict = {

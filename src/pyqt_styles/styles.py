@@ -215,4 +215,33 @@ def get_stylesheet():
             background-color: #5698d4; /* Blue color from screenshot */
             border-radius: 2px;
         }
+
+    /* ────────────────────────────────────────────────
+        DISABLED STATE
+        ──────────────────────────────────────────────── */
+        QLineEdit:disabled,
+        QTextEdit:disabled,
+        QComboBox:disabled {
+            background-color: #1b1b1b;   /* темнее фон */
+            color: #707070;              /* блеклый текст */
+            border: 1px solid #333333;
+        }
+
+        QPushButton:disabled {
+            background-color: #4f4f4f;
+            color: #a0a0a0;
+        }
+
+        QCheckBox:disabled {
+            color: #707070;
+        }
+        QCheckBox::indicator:disabled {
+            border: 1px solid #4a4a4a;
+            background: #333333;
+            image: none;                 /* убираем «галку» */
+        }
+
+        QLabel:disabled {
+            color: #6a6a6a;
+        }
     """

@@ -1,14 +1,21 @@
+# ui/settings/api_controls.py
 from utils import _
-from presets.api_presets import API_PRESETS, PRICING_SYMBOLS
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QComboBox, QMessageBox
+from presets.api_presets import API_PRESETS
+from PyQt6.QtCore    import QTimer, Qt, QSize
+from PyQt6.QtGui     import (QPainter, QPixmap, QColor, QFont,
+                              QIcon, QPalette, QFontMetrics )
+from PyQt6.QtWidgets import (QComboBox, QMessageBox,
+                              QStyledItemDelegate, QStyle)
+import qtawesome as qta
 
 
-#                         HELPERS
+# ──────────────────────────────────────────────────────────
+#                  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ──────────────────────────────────────────────────────────
 def _mixed_presets(static_presets: dict, custom_presets: dict) -> dict:
     """
-    Склеиваем словари так, чтобы встроенные остались нетронутыми.
-    Если id уже есть во встроенных, кастомный просто игнорируется.
+    Возвращает объединение встроенных и пользовательских пресетов
+    (пользовательские НЕ перекрывают встроенные).
     """
     merged = static_presets.copy()
     for pid, cust in (custom_presets or {}).items():
@@ -19,45 +26,145 @@ def _mixed_presets(static_presets: dict, custom_presets: dict) -> dict:
 
 def _display_name(preset_id: str, preset: dict) -> str:
     """
-    Возвращает строку для отображения пользователю: «🕊️ OpenRouter»
+    Строка, которая будет показана в ComboBox.
+    Сам «бейдж» рисуется делегатом; здесь ‑ лишь имя.
     """
-    symbol = PRICING_SYMBOLS.get(preset.get("pricing"), "")
-    return f"{symbol} {preset.get('name', preset_id)}".strip()
+    return preset.get("name", preset_id)
 
 
-#               ГЛАВНАЯ ФУНКЦИЯ ДЛЯ UI
+# ──────────────────────────────────────────────────────────
+#                КАСТОМНЫЙ  DELEGATE  ДЛЯ БЕЙДЖЕЙ
+# ──────────────────────────────────────────────────────────
+class _ProviderDelegate(QStyledItemDelegate):
+    """
+    Рисует слева от текста:
+        free   -> [FREE]
+        paid   -> $
+        mixed  -> [FREE] / $
+    """
+
+    _free_pm:   QPixmap | None = None   # кеш «FREE»
+
+    @classmethod
+    def _free_pixmap(cls):
+        if cls._free_pm is None:
+            font = QFont("Segoe UI", 7, QFont.Weight.Bold)
+            metrics = QFontMetrics(font)
+            text_w  = metrics.horizontalAdvance("FREE")
+            w, h = text_w + 8, 14              # 4 px слева + 4 px справа
+            pm = QPixmap(w, h)
+            pm.fill(Qt.GlobalColor.transparent)
+
+            p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setBrush(QColor("#ffffff")); p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(0, 0, w, h, 3, 3)
+
+            p.setPen(QColor("#102035")); p.setFont(font)
+            p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "FREE")
+            p.end()
+
+            cls._free_pm = pm
+        return cls._free_pm
+
+    # -----------------------------------------------------
+    def __init__(self, mixed_presets: dict, display2id: dict, parent=None):
+        super().__init__(parent)
+        self._mp  = mixed_presets
+        self._d2i = display2id
+
+    
+
+    # -----------------------------------------------------
+    def paint(self, painter, option, index):
+        # Фон + выделение
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+        else:
+            painter.fillRect(option.rect, option.palette.base())
+
+        text = index.data()
+        pid  = self._d2i.get(text, "")
+        pricing = self._mp.get(pid, {}).get("pricing", "")
+
+        dollar_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
+        ascent      = QFontMetrics(dollar_font).ascent()   # высота над базовой
+
+        x = option.rect.x() + 4
+        y = option.rect.y() + (option.rect.height() - 16) // 2
+
+        # --- бейдж / значки ---
+        if pricing == "free":
+            painter.drawPixmap(x, y, self._free_pixmap())
+            x += self._free_pixmap().width() + 6
+
+        elif pricing == "paid":
+            painter.setPen(QColor("#2ecc71"))
+            painter.setFont(dollar_font)
+            dollar_w = QFontMetrics(dollar_font).horizontalAdvance("💲")
+            baseline = y + ascent        # ← базовая линия
+            painter.drawText(x, baseline, "💲")
+            x += dollar_w + 6
+
+        elif pricing == "mixed":
+            painter.drawPixmap(x, y, self._free_pixmap())
+            x += self._free_pixmap().width() + 4
+
+            painter.setPen(QColor("#ffffff"))
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            painter.drawText(x, y + ascent - 1, "/")
+            x += 3
+
+            painter.setPen(QColor("#2ecc71"))
+            painter.setFont(dollar_font)
+            dollar_w = QFontMetrics(dollar_font).horizontalAdvance("💲")
+            baseline = y + ascent
+            painter.drawText(x, baseline, "💲")
+            x += dollar_w + 6
+
+        # --- текст провайдера ---
+        painter.setPen(option.palette.color(
+            QPalette.ColorRole.HighlightedText
+            if option.state & QStyle.StateFlag.State_Selected
+            else QPalette.ColorRole.Text))
+        painter.setFont(option.font)
+        txt_rect = option.rect.adjusted(x - option.rect.x(), 0, -4, 0)
+        painter.drawText(txt_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+
+    def sizeHint(self, option, index):
+        sz = super().sizeHint(option, index)
+        return sz.expandedTo(QSize(140, 20))
+
+
+# ──────────────────────────────────────────────────────────
+#               ГЛАВНАЯ ФУНКЦИЯ  ДЛЯ  UI
+# ──────────────────────────────────────────────────────────
 def setup_api_controls(self, parent):
     """
-    Создаёт секцию «API settings».
-    Эмодзи в названиях – только для UI, внутри всё хранится по id.
+    Создаёт секцию «API settings»; всё, что было у вас – сохранено,
+    добавляется только делегат для красивых бейджей.
     """
-    # ── данные из settings ───────────────────────────────────
+    # ── данные из settings ─────────────────────────────────
     provider_data   = self.settings.get("API_PROVIDER_DATA", {})
     custom_presets  = self.settings.get("CUSTOM_API_PRESETS", {})
     MIXED_PRESETS   = _mixed_presets(API_PRESETS, custom_presets)
 
-    # ── ── ── ── URL builder ── ── ── ──
-    def build_dynamic_url(provider_id: str, model: str, key: str) -> str:
-        preset = MIXED_PRESETS.get(provider_id, {})
-        if not preset:
+    # ── URL builder ───────────────────────────────────────
+    def build_dynamic_url(pid: str, model: str, key: str) -> str:
+        pre = MIXED_PRESETS.get(pid, {})
+        if not pre:
             return ""
-
-        # 1. шаблон или готовая ссылка
-        url_tpl = preset.get("url_tpl") or preset.get("url", "")
+        url_tpl = pre.get("url_tpl") or pre.get("url", "")
         url     = url_tpl.format(model=model) if "{model}" in url_tpl else url_tpl
-
-        # 2. добавить ?key=
-        if preset.get("add_key") and key:
+        if pre.get("add_key") and key:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}key={key}"
-
         return url
 
-    # ── ── ── state helpers ── ── ──
-    def save_provider_state(provider_id: str):
-        if not provider_id:
+    # ── state helpers ─────────────────────────────────────
+    def save_provider_state(pid: str):
+        if not pid:
             return
-        provider_data[provider_id] = {
+        provider_data[pid] = {
             "NM_API_URL":   api_url_entry.text().strip(),
             "NM_API_MODEL": api_model_entry.text().strip(),
             "NM_API_KEY":   api_key_entry.text().strip(),
@@ -68,8 +175,8 @@ def setup_api_controls(self, parent):
         self.settings.set("API_PROVIDER_DATA", provider_data)
         self.settings.save_settings()
 
-    def load_provider_state(provider_id: str, fallback: bool = True):
-        stored = provider_data.get(provider_id)
+    def load_provider_state(pid: str, fallback: bool = True):
+        stored = provider_data.get(pid)
         if stored:
             api_url_entry.setText(stored.get("NM_API_URL", ""))
             api_model_entry.setText(stored.get("NM_API_MODEL", ""))
@@ -78,7 +185,6 @@ def setup_api_controls(self, parent):
             nm_api_req_checkbox.setChecked(stored.get("NM_API_REQ", False))
             gemini_case_checkbox.setChecked(stored.get("GEMINI_CASE", False))
 
-            # локальные поля
             self._save_setting("NM_API_URL",   stored.get("NM_API_URL", ""))
             self._save_setting("NM_API_MODEL", stored.get("NM_API_MODEL", ""))
             self._save_setting("NM_API_KEY",   stored.get("NM_API_KEY", ""))
@@ -88,68 +194,33 @@ def setup_api_controls(self, parent):
         elif fallback:
             api_key_entry.setText("")
             self._save_setting("NM_API_KEY", "")
-            apply_preset(provider_id)
+            apply_preset(pid)
 
-    # ── ── ── dynamic url updater ── ── ──
-    def update_url(force: bool = False):
-        provider_id = combo_current_id()
-        if provider_id == "custom" and not force:
-            return
-        url = build_dynamic_url(provider_id,
-                                api_model_entry.text().strip(),
-                                api_key_entry.text().strip())
-        api_url_entry.setText(url)
-        self._save_setting("NM_API_URL", url)
-        save_provider_state(provider_id)
-
-    # ── ── ── preset-apply ── ── ──
-    def apply_preset(provider_id: str):
-        preset = MIXED_PRESETS.get(provider_id)
-        if not preset:
-            return
-
-        api_model_entry.setText(preset.get("model", ""))
-        api_key_entry.setText("")  # ключ всегда руками
-        nm_api_req_checkbox.setChecked(preset.get("nm_api_req", False))
-        gemini_case_checkbox.setChecked(preset.get("gemini_case", False))
-
-        self._save_setting("NM_API_MODEL",  preset.get("model", ""))
-        self._save_setting("NM_API_KEY",    "")
-        self._save_setting("NM_API_REQ",    preset.get("nm_api_req", False))
-        self._save_setting("GEMINI_CASE",   preset.get("gemini_case", False))
-
-        update_url(force=True)
-
-    # ── ── ── Combo helpers ── ── ──
-    DISPLAY2ID = {}      # отображаемое → id
-    ID2DISPLAY = {}      # id → отображаемое
+    # ── Combo helpers ─────────────────────────────────────
+    DISPLAY2ID = {}
+    ID2DISPLAY = {}
 
     def combo_current_id() -> str:
         return DISPLAY2ID.get(api_provider_combo.currentText(), "custom")
 
-    # ── ── ── готовим список провайдеров ── ── ──
+    # ── список провайдеров ────────────────────────────────
     builtin_pairs = [(pid, _display_name(pid, API_PRESETS[pid]))
                      for pid in API_PRESETS]
     builtin_pairs.append(("custom", "Custom"))
+    custom_pairs    = [(pid, pid) for pid in custom_presets]
+    provider_pairs  = builtin_pairs + custom_pairs
+    separator_index = len(builtin_pairs)
 
-    custom_pairs = [(pid, pid) for pid in custom_presets.keys()]
-    provider_pairs   = builtin_pairs + custom_pairs
-    separator_index  = len(builtin_pairs)
-
-    # заполняем отображ/словарь
     for pid, text in provider_pairs:
         DISPLAY2ID[text] = pid
         ID2DISPLAY[pid]  = text
 
-    # ── ── ── FORM CONFIG для create_settings_section ── ── ──
+    # ── FORM CONFIG  (НЕ трогаем) ─────────────────────────
     config = [
         {'label': _('Провайдер', 'Provider'),
-         'key': 'API_PROVIDER',
-         'type': 'combobox',
+         'key': 'API_PROVIDER', 'type': 'combobox',
          'options': [p[1] for p in provider_pairs],
-         'default': 'Custom',
-         'command': lambda: on_provider_changed(),
-         'widget_name': 'api_provider_combo'},
+         'default': 'Custom', 'widget_name': 'api_provider_combo'},
         {'type': 'button_group',
          'buttons': [
              {'label': _('Сохранить / обновить пресет', 'Save / update preset'),
@@ -158,25 +229,19 @@ def setup_api_controls(self, parent):
               'command': lambda: _btn_delete_preset()},
          ]},
         {'label': _('Ссылка', 'URL'),
-         'key': 'NM_API_URL',
-         'type': 'entry',
-         'widget_name': 'api_url_entry'},
+         'key': 'NM_API_URL', 'type': 'entry', 'widget_name': 'api_url_entry'},
         {'label': _('Модель', 'Model'),
-         'key': 'NM_API_MODEL',
-         'type': 'entry',
-         'widget_name': 'api_model_entry'},
+         'key': 'NM_API_MODEL', 'type': 'entry', 'widget_name': 'api_model_entry'},
         {'label': _('Ключ', 'Key'),
          'key': 'NM_API_KEY',
          'type': 'entry',
          'widget_name': 'api_key_entry',
          'hide': True},
         {'label': _('Через Request', 'Using Request'),
-         'key': 'NM_API_REQ',
-         'type': 'checkbutton',
+         'key': 'NM_API_REQ', 'type': 'checkbutton',
          'widget_name': 'nm_api_req_checkbox'},
         {'label': _('Структура Гемини', 'Gemini Structure'),
-         'key': 'GEMINI_CASE',
-         'type': 'checkbutton',
+         'key': 'GEMINI_CASE', 'type': 'checkbutton',
          'default_checkbutton': False,
          'widget_name': 'gemini_case_checkbox',
          'tooltip':_("Формат сообщений gemini отличается от других, поэтому требуется преобразование",
@@ -188,13 +253,9 @@ def setup_api_controls(self, parent):
          'default': "",
          'widget_name': 'nm_api_key_res_label'},
     ]
+    self.create_settings_section(parent, _("Настройки API", "API settings"), config)
 
-    # ── ── ── создаём секцию ── ── ──
-    self.create_settings_section(parent,
-                                 _("Настройки API", "API settings"),
-                                 config)
-
-    # ── ── ── виджеты ── ── ──
+    # ── ссылки на виджеты ────────────────────────────────
     api_provider_combo: QComboBox = getattr(self, 'api_provider_combo')
     api_model_entry   = getattr(self, 'api_model_entry')
     api_url_entry     = getattr(self, 'api_url_entry')
@@ -202,82 +263,101 @@ def setup_api_controls(self, parent):
     gemini_case_checkbox = getattr(self, 'gemini_case_checkbox')
     nm_api_req_checkbox  = getattr(self, 'nm_api_req_checkbox')
 
-    # ── вставляем визуальный разделитель ──
+    # ── разделитель ───────────────────────────────────────
     api_provider_combo.insertSeparator(separator_index)
 
-    # ── живые обновления ссылки ──
-    api_model_entry.textChanged.connect(lambda _: update_url())
-    api_key_entry.textChanged.connect(lambda _: update_url())
+    # ── ПОДКЛЮЧАЕМ delegate (после QApplication) ──────────
+    api_provider_combo.view().setItemDelegate(
+        _ProviderDelegate(MIXED_PRESETS, DISPLAY2ID, api_provider_combo)
+    )
 
-    # ── реакция на выбор провайдера ──
+    # ── URL updater ───────────────────────────────────────
+    def update_url(force: bool = False):
+        pid = combo_current_id()
+        if pid == "custom" and not force:
+            return
+        url = build_dynamic_url(pid,
+                                api_model_entry.text().strip(),
+                                api_key_entry.text().strip())
+        api_url_entry.setText(url)
+        self._save_setting("NM_API_URL", url)
+        save_provider_state(pid)
+
+    # ── preset apply ──────────────────────────────────────
+    def apply_preset(pid: str):
+        pre = MIXED_PRESETS.get(pid)
+        if not pre:
+            return
+        api_model_entry.setText(pre.get("model", ""))
+        api_key_entry.setText("")
+        nm_api_req_checkbox.setChecked(pre.get("nm_api_req", False))
+        gemini_case_checkbox.setChecked(pre.get("gemini_case", False))
+
+        self._save_setting("NM_API_MODEL",  pre.get("model", ""))
+        self._save_setting("NM_API_KEY",    "")
+        self._save_setting("NM_API_REQ",    pre.get("nm_api_req", False))
+        self._save_setting("GEMINI_CASE",   pre.get("gemini_case", False))
+        update_url(force=True)
+
+    # ── provider change ───────────────────────────────────
     self._last_provider = combo_current_id()
-
     def on_provider_changed():
         save_provider_state(self._last_provider)
         new_id = combo_current_id()
         load_provider_state(new_id, fallback=True)
         self._last_provider = new_id
         update_url(force=True)
-
     api_provider_combo.currentIndexChanged.connect(lambda _: on_provider_changed())
 
-    # ── ── ── стартовое восстановление ── ── ──
+    # ── live URL updates ──────────────────────────────────
+    api_model_entry.textChanged.connect(lambda _: update_url())
+    api_key_entry.textChanged.connect(lambda _: update_url())
+
+    # ── начальное восстановление ──────────────────────────
     QTimer.singleShot(0, lambda: load_provider_state(combo_current_id(), fallback=False))
     QTimer.singleShot(0, lambda: update_url(force=True))
 
-    # ────────────────────────────────────────────────────
-    #        SAVE / DELETE   (custom preset)
-    # ────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────
+    #                  SAVE / DELETE  (custom)
+    # ──────────────────────────────────────────────────────
     def _btn_save_preset():
         from PyQt6.QtWidgets import QInputDialog
         cur_id = combo_current_id()
 
-        # 1. Получаем желаемое имя/ID
         if cur_id in API_PRESETS or cur_id == "custom":
             name, ok = QInputDialog.getText(
                 self, _("Имя пресета", "Preset name"),
                 _("Название нового пресета:", "New preset name:"))
             if not ok or not name.strip():
                 return
-            preset_id = name.strip()
+            pid = name.strip()
         else:
-            preset_id = cur_id  # пользователь решил обновить свой же пресет
+            pid = cur_id
 
-        # 2. Проверяем конфликт с встроенными
-        if preset_id in API_PRESETS:
-            QMessageBox.warning(
-                self,
-                _("Конфликт", "Conflict"),
-                _("Такой ID зарезервирован для встроенного пресета.\n"
-                  "Выберите другое имя.", "This ID is reserved for builtin preset.\nChoose another name.")
-            )
+        if pid in API_PRESETS:
+            QMessageBox.warning(self, _("Конфликт", "Conflict"),
+                                _("ID зарезервирован встроенным пресетом",
+                                  "This ID is reserved for builtin preset"))
             return
-        # 2. сохраняем
-        custom_presets[preset_id] = {
+
+        custom_presets[pid] = {
             "url":   api_url_entry.text().strip(),
             "model": api_model_entry.text().strip(),
             "pricing": "mixed"
         }
         self.settings.set("CUSTOM_API_PRESETS", custom_presets)
         self.settings.save_settings()
-        MIXED_PRESETS.update({preset_id: custom_presets[preset_id]})
+        MIXED_PRESETS[pid] = custom_presets[pid]
 
-        # 3. добавляем в ComboBox если нового не было
-        if preset_id not in [DISPLAY2ID.get(api_provider_combo.itemText(i))
-                             for i in range(api_provider_combo.count())]:
-            api_provider_combo.addItem(preset_id)   # кастом без эмодзи
-            DISPLAY2ID[preset_id] = preset_id
-            ID2DISPLAY[preset_id] = preset_id
+        if pid not in [p[0] for p in provider_pairs]:
+            provider_pairs.append((pid, pid))
+            DISPLAY2ID[pid] = pid; ID2DISPLAY[pid] = pid
+            api_provider_combo.addItem(pid)
 
-            if hasattr(self, 'HC_PROVIDER'):
-                getattr(self, 'HC_PROVIDER').addItem(preset_id)
-
-        # 4. выделяем
-        api_provider_combo.setCurrentText(ID2DISPLAY[preset_id])
-        save_provider_state(preset_id)
+        api_provider_combo.setCurrentText(ID2DISPLAY[pid])
+        save_provider_state(pid)
 
     def _btn_delete_preset():
-        from PyQt6.QtWidgets import QMessageBox
         cur_id = combo_current_id()
         if cur_id in custom_presets:
             if QMessageBox.question(
@@ -288,19 +368,13 @@ def setup_api_controls(self, parent):
             ) != QMessageBox.StandardButton.Yes:
                 return
 
-            # 1. удаляем
             custom_presets.pop(cur_id, None)
             provider_data.pop(cur_id, None)
             self.settings.set("CUSTOM_API_PRESETS", custom_presets)
             self.settings.set("API_PROVIDER_DATA", provider_data)
             self.settings.save_settings()
 
-            # 2. из ComboBox
             idx = api_provider_combo.findText(ID2DISPLAY[cur_id])
             if idx >= 0:
                 api_provider_combo.removeItem(idx)
-
-                if hasattr(self, 'HC_PROVIDER'):
-                    getattr(self, 'HC_PROVIDER').removeItem(idx)
-
             api_provider_combo.setCurrentText('Custom')

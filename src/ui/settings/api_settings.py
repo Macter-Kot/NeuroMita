@@ -10,21 +10,21 @@ def setup_api_controls(self, parent):
     встроенными и пользовательскими пресетами.
     """
     # ── данные из settings ───────────────────────────────────
-    provider_data      = self.settings.get("API_PROVIDER_DATA", {})     # {prov:{field:val}}
-    custom_api_presets = self.settings.get("CUSTOM_API_PRESETS", {})    # {prov:{url,model}}
-    MIXED_PRESETS      = _mixed_presets(API_PRESETS, custom_api_presets)
+    provider_data = self.settings.get("API_PROVIDER_DATA", {})
+    custom_api_presets = self.settings.get("CUSTOM_API_PRESETS", {})
+    MIXED_PRESETS = _mixed_presets(API_PRESETS, custom_api_presets)
 
     #                     HELPERS
     def save_provider_state(provider_name: str):
         if not provider_name:
             return
         provider_data[provider_name] = {
-            "NM_API_URL":       api_url_entry.text().strip(),
-            "NM_API_MODEL":     api_model_entry.text().strip(),
-            "NM_API_KEY":       api_key_entry.text().strip(),
-            "NM_API_KEY_RES":   self.settings.get("NM_API_KEY_RES", ""),
-            "NM_API_REQ":       nm_api_req_checkbox.isChecked(),
-            "GEMINI_CASE":      gemini_case_checkbox.isChecked(),
+            "NM_API_URL": api_url_entry.text().strip(),
+            "NM_API_MODEL": api_model_entry.text().strip(),
+            "NM_API_KEY": api_key_entry.text().strip(),
+            "NM_API_KEY_RES": self.settings.get("NM_API_KEY_RES", ""),
+            "NM_API_REQ": nm_api_req_checkbox.isChecked(),
+            "GEMINI_CASE": gemini_case_checkbox.isChecked(),
         }
         self.settings.set("API_PROVIDER_DATA", provider_data)
         self.settings.save_settings()
@@ -32,29 +32,32 @@ def setup_api_controls(self, parent):
     def load_provider_state(provider_name: str, fallback: bool = True):
         stored = provider_data.get(provider_name)
         if stored:
-            api_url_entry.setText(stored.get("NM_API_URL",  ""))
+            api_url_entry.setText(stored.get("NM_API_URL", ""))
             api_model_entry.setText(stored.get("NM_API_MODEL", ""))
-            api_key_entry.setText(stored.get("NM_API_KEY",   ""))
+            api_key_entry.setText(stored.get("NM_API_KEY", ""))
 
-            nm_api_req_checkbox.setChecked(stored.get("NM_API_REQ",  False))
+            nm_api_req_checkbox.setChecked(stored.get("NM_API_REQ", False))
             gemini_case_checkbox.setChecked(stored.get("GEMINI_CASE", False))
 
-            self._save_setting("NM_API_URL",      api_url_entry.text())
-            self._save_setting("NM_API_MODEL",    api_model_entry.text())
-            self._save_setting("NM_API_KEY",      api_key_entry.text())
-            self._save_setting("NM_API_REQ",      nm_api_req_checkbox.isChecked())
-            self._save_setting("GEMINI_CASE",     gemini_case_checkbox.isChecked())
-            self._save_setting("NM_API_KEY_RES",  stored.get("NM_API_KEY_RES", ""))
-        elif fallback:             # если данных нет – пробуем применить пресет
+            self._save_setting("NM_API_URL", api_url_entry.text())
+            self._save_setting("NM_API_MODEL", api_model_entry.text())
+            self._save_setting("NM_API_KEY", api_key_entry.text())
+            self._save_setting("NM_API_REQ", nm_api_req_checkbox.isChecked())
+            self._save_setting("GEMINI_CASE", gemini_case_checkbox.isChecked())
+            self._save_setting("NM_API_KEY_RES", stored.get("NM_API_KEY_RES", ""))
+        elif fallback:
             api_key_entry.setText("")
             self._save_setting("NM_API_KEY", "")
             apply_preset(provider_name)
 
     #             URL builder (динамический)
     def build_dynamic_url(provider: str, model: str, key: str) -> str:
-        if provider == "Google AI Studio":
+        if provider == "️🕊️️/💲Google AI Studio":
             base = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
             return f"{base}?key={key}" if key else base
+        elif provider == "️️💲 ProxiApi (for google)":
+            base = f"https://api.proxyapi.ru/google/v1/models/{model}:generateContent"
+            return base
         return MIXED_PRESETS.get(provider, {}).get("url", "")
 
     def update_url(force: bool = False):
@@ -72,20 +75,36 @@ def setup_api_controls(self, parent):
     self._last_provider = self.settings.get("API_PROVIDER", "Custom")
 
     def on_provider_changed():
-        save_provider_state(self._last_provider)            # 1. запоминаем
-        new_prov = api_provider_combo.currentText()         # 2. грузим выбранный
+        save_provider_state(self._last_provider)
+        new_prov = api_provider_combo.currentText()
         load_provider_state(new_prov, fallback=True)
         self._last_provider = new_prov
         update_url(force=True)
 
+    # --- ИЗМЕНЕНИЯ ЗДЕСЬ: Обновлена функция apply_preset ---
     def apply_preset(provider_name: str):
         preset = MIXED_PRESETS.get(provider_name)
         if not preset:
             return
-        api_model_entry.setText(preset["model"])
-        api_key_entry.setText("")
-        self._save_setting("NM_API_MODEL", preset["model"])
+
+        # Основные поля
+        api_model_entry.setText(preset.get("model", ""))
+        api_key_entry.setText("")  # Ключ всегда сбрасываем при применении пресета
+
+        # Дополнительные поля (чекбоксы) с дефолтным значением False
+        nm_api_req_val = preset.get("nm_api_req", False)
+        gemini_case_val = preset.get("gemini_case", False)
+
+        nm_api_req_checkbox.setChecked(nm_api_req_val)
+        gemini_case_checkbox.setChecked(gemini_case_val)
+
+        # Сохраняем все применённые значения
+        self._save_setting("NM_API_MODEL", preset.get("model", ""))
         self._save_setting("NM_API_KEY", "")
+        self._save_setting("NM_API_REQ", nm_api_req_val)
+        self._save_setting("GEMINI_CASE", gemini_case_val)
+
+        # Обновляем URL в последнюю очередь, т.к. он может зависеть от других полей
         update_url(force=True)
 
     #            SAVE / DELETE  (кастомный пресет)
@@ -94,7 +113,7 @@ def setup_api_controls(self, parent):
         cur_provider = api_provider_combo.currentText()
 
         # 1.  имя, под которым будем хранить
-        if cur_provider in list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi']:
+        if cur_provider in list(API_PRESETS.keys()) + ['Custom']:
             name, ok = QInputDialog.getText(
                 self, _("Имя пресета", "Preset name"),
                 _("Название нового пресета:", "New preset name:"))
@@ -157,9 +176,10 @@ def setup_api_controls(self, parent):
             api_provider_combo.setCurrentText('Custom')
 
     #       СТРОИМ ComboBox cо «встроенными / кастомными»
-    builtin_providers = list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi']
-    builtin_seen = set(); builtin_providers = [p for p in builtin_providers
-                                               if not (p in builtin_seen or builtin_seen.add(p))]
+    builtin_providers = list(API_PRESETS.keys()) + ['Custom']
+    builtin_seen = set();
+    builtin_providers = [p for p in builtin_providers
+                         if not (p in builtin_seen or builtin_seen.add(p))]
 
     custom_providers = list(custom_api_presets.keys())
 
@@ -183,7 +203,6 @@ def setup_api_controls(self, parent):
              {'label': _('Удалить пресет', 'Delete preset'),
               'command': _btn_delete_preset},
          ]},
-        # ---- URL / MODEL / KEY ------------------------------------
         {'label': _('Ссылка', 'URL'),
          'key': 'NM_API_URL',
          'type': 'entry',
@@ -205,18 +224,20 @@ def setup_api_controls(self, parent):
          'type': 'text',
          'hide': bool(self.settings.get("HIDE_PRIVATE")),
          'default': "",
-         'widget_name': 'nm_api_key_res_label'},  # <—
+         'widget_name': 'nm_api_key_res_label'},
 
         {'label': _('Через Request', 'Using Request'),
          'key': 'NM_API_REQ',
          'type': 'checkbutton',
-         'widget_name': 'nm_api_req_checkbox'},  # <—
+         'widget_name': 'nm_api_req_checkbox'},
 
-        {'label': _('Гемини для ProxiAPI', 'Gemini for ProxiAPI'),
+        {'label': _('Структура Гемини', 'Gemini Structure'),
          'key': 'GEMINI_CASE',
          'type': 'checkbutton',
          'default_checkbutton': False,
-         'widget_name': 'gemini_case_checkbox'},
+         'widget_name': 'gemini_case_checkbox',
+         'tooltip':_("Формат сообщений гемини (напрямую) отличается от других, потому требуется преобразование включаемое данной галкой",
+                     "The format of gemini messages (directly) is different from others, so the transformation enabled by this checkbox is required")},
     ]
 
     # ── создаём UI секцию ───────────────────────────────────
@@ -225,24 +246,15 @@ def setup_api_controls(self, parent):
                                  common_config)
 
     # ── ссылки на виджеты (после создания) ─────────────────
-    api_provider_combo   = getattr(self, 'api_provider_combo')  # type: QComboBox
-    api_model_entry      = getattr(self, 'api_model_entry')
-    api_url_entry        = getattr(self, 'api_url_entry')
-    api_key_entry        = getattr(self, 'api_key_entry')
+    api_provider_combo = getattr(self, 'api_provider_combo')  # type: QComboBox
+    api_model_entry = getattr(self, 'api_model_entry')
+    api_url_entry = getattr(self, 'api_url_entry')
+    api_key_entry = getattr(self, 'api_key_entry')
     gemini_case_checkbox = getattr(self, 'gemini_case_checkbox')
-    nm_api_req_checkbox  = getattr(self, 'nm_api_req_checkbox')
+    nm_api_req_checkbox = getattr(self, 'nm_api_req_checkbox')
 
     # ── вставляем «визуальный» разделитель в ComboBox ───────
     api_provider_combo.insertSeparator(separator_index)
-
-    # ── авто-Gemini для Google AI Studio ────────────────────
-    def _auto_gemini_case(provider_name: str):
-        if provider_name == "Google AI Studio":
-            if not gemini_case_checkbox.isChecked():
-                gemini_case_checkbox.setChecked(True)
-                self._save_setting("GEMINI_CASE", True)
-    api_provider_combo.currentTextChanged.connect(_auto_gemini_case)
-    _auto_gemini_case(api_provider_combo.currentText())
 
     # ── живые обновления URL ────────────────────────────────
     api_model_entry.textChanged.connect(lambda _: update_url())

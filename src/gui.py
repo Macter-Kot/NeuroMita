@@ -175,7 +175,7 @@ class ChatGUI(QMainWindow):
 
         # Установка иконки и заголовка
         self.setWindowTitle(_("Чат с NeuroMita", "NeuroMita Chat"))
-        self.setWindowIcon(QIcon('icon.png'))
+        self.setWindowIcon(QIcon('src/Icon.png'))
 
         self.ffmpeg_install_popup = None
         QTimer.singleShot(100, self.check_and_install_ffmpeg)

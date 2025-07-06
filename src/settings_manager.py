@@ -149,7 +149,7 @@ class InnerCollapsibleSection(CollapsibleSection):
     """Под-секция: кликабельный текст без фона"""
     def __init__(self, title, parent=None):
         super().__init__(title, parent)
-        self.is_collapsed = False
+        self.is_collapsed = True
         self.header.setObjectName('InnerCollapsibleHeader')
         self.header.setStyleSheet('background: transparent;')
         self.arrow_pix_right = _angle_icon('right', 8)

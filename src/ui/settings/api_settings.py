@@ -246,12 +246,14 @@ def setup_api_controls(self, parent):
          'widget_name': 'gemini_case_checkbox',
          'tooltip':_("Формат сообщений gemini отличается от других, поэтому требуется преобразование",
                      "Gemini message format differs from others, so enable conversion")},
+        {'label': _('Резервные ключи', 'Reserve keys'),
+         'key': 'NM_API_KEY_RES',
+         'type': 'textarea',
+         'hide': bool(self.settings.get("HIDE_PRIVATE")),
+         'default': "",
+         'widget_name': 'nm_api_key_res_label'},
     ]
-
-    # ── ── ── создаём секцию ── ── ──
-    self.create_settings_section(parent,
-                                 _("Настройки API", "API settings"),
-                                 config)
+    self.create_settings_section(parent, _("Настройки API", "API settings"), config)
 
     # ── ссылки на виджеты ────────────────────────────────
     api_provider_combo: QComboBox = getattr(self, 'api_provider_combo')

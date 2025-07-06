@@ -109,6 +109,37 @@ def create_setting_widget(
     if toggle_key and gui.settings.get(toggle_key) is None:
         gui.settings.set(toggle_key,
                          toggle_default if toggle_default is not None else True)
+        
+    if widget_type in ('textarea', 'textedit'):
+        # --- контейнер для одной настройки ---
+        frame = QWidget(parent)
+        vlay = QVBoxLayout(frame)
+        vlay.setContentsMargins(0, 2, 0, 2)
+        vlay.setSpacing(4)
+
+        lbl = QLabel(label)
+        lbl.setWordWrap(True)  # длинные подписи переносятся
+        vlay.addWidget(lbl)
+
+        widget = QTextEdit()
+        widget.setPlainText(str(gui.settings.get(setting_key, default)))
+
+        widget.setMinimumHeight(50)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding,
+                             QSizePolicy.Policy.Expanding)
+
+        vlay.addWidget(widget)
+
+        # сигналы сохранения
+        widget.textChanged.connect(
+            lambda w=widget: gui._save_setting(setting_key, w.toPlainText())
+        )
+
+        if widget_name:
+            setattr(gui, widget_name, widget)
+            setattr(gui, f"{widget_name}_frame", frame)
+
+        return frame
 
     #                 2) каркас строки
     frame = QWidget(parent)

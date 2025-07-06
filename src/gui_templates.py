@@ -73,6 +73,37 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
         initial_value = default_checkbutton if widget_type == 'checkbutton' else default
         gui.settings.set(setting_key, initial_value)
 
+    if widget_type in ('textarea', 'textedit'):
+        # --- контейнер для одной настройки ---
+        frame = QWidget(parent)
+        vlay = QVBoxLayout(frame)
+        vlay.setContentsMargins(0, 2, 0, 2)
+        vlay.setSpacing(4)
+
+        lbl = QLabel(label)
+        lbl.setWordWrap(True)  # длинные подписи переносятся
+        vlay.addWidget(lbl)
+
+        widget = QTextEdit()
+        widget.setPlainText(str(gui.settings.get(setting_key, default)))
+
+        widget.setMinimumHeight(50)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding,
+                             QSizePolicy.Policy.Expanding)
+
+        vlay.addWidget(widget)
+
+        # сигналы сохранения
+        widget.textChanged.connect(
+            lambda w=widget: gui._save_setting(setting_key, w.toPlainText())
+        )
+
+        if widget_name:
+            setattr(gui, widget_name, widget)
+            setattr(gui, f"{widget_name}_frame", frame)
+
+        return frame
+
     frame = QWidget(parent)
     layout = QHBoxLayout(frame)
     layout.setContentsMargins(0, 2, 0, 2)
@@ -145,7 +176,7 @@ def create_setting_widget(gui, parent, label, setting_key='', widget_type='entry
                 if command: command()
             
             widget.currentTextChanged.connect(save_combo_text)
-        
+
         if widget:
             layout.addWidget(widget, 1)
 

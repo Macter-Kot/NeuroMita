@@ -170,12 +170,6 @@ def setup_api_controls(self, parent):
          'type': 'entry',
          'widget_name': 'api_key_entry',
          'hide': True},
-        {'label': _('Резервные ключи', 'Reserve keys'),
-         'key': 'NM_API_KEY_RES',
-         'type': 'text',
-         'hide': bool(self.settings.get("HIDE_PRIVATE")),
-         'default': "",
-         'widget_name': 'nm_api_key_res_label'},
         {'label': _('Через Request', 'Using Request'),
          'key': 'NM_API_REQ',
          'type': 'checkbutton',
@@ -187,6 +181,12 @@ def setup_api_controls(self, parent):
          'widget_name': 'gemini_case_checkbox',
          'tooltip':_("Формат сообщений gemini отличается от других, поэтому требуется преобразование",
                      "Gemini message format differs from others, so enable conversion")},
+        {'label': _('Резервные ключи', 'Reserve keys'),
+         'key': 'NM_API_KEY_RES',
+         'type': 'textarea',
+         'hide': bool(self.settings.get("HIDE_PRIVATE")),
+         'default': "",
+         'widget_name': 'nm_api_key_res_label'},
     ]
 
     # ── ── ── создаём секцию ── ── ──

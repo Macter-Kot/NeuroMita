@@ -36,7 +36,7 @@ import requests
 import importlib
 from local_voice import LocalVoice
 import time
-from speech_recognition import SpeechRecognition
+from asr_handler import SpeechRecognition
 from utils.pip_installer import PipInstaller
 
 import functools
@@ -243,7 +243,7 @@ class ChatGUI(QMainWindow):
         self.image_request_timer_running = False
 
         if self.settings.get("MIC_ACTIVE", False):
-            SpeechRecognition.speach_recognition_start(self.device_id, self.loop)
+            SpeechRecognition.speech_recognition_start(self.device_id, self.loop)
             self.mic_recognition_active = True
             self.update_status_colors()
 
@@ -1666,12 +1666,12 @@ class ChatGUI(QMainWindow):
         elif key == "MIC_ACTIVE":
             if bool(value):
                 # Запускаем распознавание, если оно активировано
-                SpeechRecognition.speach_recognition_start(self.device_id, self.loop)
-                self.mic_recognition_active.set(True)
+                SpeechRecognition.speech_recognition_start(self.device_id, self.loop)
+                self.mic_recognition_active = True
             else:
                 # Останавливаем распознавание, если оно деактивировано
-                SpeechRecognition.speach_recognition_stop()
-                self.mic_recognition_active.set(False)
+                SpeechRecognition.speech_recognition_stop()
+                self.mic_recognition_active = False
             self.update_status_colors()
 
         elif key == "ENABLE_SCREEN_ANALYSIS":
@@ -1756,8 +1756,7 @@ class ChatGUI(QMainWindow):
             # Перезапускаем распознавание с новым типом
             if self.settings.get("MIC_ACTIVE", False):
                 SpeechRecognition.active = True  # Активируем снова, только если был активен
-                SpeechRecognition.speach_recognition_start(self.device_id, self.loop)
-            microphone_settings.update_vosk_model_visibility(self, value)
+                SpeechRecognition.speech_recognition_start(self.device_id, self.loop)
         elif key == "VOSK_MODEL":
             SpeechRecognition.vosk_model = value
         elif key == "SILENCE_THRESHOLD":

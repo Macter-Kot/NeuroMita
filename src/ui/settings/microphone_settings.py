@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import QComboBox, QCheckBox
 
 from gui_templates import create_settings_section
 from main_logger import logger
-from speech_recognition import SpeechRecognition
+from asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
 import sounddevice as sd
 
@@ -13,9 +13,13 @@ def setup_microphone_controls(gui, parent_layout):
          'options': get_microphone_list(), 'default': get_microphone_list()[0] if get_microphone_list() else "",
          'command': lambda: on_mic_selected(gui), 'widget_name': 'mic_combobox'},
         {'label': _("Тип распознавания", "Recognition Type"), 'type': 'combobox', 'key': 'RECOGNIZER_TYPE',
-         'options': ["google", "vosk", "gigaam"], 'default': "google",
+         'options': ["google", "gigaam"], 'default': "google",
          'tooltip': _("Выберите движок распознавания речи", "Select speech recognition engine"),
-         'command': lambda: update_vosk_model_visibility(gui, gui.settings.get('RECOGNIZER_TYPE'))},
+         'command': lambda: update_recognizer_specific_widgets(gui, gui.settings.get('RECOGNIZER_TYPE'))},
+        {'label': _("Устройство GigaAM", "GigaAM Device"), 'type': 'combobox', 'key': 'GIGAAM_DEVICE',
+         'options': ["auto", "cuda", "cpu", "dml"], 'default': "auto",
+         'tooltip': _("Устройство для GigaAM. auto - выберет CUDA для NVIDIA и DML/CPU для остальных. dml - только для AMD/Intel.", "Device for GigaAM. auto - selects CUDA for NVIDIA and DML/CPU for others. dml - for AMD/Intel only."),
+         'widget_name': 'GIGAAM_DEVICE_frame', 'command': lambda: on_gigaam_device_selected(gui)},
         # {'label': _("Модель Vosk", "Vosk Model"), 'type': 'combobox', 'key': 'VOSK_MODEL',
         #  'options': ["vosk-model-ru-0.10"], 'default': "vosk-model-ru-0.10",
         #  'tooltip': _("Выберите модель Vosk.", "Select Vosk model."), 'widget_name': 'VOSK_MODEL_frame'},
@@ -37,7 +41,7 @@ def setup_microphone_controls(gui, parent_layout):
 
     gui.mic_section = create_settings_section(gui, parent_layout, _("Настройки микрофона", "Microphone Settings"), mic_settings)
     
-    update_vosk_model_visibility(gui, gui.settings.get('RECOGNIZER_TYPE'))
+    update_recognizer_specific_widgets(gui, gui.settings.get('RECOGNIZER_TYPE'))
 
 def get_microphone_list():
     try:
@@ -48,14 +52,15 @@ def get_microphone_list():
         logger.info(f"Ошибка получения списка микрофонов: {e}")
         return [_("Ошибка загрузки", "Loading error")]
 
-def update_vosk_model_visibility(gui, recognizer_type):
+def update_recognizer_specific_widgets(gui, recognizer_type):
     show_vosk = recognizer_type == "vosk"
+    show_gigaam = recognizer_type == "gigaam"
+
     if hasattr(gui, 'VOSK_MODEL_frame'):
         gui.VOSK_MODEL_frame.setVisible(show_vosk)
-    else:
-        # Поскольку виджет может быть закомментирован, это предупреждение не является критичным.
-        # logger.warning("Vosk model widget frame not found for visibility update.")
-        pass
+    
+    if hasattr(gui, 'GIGAAM_DEVICE_frame'):
+        gui.GIGAAM_DEVICE_frame.setVisible(show_gigaam)
 
 def on_mic_selected(gui):
     if not hasattr(gui, 'mic_combobox'): return
@@ -73,6 +78,13 @@ def on_mic_selected(gui):
                 gui.settings.save_settings()
         except (AttributeError, IndexError, ValueError) as e:
             logger.error(f"Could not parse microphone selection '{selection}': {e}")
+
+def on_gigaam_device_selected(gui):
+    if not hasattr(gui, 'GIGAAM_DEVICE_combobox'): return
+    device = gui.GIGAAM_DEVICE_combobox.currentText()
+    SpeechRecognition.set_gigaam_options(device=device)
+    logger.info(f"Выбрано устройство для GigaAM: {device}")
+
 
 def update_mic_list(gui):
     if hasattr(gui, 'mic_combobox'):

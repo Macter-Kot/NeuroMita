@@ -540,6 +540,15 @@ class ChatModel:
 
             try:
                 if bool(self.gui.settings.get("NM_API_REQ", False)):
+                    if attempt > 1 and self.api_key_res:
+                        new_key = self.GetOtherKey()
+                        if new_key:
+                            if "key=" in self.api_url:
+                                self.api_url = re.sub(r"key=[^&]*", f"key={new_key}", self.api_url)
+                            else: self.api_key = new_key
+
+                            logger.info(f"[NM_API_REQ] переключился на резервный ключ (masked): {SH(new_key)}")
+
                     formatted_for_request = combined_messages
                     if bool(self.gui.settings.get("GEMINI_CASE", False)):
                         formatted_for_request = self._format_messages_for_gemini(combined_messages)

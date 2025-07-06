@@ -174,31 +174,21 @@ def create_setting_widget(
             if command:
                 command(widget.text())
 
-        widget.editingFinished.connect(_save_entry)
-
-        # layout: Label | (toggle_chk?) | LineEdit (stretch)
-        layout.addWidget(lbl)
-        if toggle_chk:
-            layout.addWidget(toggle_chk, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(widget, 1)
-
-    elif widget_type == 'combobox':
-        widget = QComboBox()
-        if options:
-            widget.addItems([str(o) for o in options])
-        widget.setCurrentText(str(gui.settings.get(setting_key, default)))
-
-        def _save_combo(text):
-            gui._save_setting(setting_key, text)
-            if command:
-                command()
-
-        widget.currentTextChanged.connect(_save_combo)
-
-        layout.addWidget(lbl)
-        if toggle_chk:
-            layout.addWidget(toggle_chk, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(widget, 1)
+            widget.editingFinished.connect(save_entry_text)
+            
+        elif widget_type == 'combobox':
+            widget = QComboBox()
+            if options: widget.addItems([str(o) for o in options])
+            widget.setCurrentText(str(gui.settings.get(setting_key, default)))
+            
+            def save_combo_text(text):
+                gui._save_setting(setting_key, text)
+                if command: command()
+            
+            widget.currentTextChanged.connect(save_combo_text)
+        
+        if widget:
+            layout.addWidget(widget, 1)
 
     elif widget_type == 'button':
         widget = QPushButton(label)

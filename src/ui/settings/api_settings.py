@@ -233,6 +233,10 @@ def setup_api_controls(self, parent):
         {'label': _('Модель', 'Model'),
          'key': 'NM_API_MODEL', 'type': 'entry', 'widget_name': 'api_model_entry'},
         {'label': _('Ключ', 'Key'),
+         'key': 'NM_API_KEY',
+         'type': 'entry',
+         'widget_name': 'api_key_entry',
+         'hide': True},
          'key': 'NM_API_KEY', 'type': 'entry', 'widget_name': 'api_key_entry', 'hide': True},
         {'label': _('Резервные ключи', 'Reserve keys'),
          'key': 'NM_API_KEY_RES', 'type': 'text',
@@ -248,7 +252,11 @@ def setup_api_controls(self, parent):
          'tooltip':_("Формат сообщений gemini отличается от других, поэтому требуется преобразование",
                      "Gemini message format differs from others, so enable conversion")},
     ]
-    self.create_settings_section(parent, _("Настройки API", "API settings"), config)
+
+    # ── ── ── создаём секцию ── ── ──
+    self.create_settings_section(parent,
+                                 _("Настройки API", "API settings"),
+                                 config)
 
     # ── ссылки на виджеты ────────────────────────────────
     api_provider_combo: QComboBox = getattr(self, 'api_provider_combo')

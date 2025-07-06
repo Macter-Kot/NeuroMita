@@ -5,6 +5,7 @@ import datetime
 import json
 import time
 from contextlib import contextmanager
+
 import requests
 #import tiktoken
 from openai import OpenAI
@@ -1474,3 +1475,35 @@ class ChatModel:
             self.apply_config(original)
             self.gui.settings.set("NM_API_REQ", original["NM_API_REQ"])
             self.gui.settings.set("GEMINI_CASE", original["GEMINI_CASE"])
+
+    def apply_config(self, cfg: dict) -> list[str]:
+        """
+        Горячо меняет любые ключевые поля ChatModel.
+        cfg – словарь с любыми из:
+            api_key / api_key_res / api_url / api_model /
+            gpt4free_model / makeRequest
+        Возвращает список реально изменённых полей.
+        """
+        changed = []
+
+        def _set(attr, value):
+            if value is None:
+                return
+            if getattr(self, attr, None) != value:
+                setattr(self, attr, value)
+                changed.append(attr)
+
+        _set("api_key", cfg.get("api_key"))
+        _set("api_key_res", cfg.get("api_key_res"))
+        _set("api_url", cfg.get("api_url"))
+        _set("api_model", cfg.get("api_model"))
+        _set("gpt4free_model", cfg.get("gpt4free_model"))
+        _set("makeRequest", cfg.get("makeRequest"))
+
+        # если трогаем ключ или url – пересоздаём OpenAI-клиент
+        if {"api_key", "api_url"} & set(changed):
+            self.update_openai_client()
+
+        if changed:
+            logger.info(f"apply_config → обновлены: {', '.join(changed)}")
+        return changed

@@ -208,6 +208,8 @@ class ChatModel:
         self.cart_divan = DivanCartridge("Cart_divan", "Cart_divan", "/speaker engineer", short_name="Player", miku_tts_name="/set_person Player", silero_turn_off_video=True,is_cartridge=True)
         self.GameMaster = GameMaster("GameMaster", "GameMaster", "/speaker dryad", short_name="PhoneMita", miku_tts_name="/set_person PhoneMita", silero_turn_off_video=True)
 
+        self.mitaphone = Character("Mitaphone", "Mitaphone", "/speaker dryad", short_name="PhoneMita", miku_tts_name="/set_person PhoneMita", silero_turn_off_video=True)
+
         self.characters = {
             self.crazy_mita_character.char_id: self.crazy_mita_character,
             self.kind_mita_character.char_id: self.kind_mita_character,
@@ -219,6 +221,7 @@ class ChatModel:
             self.cart_space.char_id: self.cart_space,
             self.cart_divan.char_id: self.cart_divan,
             self.GameMaster.char_id: self.GameMaster,
+            self.mitaphone.char_id: self.mitaphone,
         }
         self.current_character = self.characters.get(self.current_character_to_change) or self.crazy_mita_character
 

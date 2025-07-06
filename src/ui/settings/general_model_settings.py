@@ -123,6 +123,15 @@ def setup_general_settings_control(self, parent):
         'tooltip': _('Параметр, влияющий на логарифмическую вероятность выбора токенов (-2.0 = поощрять, 2.0 = штрафовать)',
                     'Parameter influencing the logarithmic probability of token selection (-2.0 = encourage, 2.0 = penalize)')},
 
+        # ───────── Tools use ─────────
+        {'label': _('Вызов инструментов', 'Tools use'),
+         'key': 'TOOLS_ON',
+         'type': 'checkbutton',
+         'default_checkbutton': False,
+         'tooltip': _(
+             'Позволяет использовать инструменты такие как поиск в сети',
+             'Allow using tools like seacrh')},
+
         {'type': 'end'},  # ── конец подп-секции 3 ──
     ]
 

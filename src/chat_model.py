@@ -4,6 +4,7 @@ import concurrent.futures
 import datetime
 import json
 import time
+from contextlib import contextmanager
 import requests
 #import tiktoken
 from openai import OpenAI
@@ -1083,7 +1084,11 @@ class ChatModel:
 
             # 4. Вызов LLM для получения сжатой сводки
             system_message = {"role": "system", "content": full_prompt}
-            compressed_summary, success = self._generate_chat_response([system_message])
+
+            hc_provider = self.gui.settings.get("HC_PROVIDER", "Current")
+            with self._temporary_provider(hc_provider):
+                compressed_summary, success = self._generate_chat_response(
+                    [system_message])  # ← как было
 
             if success and compressed_summary:
                 logger.info("История успешно сжата.")
@@ -1414,3 +1419,58 @@ class ChatModel:
 
     #endregion
 
+    @contextmanager
+    def _temporary_provider(self, provider_name: str):
+        """
+        Временно подменяет ключ/URL/модель в соответствии
+        с provider_name из settings['API_PROVIDER_DATA'].
+
+        provider_name:
+            'Current' / 'Текущий' – взять активный API-провайдер,
+            любой другой — конкретное имя провайдера,
+            если данных нет – просто работаем как есть.
+        """
+        # 1) какую «секцию» берём из хранилища
+        if not provider_name:
+            yield
+            return
+
+        if provider_name.lower() in ("current", "текущий"):
+            provider_name = self.gui.settings.get("API_PROVIDER", "")
+
+        provider_data_all = self.gui.settings.get("API_PROVIDER_DATA", {})
+        cfg = provider_data_all.get(provider_name)
+
+        if not cfg:  # данных нет – ничего не меняем
+            yield
+            return
+
+        # 2) запоминаем действующие настройки
+        original = {
+            "api_key": self.api_key,
+            "api_key_res": self.api_key_res,
+            "api_url": self.api_url,
+            "api_model": self.api_model,
+            "makeRequest": self.makeRequest,
+            "NM_API_REQ": self.gui.settings.get("NM_API_REQ"),
+            "GEMINI_CASE": self.gui.settings.get("GEMINI_CASE"),
+        }
+
+        # 3) применяем конфигурацию провайдера (даже если совпадает)
+        self.apply_config({
+            "api_key": cfg.get("NM_API_KEY"),
+            "api_key_res": cfg.get("NM_API_KEY_RES"),
+            "api_url": cfg.get("NM_API_URL"),
+            "api_model": cfg.get("NM_API_MODEL"),
+            "makeRequest": cfg.get("NM_API_REQ"),
+        })
+        self.gui.settings.set("NM_API_REQ", cfg.get("NM_API_REQ", False))
+        self.gui.settings.set("GEMINI_CASE", cfg.get("GEMINI_CASE", False))
+
+        try:
+            yield
+        finally:
+            # 4) откатываемся к исходным
+            self.apply_config(original)
+            self.gui.settings.set("NM_API_REQ", original["NM_API_REQ"])
+            self.gui.settings.set("GEMINI_CASE", original["GEMINI_CASE"])

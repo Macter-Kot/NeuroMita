@@ -1,4 +1,4 @@
-
+from presets.api_presets import API_PRESETS
 from utils import getTranslationVariant as _
 
 
@@ -36,6 +36,20 @@ def setup_history_compressor_controls(self, parent):
          'default': "history",
          'tooltip': _('Куда помещать результат сжатия истории (например, "memory", "summary_message").',
                       'Where to place the compressed history output (e.g., "memory", "summary_message").')},
+    ]
+    # --- список провайдеров, которым уже управляет setup_api_controls
+    provider_names = list(API_PRESETS.keys()) \
+                     + ['Custom', 'Google AI Studio', 'ProxiApi'] \
+                     + list(self.settings.get("CUSTOM_API_PRESETS", {}).keys())
+    provider_names = list(dict.fromkeys(provider_names))  # убираем дубликаты
+    provider_names.insert(0, _("Текущий", "Current"))  # «не переключать»
+
+    settings_config += [
+        {'label': _('Провайдер для сжатия', 'Provider for compression'),
+         'key': 'HC_PROVIDER',  # History-Compression provider
+         'type': 'combobox',
+         'options': provider_names,
+         'default': _('Текущий', 'Current')},
     ]
     self.create_settings_section(parent,
                                  _("Настройки сжатия истории", "History compression Settings"),

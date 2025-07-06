@@ -1,16 +1,19 @@
 from utils import _
 from presets.api_presets import API_PRESETS, PRICING_SYMBOLS
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QComboBox, QMessageBox
+
 
 #                         HELPERS
 def _mixed_presets(static_presets: dict, custom_presets: dict) -> dict:
     """
-    Склеиваем статические и пользовательские пресеты так,
-    чтобы кастомные имели приоритет.
+    Склеиваем словари так, чтобы встроенные остались нетронутыми.
+    Если id уже есть во встроенных, кастомный просто игнорируется.
     """
     merged = static_presets.copy()
-    merged.update(custom_presets or {})
+    for pid, cust in (custom_presets or {}).items():
+        if pid not in merged:
+            merged[pid] = cust
     return merged
 
 
@@ -229,7 +232,7 @@ def setup_api_controls(self, parent):
         from PyQt6.QtWidgets import QInputDialog
         cur_id = combo_current_id()
 
-        # если сейчас «встроенный» или «custom» → спросим имя
+        # 1. Получаем желаемое имя/ID
         if cur_id in API_PRESETS or cur_id == "custom":
             name, ok = QInputDialog.getText(
                 self, _("Имя пресета", "Preset name"),
@@ -238,8 +241,17 @@ def setup_api_controls(self, parent):
                 return
             preset_id = name.strip()
         else:
-            preset_id = cur_id   # перезапись существующего пользовательского
+            preset_id = cur_id  # пользователь решил обновить свой же пресет
 
+        # 2. Проверяем конфликт с встроенными
+        if preset_id in API_PRESETS:
+            QMessageBox.warning(
+                self,
+                _("Конфликт", "Conflict"),
+                _("Такой ID зарезервирован для встроенного пресета.\n"
+                  "Выберите другое имя.", "This ID is reserved for builtin preset.\nChoose another name.")
+            )
+            return
         # 2. сохраняем
         custom_presets[preset_id] = {
             "url":   api_url_entry.text().strip(),

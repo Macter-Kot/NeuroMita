@@ -412,17 +412,17 @@ class ChatGUI(QMainWindow):
         if bool(self.settings.get("MIC_INSTANT_SENT")):
             if not self.waiting_answer:
                 text_from_recognition = SpeechRecognition.receive_text()
-                user_input = self.user_entry.toPlainText()
-                user_input += text_from_recognition
-                self.user_entry.insertPlainText(text_from_recognition)
-                self.user_input = self.user_entry.toPlainText().strip()
-                if not self.dialog_active:
-                    self.send_instantly()
+                if text_from_recognition:
+                    self.user_entry.insertPlainText(text_from_recognition)
+                    self.user_input = self.user_entry.toPlainText().strip()
+                    if not self.dialog_active:
+                        self.send_instantly()
 
         elif bool(self.settings.get("MIC_ACTIVE")) and self.user_entry:
             text_from_recognition = SpeechRecognition.receive_text()
-            self.user_entry.insertPlainText(text_from_recognition)
-            self.user_input = self.user_entry.toPlainText().strip()
+            if text_from_recognition:
+                self.user_entry.insertPlainText(text_from_recognition)
+                self.user_input = self.user_entry.toPlainText().strip()
 
     def send_interval_image(self):
         current_time = time.time()

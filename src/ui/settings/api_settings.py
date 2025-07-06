@@ -118,6 +118,10 @@ def setup_api_controls(self, parent):
                                for i in range(api_provider_combo.count())]:
             api_provider_combo.addItem(preset_name)
 
+            if hasattr(self, 'HC_PROVIDER'):
+                hc_provider_combo = getattr(self, 'HC_PROVIDER')
+                hc_provider_combo.addItem(preset_name)
+
         # 4.  выделяем
         api_provider_combo.setCurrentText(preset_name)
         save_provider_state(preset_name)
@@ -145,6 +149,10 @@ def setup_api_controls(self, parent):
             idx = api_provider_combo.findText(cur_provider)
             if idx >= 0:
                 api_provider_combo.removeItem(idx)
+
+                if hasattr(self, 'HC_PROVIDER'):
+                    hc_provider_combo = getattr(self, 'HC_PROVIDER')
+                    hc_provider_combo.removeItem(idx)
 
             api_provider_combo.setCurrentText('Custom')
 

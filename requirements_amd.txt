@@ -71,6 +71,7 @@ dotenv
 pyworld==0.3.5
 numpy==1.26.0
 httpx==0.27.0
+onnx
 onnxruntime-directml
 pywin32
 py7zr

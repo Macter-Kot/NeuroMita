@@ -69,6 +69,7 @@ dotenv
 # atm4x reqs
 
 pyworld==0.3.5
+onnx
 onnxruntime
 numpy==1.26.0
 httpx==0.27.0

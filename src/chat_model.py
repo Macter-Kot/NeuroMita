@@ -5,7 +5,7 @@ import datetime
 import json
 import time
 from contextlib import contextmanager
-
+import copy
 import requests
 #import tiktoken
 from openai import OpenAI
@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional
 import queue
 import os  # Added for os.environ
 from io import BytesIO # Добавлено для обработки изображений
-
+from tools.manager import ToolManager,mk_tool_call_msg,mk_tool_resp_msg
 from main_logger import logger
 from characters import CrazyMita, KindMita, ShortHairMita, CappyMita, MilaMita, CreepyMita, SleepyMita, GameMaster, \
     SpaceCartridge, DivanCartridge  # Updated imports
@@ -43,6 +43,8 @@ class ChatModel:
         self.api_model = api_model
         self.gpt4free_model = self.gui.settings.get("gpt4free_model")
         self.makeRequest = api_make_request  # This seems to be a boolean flag
+
+        self.tool_manager = ToolManager()
 
         try:
             self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
@@ -647,14 +649,42 @@ class ChatModel:
             return None
 
     # region Generation final
-    def generate_request_gemini(self, combined_messages, stream_callback: callable = None):
+
+    # =====================================================================
+    #  ➤  ПОЛНАЯ НОВАЯ ВЕРСИЯ generate_request_gemini
+    # =====================================================================
+
+    def generate_request_gemini(self,
+                                combined_messages,
+                                stream_callback: callable = None,
+                                _depth: int = 0):
+        """
+        Запрос к Gemini / Gemma REST-API c поддержкой tools.
+        При вызове инструмента делает follow-up запрос (до 3 раз).
+        """
+
+        # ─── 0.   Защита от бесконечной рекурсии ──────────────────────────
+        if _depth > 3:
+            logger.error("Слишком много рекурсивных tool-вызовов (Gemini).")
+            return None
+
+        # ─── 1.   Параметры модели ────────────────────────────────────────
         params = self.get_params()
         self.clear_endline_sim(params)
 
+        # ─── 2.   Формируем contents для Gemini ───────────────────────────
         contents = []
         for msg in combined_messages:
             role = "model" if msg["role"] == "assistant" else msg["role"]
-            # Если роль "system", преобразуем в "user" с префиксом
+
+            # 2.1 functionCall / functionResponse (служебные) --------------
+            if isinstance(msg.get("content"), dict) and (
+                    "functionCall" in msg["content"]
+                    or "functionResponse" in msg["content"]):
+                contents.append({"role": role, "parts": [msg["content"]]})
+                continue
+
+            # 2.2 system-промпты → user + префикс --------------------------
             if role == "system":
                 role = "user"
                 if isinstance(msg["content"], list):
@@ -675,30 +705,58 @@ class ChatModel:
             "contents": contents,
             "generationConfig": params
         }
+        if self.gui.settings.get("TOOLS_ON", True):
+            data["tools"] = self.tool_manager.get_tools_payload("gemini")
 
-        headers = {
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
 
-        logger.info("Отправляю запрос к Gemini.")
-        logger.debug(f"Отправляемые данные (Gemini): {data}")  # Добавляем логирование содержимого
+        # stream имеет смысл, только если нет tools
+        need_stream = bool(self.gui.settings.get("ENABLE_STREAMING", False)
+                           and "tools" not in data)
+
+        logger.info(f"Gemini: POST (stream={need_stream})  depth={_depth}")
         save_combined_messages(data, "SavedMessages/last_gemini_log")
-        response = requests.post(self.api_url, headers=headers, json=data,
-                                 stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
 
-        if response.status_code == 200:
-            if self.gui.settings.get("ENABLE_STREAMING", False):
-                return self._handle_gemini_stream(response,stream_callback)
-            else:
-                response_data = response.json()
-                generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get(
-                    "text", "")
-                logger.info("Answer: \n" + generated_text)
-                return generated_text
-        else:
-            logger.warning(f"{headers}, {self.api_url}")
-            logger.error(f"Ошибка: {response.status_code}, {response.text}")
+        response = requests.post(self.api_url,
+                                 headers=headers,
+                                 json=data,
+                                 stream=need_stream)
+
+        if response.status_code != 200:
+            logger.error(f"Gemini error {response.status_code}: {response.text}")
             return None
+
+        # ─── 4.   Потоковая ветка ─────────────────────────────────────────
+        if need_stream:
+            return self._handle_gemini_stream(response, stream_callback)
+
+        # ─── 5.   Обычный JSON-ответ ──────────────────────────────────────
+        response_json = response.json()
+        candidate = response_json.get("candidates", [{}])[0]
+        first_part = candidate.get("content", {}).get("parts", [{}])[0]
+
+        # 5.1 Проверяем, есть ли functionCall ------------------------------
+        func_call = first_part.get("functionCall")
+        if func_call:
+            name = func_call.get("name")
+            args = func_call.get("args", {})
+            logger.info(f"Gemini вызвал инструмент {name}({args})")
+
+            tool_result = self.tool_manager.run(name, args)
+
+            # добавляем служебные сообщения и делаем follow-up
+            new_messages = copy.deepcopy(combined_messages)
+            new_messages.append(mk_tool_call_msg(name, args))
+            new_messages.append(mk_tool_resp_msg(name, tool_result))
+
+            return self.generate_request_gemini(new_messages,
+                                                stream_callback,
+                                                _depth=_depth + 1)
+
+        # 5.2 Обычный текстовый ответ -------------------------------------
+        generated_text = first_part.get("text", "")
+        logger.info("Gemini ответ получен.")
+        return generated_text or "…"
 
     def generate_request_common(self, combined_messages, stream_callback: callable = None):
         data = {

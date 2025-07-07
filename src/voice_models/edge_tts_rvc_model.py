@@ -183,6 +183,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 return False
 
             self.current_tts_rvc = self.tts_rvc_module(model_path=model_path_to_use, device=device, f0_method=f0_method)
+            self._adjust_sampling_rate_for_amd()
             logger.info("Базовый компонент RVC инициализирован.")
         
         # Обновляем голос EdgeTTS в RVC в любом случае
@@ -318,12 +319,18 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             else:
                 self.current_tts_rvc.set_index_path("")
             
+            self._adjust_sampling_rate_for_amd()
+
             # Обновление модели если необходимо
             if os.path.abspath(self.parent.pth_path) != os.path.abspath(self.current_tts_rvc.current_model):
                 if self.parent.provider in ["NVIDIA"]:
                     self.current_tts_rvc.current_model = self.parent.pth_path
                 elif self.parent.provider in ["AMD"]:
-                    self.current_tts_rvc.current_model = self.parent.pth_path
+                    if hasattr(self.current_tts_rvc, 'set_model'):
+                        self.current_tts_rvc.set_model(self.parent.pth_path)
+                    else:
+                        self.current_tts_rvc.current_model = self.parent.pth_path
+                        logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
             
             # Применение RVC
             output_file_rvc = self.current_tts_rvc.voiceover_file(input_path=filepath, **inference_params)
@@ -337,7 +344,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 output_file_rvc, 
                 stereo_output_file, 
                 atempo=1.0, 
-                pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
+                #pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
             )
 
             if converted_file and os.path.exists(converted_file):
@@ -418,7 +425,13 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 if self.parent.provider in ["NVIDIA"]:
                     self.current_tts_rvc.current_model = self.parent.pth_path
                 elif self.parent.provider in ["AMD"]:
-                    self.current_tts_rvc.current_model = self.parent.pth_path
+                    if hasattr(self.current_tts_rvc, 'set_model'):
+                        self.current_tts_rvc.set_model(self.parent.pth_path)
+                    else:
+                        self.current_tts_rvc.current_model = self.parent.pth_path
+                        logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
+
+            self._adjust_sampling_rate_for_amd()
 
             if not TEST_WITH_DONE_AUDIO:
                 inference_params["tts_rate"] = tts_rate
@@ -430,7 +443,11 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 return None
             
             stereo_output_file = output_file_rvc.replace(".wav", "_stereo.wav")
-            converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, stereo_output_file, atempo=1.0, pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0))
+            converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, 
+                                                               stereo_output_file, 
+                                                               atempo=1.0, 
+                                                               #pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
+                                                               )
 
             if converted_file and os.path.exists(converted_file):
                 final_output_path = stereo_output_file
@@ -476,6 +493,27 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         ssml_output = f'<speak><p>{ssml_content}</p></speak>' if ssml_content else '<speak></speak>'
         return ssml_output, character_rvc_pitch, character_speaker
     
+    def _adjust_sampling_rate_for_amd(self):
+        """
+        Для AMD-ветки:
+          • ShorthairMita  → 48 000 / 512
+          • остальные      → 40 000 / 512
+        Требует, чтобы в TTS_RVC был метод set_sampling_params(sr, hop).
+        """
+        if self.parent.provider != "AMD":
+            return  # NVIDIA / CPU обходятся без костыля
+
+        char = getattr(self.parent, "current_character_name", "Mila")
+        sr, hop = (48000, 512) if char == "ShorthairMita" else (40000, 512)
+
+        if hasattr(self.current_tts_rvc, "set_sampling_params"):
+            self.current_tts_rvc.set_sampling_params(sr, hop)
+            self.current_tts_rvc.sampling_rate = sr
+            logger.info(f"[AMD] SR patched for '{char}': {sr}/{hop}")
+        else:
+            logger.warning("set_sampling_params() not found in TTS_RVC – "
+                           "SR patch skipped.")
+
     async def _voiceover_silero_rvc(self, text, character=None):
         if self.current_silero_model is None or self.current_tts_rvc is None:
             raise Exception("Компоненты Silero или RVC не инициализированы для режима low+.")
@@ -521,6 +559,8 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                     else:
                         self.current_tts_rvc.current_model = self.parent.pth_path
                         logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
+
+            
 
             # Применение RVC через общую функцию
             final_output_path = await self.apply_rvc_to_file(

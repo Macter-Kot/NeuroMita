@@ -1,5 +1,12 @@
 # tools/web_reader.py
-import re, requests, bs4
+"""
+WebPageReaderTool v2
+ • авто-конвертация GitHub-URL в raw.githubusercontent.com
+ • улучшено определение кодировки
+ • добавлена базовая поддержка Markdown
+"""
+import re, requests, bs4, mimetypes
+from urllib.parse import urlparse
 from .base import Tool
 
 _CLEAN_TAGS = ["script", "style", "noscript", "iframe", "header",
@@ -7,14 +14,11 @@ _CLEAN_TAGS = ["script", "style", "noscript", "iframe", "header",
 
 class WebPageReaderTool(Tool):
     name = "web_reader"
-    description = "Скачивает веб-страницу и возвращает очищенный текст."
+    description = "Скачивает веб-страницу (или raw-файл GitHub) и возвращает очищенный текст."
     parameters = {
         "type": "object",
         "properties": {
-            "url": {
-                "type": "string",
-                "description": "Полный URL страницы (http/https)"
-            },
+            "url": {"type": "string", "description": "Полный URL страницы (http/https)"},
             "max_chars": {
                 "type": "integer",
                 "description": "Максимальное число символов (по умолчанию 1500)",
@@ -26,32 +30,56 @@ class WebPageReaderTool(Tool):
         "required": ["url"]
     }
 
-    # --- основной метод -------------------------------------------------
+    # ─────────────────────────────────────────────
     def run(self, url: str, max_chars: int = 1500, **_):
+        url = self._convert_github_raw(url)
+
         try:
             resp = requests.get(url, timeout=10,
                                 headers={"User-Agent": "Mozilla/5.0"})
             resp.raise_for_status()
+            # корректируем кодировку, если requests не угадал
+            if not resp.encoding or resp.encoding.lower() == 'iso-8859-1':
+                resp.encoding = resp.apparent_encoding
         except Exception as e:
             return f"[web_reader] Ошибка при загрузке: {e}"
 
-        soup = bs4.BeautifulSoup(resp.text, "html.parser")
+        content_type = resp.headers.get("Content-Type", "")
+        if "text" not in content_type and "json" not in content_type:
+            return "[web_reader] Неформатируемый бинарный контент."
 
-        # 1) удаляем мусорные теги
+        text = resp.text
+
+        # Markdown-файлы читаем как есть (они уже plain text)
+        if "markdown" in content_type or url.endswith((".md", ".markdown")):
+            cleaned = self._clean_whitespaces(text)
+            return self._truncate(cleaned, max_chars)
+
+        # HTML-страница
+        soup = bs4.BeautifulSoup(text, "html.parser")
         for tg in _CLEAN_TAGS:
             for tag in soup.find_all(tg):
                 tag.decompose()
+        pure_text = self._clean_whitespaces(soup.get_text(" ", strip=True))
 
-        # 2) получаем чистый текст
-        text = soup.get_text(" ", strip=True)
-        # убираем множественные пробелы/переводы строк
-        text = re.sub(r"\s{2,}", " ", text)
-
-        if not text:
+        if not pure_text:
             return "[web_reader] Ничего не удалось извлечь."
 
-        # 3) обрезаем
-        if len(text) > max_chars:
-            text = text[:max_chars] + " …"
+        return self._truncate(pure_text, max_chars)
 
-        return text
+    # ─────────────────────────────────────────────
+    # utils
+    def _truncate(self, txt: str, max_len: int) -> str:
+        return txt if len(txt) <= max_len else txt[:max_len] + " …"
+
+    def _clean_whitespaces(self, s: str) -> str:
+        return re.sub(r"\s{2,}", " ", s).strip()
+
+    # если это github.com/.../blob/... → переведём в raw.githubusercontent.com/...
+    def _convert_github_raw(self, url: str) -> str:
+        if "github.com" in url and "/blob/" in url:
+            m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/blob/(.+)", url)
+            if m:
+                owner, repo, path = m.groups()
+                return f"https://raw.githubusercontent.com/{owner}/{repo}/{path}"
+        return url

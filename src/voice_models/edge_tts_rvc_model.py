@@ -273,6 +273,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                                is_half: bool = True,
                                f0method: Optional[str] = None,
                                use_index_file: bool = True,
+                               volume: str = "1.0",
                                original_model_id: Optional[str] = None) -> Optional[str]:
         """
         Применяет RVC к существующему аудиофайлу.
@@ -344,7 +345,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 output_file_rvc, 
                 stereo_output_file, 
                 atempo=1.0, 
-                #pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
+                volume=volume,
             )
 
             if converted_file and os.path.exists(converted_file):
@@ -408,6 +409,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             use_index_file = settings.get("use_index_file", True)
             f0method_override = settings.get("f0method", None)
             tts_rate = int(settings.get("tts_rate", 0)) if config_id != "medium+low" else 0
+            vol = str(settings.get("volume", "1.0")) 
 
             if use_index_file and self.parent.index_path and os.path.exists(self.parent.index_path):
                 self.current_tts_rvc.set_index_path(self.parent.index_path)
@@ -446,6 +448,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, 
                                                                stereo_output_file, 
                                                                atempo=1.0, 
+                                                               volume=vol,
                                                                #pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
                                                                )
 
@@ -478,7 +481,22 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         if specific_params := current_lang_params.get(character_short_name):
             character_rvc_pitch, character_speaker = specific_params
         
-        text = escape(re.sub(r'<[^>]*>', '', text)).replace("Mita", "M+ita").replace("Mila", "M+ila").replace("mita", "m+ita").replace("mila", "m+ila")
+        text = escape(re.sub(r'<[^>]*>', '', text))
+
+        pattern = re.compile(
+            r'\b'              # начало слова
+            r'([MmМм])'        # первая буква M / m / М / м  (группа 1)
+            r'([IiИи])'        # вторая буква i / и           (группа 2)
+            r'([A-Za-zА-Яа-я]{2,3})'  # ещё 2-3 буквы          (группа 3)
+            r'\b',             # конец слова
+            re.IGNORECASE
+        )
+
+        def put_plus(match: re.Match) -> str:
+            return f'{match.group(1)}+{match.group(2)}{match.group(3)}'
+    
+        text = pattern.sub(put_plus, text)
+
         parts = re.split(r'([.!?]+[^A-Za-zА-Яа-я0-9_]*)(\s+)', text.strip())
         processed_text = ""
         i = 0
@@ -560,7 +578,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                         self.current_tts_rvc.current_model = self.parent.pth_path
                         logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
 
-            
+            vol = str(settings.get("volume", "1.0")) 
 
             # Применение RVC через общую функцию
             final_output_path = await self.apply_rvc_to_file(
@@ -572,7 +590,8 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 rms_mix_rate=float(settings.get("silero_rvc_rms_mix_rate", 0.5)),
                 is_half=settings.get("silero_rvc_is_half", "True").lower() == "true" if self.parent.provider == "NVIDIA" else True,
                 f0method=settings.get("silero_rvc_f0method", None),
-                use_index_file=settings.get("use_index_file", True)
+                use_index_file=settings.get("use_index_file", True),
+                volume=vol
             )
             
             if hasattr(self.parent.parent, 'ConnectedToGame') and self.parent.parent.ConnectedToGame:

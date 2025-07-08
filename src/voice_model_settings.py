@@ -116,6 +116,8 @@ setting_descriptions = {
     "verbose": "Включить вывод подробной отладочной информации в консоль для диагностики проблем.",
     "cuda_toolkit": "Наличие установленного CUDA Toolkit от NVIDIA. Необходимо для некоторых функций (например, torch.compile) и работы с GPU NVIDIA.",
     "windows_sdk": "Наличие установленного Windows SDK. Может требоваться для компиляции некоторых зависимостей Python.",
+
+    "volume": "Громкость (volume) на выходе TTS-части (до RVC, если он есть). 1.0 – оригинальная громкость."
 }
 
 setting_descriptions_en = {
@@ -186,6 +188,8 @@ setting_descriptions_en = {
     "verbose": "Enable detailed debug information output to the console for diagnosing problems.",
     "cuda_toolkit": "Presence of installed NVIDIA CUDA Toolkit. Required for some functions (e.g., torch.compile) and working with NVIDIA GPUs.",
     "windows_sdk": "Presence of installed Windows SDK. May be required for compiling some Python dependencies.",
+
+    "volume": "Output loudness (volume). 1.0 – original volume. "
 }
 
 default_description_text = "Наведите курсор на элемент интерфейса для получения описания."
@@ -511,6 +515,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "tts_rate", "label": _("Скорость TTS (%)", "TTS Speed (%)"), "type": "entry", "options": {"default": "0"}},
                     {"key": "filter_radius", "label": _("Радиус фильтра F0 (RVC)", "F0 Filter Radius (RVC)"), "type": "entry", "options": {"default": "3"}},
                     {"key": "rms_mix_rate", "label": _("Смешивание RMS (RVC)", "RMS Mixing (RVC)"), "type": "entry", "options": {"default": "0.5"}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                 ]
             },
             {
@@ -530,7 +535,8 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "silero_device", "label": _("Устройство Silero", "Silero Device"), "type": "combobox", "options": {"values_nvidia": ["cuda", "cpu"], "default_nvidia": "cuda", "values_amd": ["cpu"], "default_amd": "cpu", "values_other": ["cpu"], "default_other": "cpu"}},
                     {"key": "silero_sample_rate", "label": _("Частота Silero", "Silero Sample Rate"), "type": "combobox", "options": {"values": ["48000", "24000", "16000"], "default": "48000"}},
                     {"key": "silero_put_accent", "label": _("Акценты Silero", "Silero Accents"), "type": "checkbutton", "options": {"default": True}},
-                    {"key": "silero_put_yo", "label": _("Буква Ё Silero", "Silero Letter Yo"), "type": "checkbutton", "options": {"default": True}}
+                    {"key": "silero_put_yo", "label": _("Буква Ё Silero", "Silero Letter Yo"), "type": "checkbutton", "options": {"default": True}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                 ]
             },
             {
@@ -545,6 +551,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "max_new_tokens", "label": _("Макс. токены", "Max Tokens"), "type": "entry", "options": {"default": "1024"}},
                     {"key": "compile_model", "label": _("Компиляция модели", "Compile Model"), "type": "combobox", "options": {"values": ["False", "True"], "default": "False"}, "locked": True},
                     {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                 ]
             },
             {
@@ -560,6 +567,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "max_new_tokens", "label": _("Макс. токены", "Max Tokens"), "type": "entry", "options": {"default": "1024"}},
                     {"key": "compile_model", "label": _("Компиляция модели", "Compile Model"), "type": "combobox", "options": {"values": ["False", "True"], "default": "True"}, "locked": True},
                     {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                  ]
             },
             {
@@ -583,6 +591,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "fsprvc_protect", "label": _("[RVC] Защита согласных", "[RVC] Consonant Protection"), "type": "entry", "options": {"default": "0.33"}},
                     {"key": "fsprvc_filter_radius", "label": _("[RVC] Радиус фильтра F0", "[RVC] F0 Filter Radius"), "type": "entry", "options": {"default": "3"}},
                     {"key": "fsprvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                 ]
             },
             {

@@ -730,6 +730,8 @@ class FishSpeechModel(IVoiceModel):
             seed_processed = int(settings.get(seed_key, 0))
             if seed_processed <= 0 or seed_processed > 2**31 - 1: seed_processed = 42
 
+            vol = str(settings.get("volume", "1.0"))
+
             sample_rate, audio_data = self.current_fish_speech(
                 text=text,
                 reference_audio=reference_audio_path,
@@ -755,7 +757,7 @@ class FishSpeechModel(IVoiceModel):
                 return None
 
             stereo_output_path = raw_output_path.replace("_raw", "_stereo")
-            converted_file = self.parent.convert_wav_to_stereo(raw_output_path, stereo_output_path, volume="1.5")
+            converted_file = self.parent.convert_wav_to_stereo(raw_output_path, stereo_output_path, volume=str(0.5+int(vol)))
             
             processed_output_path = stereo_output_path if converted_file and os.path.exists(converted_file) else raw_output_path
             if processed_output_path == stereo_output_path:

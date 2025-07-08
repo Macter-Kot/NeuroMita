@@ -339,6 +339,7 @@ class F5TTSModel(IVoiceModel):
 
             
             seed_processed = int(settings.get(seed_key, 0))
+            vol = str(settings.get("volume", "1.0"))
             if seed_processed <= 0 or seed_processed > 2**31 - 1: seed_processed = 42
             
             await asyncio.to_thread(
@@ -357,7 +358,7 @@ class F5TTSModel(IVoiceModel):
                 return None
             
             stereo_output_path = output_path.replace("_raw", "_stereo")
-            converted_file = self.parent.convert_wav_to_stereo(output_path, stereo_output_path)
+            converted_file = self.parent.convert_wav_to_stereo(output_path, stereo_output_path, volume=vol)
 
             processed_output_path = stereo_output_path if converted_file and os.path.exists(converted_file) else output_path
             if processed_output_path == stereo_output_path:

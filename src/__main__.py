@@ -69,7 +69,7 @@ import onnxruntime
 from PyQt6.QtWidgets import QApplication
 
 
-from gui import ChatGUI
+
 config_path = os.path.join(libs_dir, "fairseq", "dataclass", "configs.py")
 if os.path.exists(config_path):
     
@@ -222,18 +222,53 @@ import threading
 
 
 
+from gui import ChatGUI
+from controller import ChatController
+
 def main():
-    app = QApplication(sys.argv)
+    logger.info("Функция main() запущена")
+    try:
+        app = QApplication(sys.argv)
+        logger.info("QApplication создан")
 
-    if sys.platform == 'win32':
-        import ctypes
-        # Желательно заменить myappid на что-то уникальное для вашего приложения
-        myappid = 'mycompany.myproduct.subproduct.version' 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        if sys.platform == 'win32':
+            import ctypes
+            myappid = 'mycompany.myproduct.subproduct.version' 
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-    main_win = ChatGUI()
-    main_win.show()
-    sys.exit(app.exec())
+        # Создаем пустой объект для контроллера
+        logger.info("Создаю ChatController...")
+        controller = ChatController(None)
+        logger.info("ChatController создан")
+        
+        logger.info("Создаю ChatGUI...")
+        main_win = ChatGUI(controller)
+        logger.info("ChatGUI создан")
+        
+        # Обновляем ссылку на реальный view в контроллере
+        controller.view = main_win
+        
+        # Подключаем сигналы после создания view
+        controller.connect_view_signals()
+        
+        # Обновляем ссылки на элементы UI
+        controller.voice_language_var = main_win.voice_language_var
+        controller.local_voice_combobox = main_win.local_voice_combobox
+        controller.debug_window = main_win.debug_window
+        controller.mic_combobox = main_win.mic_combobox
+        controller.chat_window = main_win.chat_window
+        controller.token_count_label = main_win.token_count_label
+        controller.user_entry = main_win.user_entry
+        controller.attachment_label = main_win.attachment_label
+        controller.attach_button = main_win.attach_button
+        controller.send_screen_button = main_win.send_screen_button
+        
+        logger.info("Показываю главное окно...")
+        main_win.show()
+        logger.info("Запускаю app.exec()...")
+        sys.exit(app.exec())
+    except Exception as e:
+        logger.error(f"Ошибка в main(): {e}", exc_info=True)
+        raise
 
-if __name__ == "__main__":
-    main()
+main()

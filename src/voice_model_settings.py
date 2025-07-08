@@ -461,6 +461,20 @@ class VoiceModelSettingsWindow(QWidget):
         self.detected_cuda_devices = []
         self.gpu_name = None
 
+        # Флаг для блокировки установки/удаления
+        self.installation_in_progress = False
+        
+        # Компоненты моделей - что требует каждая модель
+        self.model_components = {
+            "low": ["tts_with_rvc"],
+            "low+": ["tts_with_rvc"],  # silero включен в tts_with_rvc
+            "medium": ["fish_speech_lib"],
+            "medium+": ["fish_speech_lib", "triton"],
+            "medium+low": ["fish_speech_lib", "triton", "tts_with_rvc"],
+            "high": ["f5_tts"],
+            "high+low": ["f5_tts", "tts_with_rvc"]
+        }
+
         if self.detected_gpu_vendor == "NVIDIA":
             self.detected_cuda_devices = get_cuda_devices()
             if self.detected_cuda_devices:
@@ -498,6 +512,7 @@ class VoiceModelSettingsWindow(QWidget):
 
         QTimer.singleShot(100, self._update_settings_scrollregion)
         QTimer.singleShot(100, self._update_models_scrollregion)
+
 
     def get_default_model_structure(self):
         return [
@@ -605,7 +620,8 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "speed", "label": _("Скорость речи", "Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
                     {"key": "nfe_step", "label": _("Шаги диффузии", "Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
                     {"key": "remove_silence", "label": _("Удалять тишину", "Remove Silence"), "type": "checkbutton", "options": {"default": True}},
-                    {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}}
+                    {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                 ]
             },
             {
@@ -629,6 +645,7 @@ class VoiceModelSettingsWindow(QWidget):
                     {"key": "f5rvc_is_half", "label": _("[RVC] Half-precision", "[RVC] Half-precision"), "type": "combobox", "options": {"values": ["True", "False"], "default": "True"}},
                     {"key": "f5rvc_f0method", "label": _("[RVC] Метод F0", "[RVC] F0 Method"), "type": "combobox", "options": {"values": ["pm", "rmvpe", "crepe", "harvest", "fcpe", "dio"], "default": "rmvpe"}},
                     {"key": "f5rvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}},
+                    {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
                 ]
             }
         ]
@@ -1334,31 +1351,82 @@ class VoiceModelSettingsWindow(QWidget):
     #   ЗАПУСК УСТАНОВКИ  (однопоточный, без statusBar)
     # =========================================================
     def start_download(self, model_id, button_widget):
-        # 1)  Кнопка
+        """Start download for model and all its dependencies"""
+        
+        # Блокируем все кнопки во время установки
+        self.installation_in_progress = True
+        self._disable_all_action_buttons()
+        
+        # Определяем какие компоненты уже установлены
+        installed_components = set()
+        if self.check_installed_func:
+            # Проверяем каждый компонент
+            for component in ["tts_with_rvc", "fish_speech_lib", "triton", "f5_tts"]:
+                if self.check_installed_func(component):
+                    installed_components.add(component)
+        
+        # Определяем компоненты, которые установит эта модель
+        model_new_components = set(self.model_components.get(model_id, []))
+        
+        # Определяем все модели, которые нужно пометить как установленные после установки
+        models_to_mark_installed = self._get_installable_models(model_id, installed_components, model_new_components)
+        
+        # Обновляем UI для всех затронутых моделей
+        for mid in models_to_mark_installed:
+            btn = self.model_action_buttons.get(mid)
+            if btn and mid not in self.installed_models:
+                btn.setText(_("Ожидание...", "Waiting..."))
+                btn.setEnabled(False)
+        
+        # Специально для основной модели
         if button_widget:
             button_widget.setText(_("Загрузка...", "Downloading..."))
-            button_widget.setEnabled(False)
-
-        # 2)  Запускаем установку — окно создастся внутри install()
+        
+        # Запускаем установку
         success = False
         try:
             success = self.local_voice.download_model(model_id)
         except Exception:
             logger.exception("download_model exception")
-        # 3)  Обновляем UI
-        self.handle_download_result(success, model_id)
+        
+        # Обновляем UI для всех установленных моделей
+        self.handle_download_result(success, model_id, models_to_mark_installed)
+
+    def _get_installable_models(self, model_id, installed_components, new_components):
+        """Get list of models that should be marked as installed after installing model_id"""
+        # Все компоненты после установки
+        all_components = installed_components | new_components
+        
+        # Находим все модели, которые можно пометить как установленные
+        installable_models = [model_id]
+        
+        for mid, required_components in self.model_components.items():
+            if mid != model_id and mid not in self.installed_models:
+                # Проверяем, все ли компоненты этой модели будут доступны
+                if all(comp in all_components for comp in required_components):
+                    installable_models.append(mid)
+        
+        return installable_models
 
     def start_uninstall(self, model_id):
+        """Start uninstallation with button locking"""
+        
+        # Блокируем все кнопки во время удаления
+        self.installation_in_progress = True
+        self._disable_all_action_buttons()
+        
         button_widget = self.model_action_buttons.get(model_id)
         if button_widget:
             button_widget.setText(_("Удаление...", "Uninstalling..."))
             button_widget.setEnabled(False)
 
         if not self.local_voice:
-            logger.error(f"{_('Неизвестный model_id для удаления:', 'Unknown model_id for uninstallation:')} {model_id}")
+            logger.error(f"{_('LocalVoice не инициализирован для удаления:', 'LocalVoice not initialized for uninstallation:')} {model_id}")
             if button_widget:
                 button_widget.setText(_("Ошибка", "Error"))
                 button_widget.setEnabled(True)
+            self.installation_in_progress = False
+            self._enable_all_action_buttons()
             return
 
         target_uninstall_func = None
@@ -1368,13 +1436,15 @@ class VoiceModelSettingsWindow(QWidget):
             target_uninstall_func = self.local_voice.uninstall_fish_speech
         elif model_id in ["medium+", "medium+low"]:
             target_uninstall_func = self.local_voice.uninstall_triton_component
-        elif model_id == ["high", "high+low"]:
+        elif model_id in ["high", "high+low"]:
             target_uninstall_func = self.local_voice.uninstall_f5_tts
         else:
             logger.error(f"Неизвестный model_id для удаления: {model_id}")
             if button_widget:
                 button_widget.setText(_("Ошибка", "Error"))
                 button_widget.setEnabled(True)
+            self.installation_in_progress = False
+            self._enable_all_action_buttons()
             return
 
         if not hasattr(self.local_voice, target_uninstall_func.__name__):
@@ -1382,6 +1452,8 @@ class VoiceModelSettingsWindow(QWidget):
             if button_widget:
                 button_widget.setText(_("Ошибка", "Error"))
                 button_widget.setEnabled(True)
+            self.installation_in_progress = False
+            self._enable_all_action_buttons()
             return
 
         def uninstall_thread_func():
@@ -1397,38 +1469,66 @@ class VoiceModelSettingsWindow(QWidget):
         uninstall_thread = threading.Thread(target=uninstall_thread_func, daemon=True)
         uninstall_thread.start()
 
-    def handle_download_result(self, success, model_id):
-        button_widget = self.model_action_buttons.get(model_id)
+    def handle_download_result(self, success, model_id, models_to_mark_installed):
+        """Handle download result for all related models"""
+        
         if success:
-            self.installed_models.add(model_id)
-            logger.info(f"{_('Модель', 'Model')} {model_id} {_('установлена. Перезагрузка и адаптация настроек...', 'installed. Reloading and adapting settings...')}")
+            # Добавляем все связанные модели в установленные
+            for mid in models_to_mark_installed:
+                self.installed_models.add(mid)
+                button_widget = self.model_action_buttons.get(mid)
+                if button_widget:
+                    button_widget.setText(_("Установлено", "Installed"))
+                    button_widget.setEnabled(False)
+            
+            logger.info(f"{_('Модели', 'Models')} {models_to_mark_installed} {_('помечены как установленные. Перезагрузка настроек...', 'marked as installed. Reloading settings...')}")
             self.load_settings()
             logger.info(_("Настройки перезагружены.", "Settings reloaded."))
-
-            if button_widget:
-                button_widget.setText(_("Установлено", "Installed"))
-                button_widget.setEnabled(False)
-
+            
+            # Обновляем отображение настроек для всех установленных моделей
             self.display_installed_models_settings()
-            self.save_installed_models_list() 
-
+            self.save_installed_models_list()
+            
             if self.on_save_callback:
-                 callback_data = {
+                callback_data = {
                     "installed_models": list(self.installed_models),
-                    "models_data": self.local_voice_models 
-                 }
-                 self.on_save_callback(callback_data)
-            logger.info(f"{_('Обработка установки', 'Handling installation of')} {model_id} {_('завершена.', 'completed.')}")
+                    "models_data": self.local_voice_models
+                }
+                self.on_save_callback(callback_data)
+            
+            logger.info(f"{_('Обработка установки', 'Handling installation of')} {model_id} {_('и связанных моделей завершена.', 'and related models completed.')}")
         else:
             logger.info(f"{_('Ошибка установки модели', 'Error installing model')} {model_id}.")
-            self._create_model_panels()
-            button_widget = self.model_action_buttons.get(model_id)
-            if button_widget:
-                button_widget.setText(_("Ошибка", "Error"))
-                button_widget.setEnabled(True) 
+            # Восстанавливаем UI для всех моделей
+            for mid in models_to_mark_installed:
+                if mid not in self.installed_models:
+                    button_widget = self.model_action_buttons.get(mid)
+                    if button_widget:
+                        # Восстанавливаем правильный текст кнопки
+                        model_data = next((m for m in self.local_voice_models if m["id"] == mid), None)
+                        if model_data:
+                            install_text = _("Установить", "Install")
+                            can_install = True
+                            
+                            supported_vendors = model_data.get('gpu_vendor', [])
+                            allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
+                            is_amd_user = self.detected_gpu_vendor == "AMD"
+                            is_amd_supported = "AMD" in supported_vendors
+                            is_gpu_unsupported_amd = is_amd_user and not is_amd_supported
+                            
+                            if is_gpu_unsupported_amd and not allow_unsupported_gpu:
+                                can_install = False
+                                install_text = _("Несовместимо с AMD", "Incompatible with AMD")
+                            
+                            button_widget.setText(install_text)
+                            button_widget.setEnabled(can_install)
+        
+        # Разблокируем все кнопки
+        self.installation_in_progress = False
+        self._enable_all_action_buttons()
 
     def handle_uninstall_result(self, success, model_id):
-        """Update UI after uninstallation"""
+        """Update UI after uninstallation with button unlocking"""
         button_widget = self.model_action_buttons.get(model_id)
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
 
@@ -1473,22 +1573,26 @@ class VoiceModelSettingsWindow(QWidget):
                     section.deleteLater()
 
             if not self.installed_models:
-                 self.display_installed_models_settings() 
+                self.display_installed_models_settings()
 
-            self.save_installed_models_list() 
+            self.save_installed_models_list()
             if self.on_save_callback:
-                 callback_data = {"installed_models": list(self.installed_models), "models_data": self.local_voice_models}
-                 self.on_save_callback(callback_data)
-            self._update_settings_scrollregion() 
+                callback_data = {"installed_models": list(self.installed_models), "models_data": self.local_voice_models}
+                self.on_save_callback(callback_data)
+            self._update_settings_scrollregion()
 
         else:
             logger.error(f"{_('Ошибка при удалении модели', 'Error uninstalling model')} {model_id}.")
             QMessageBox.critical(self, _("Ошибка Удаления", "Uninstallation Error"), 
-                               _(f"Не удалось удалить модель '{model_id}'.\nСм. лог для подробностей.", 
-                                 f"Could not uninstall model '{model_id}'.\nSee log for details."))
+                            _(f"Не удалось удалить модель '{model_id}'.\nСм. лог для подробностей.", 
+                                f"Could not uninstall model '{model_id}'.\nSee log for details."))
             if button_widget:
                 button_widget.setText(_("Удалить", "Uninstall"))
                 button_widget.setEnabled(True)
+        
+        # Разблокируем все кнопки
+        self.installation_in_progress = False
+        self._enable_all_action_buttons()
 
     def save_installed_models_list(self):
         try:
@@ -1497,6 +1601,60 @@ class VoiceModelSettingsWindow(QWidget):
                     f.write(f"{model_id}\n")
         except Exception as e:
             logger.info(f"{_('Ошибка сохранения списка установленных моделей в', 'Error saving list of installed models to')} {self.installed_models_file}: {e}")
+
+    def _get_models_with_dependencies(self, model_id):
+        """Get list of models including all dependencies"""
+        models_to_install = [model_id]
+        dependencies = self.model_dependencies.get(model_id, [])
+        
+        for dep in dependencies:
+            if dep not in models_to_install:
+                models_to_install.append(dep)
+        
+        return models_to_install
+
+    def _disable_all_action_buttons(self):
+        """Disable all install/uninstall buttons"""
+        for model_id, button in self.model_action_buttons.items():
+            if button:
+                button.setEnabled(False)
+                # Сохраняем текущий текст кнопки
+                if not hasattr(button, '_original_text'):
+                    button._original_text = button.text()
+
+
+    def _enable_all_action_buttons(self):
+        """Enable all install/uninstall buttons based on their state"""
+        if self.installation_in_progress:
+            return
+            
+        for model_id, button in self.model_action_buttons.items():
+            if button:
+                model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
+                if not model_data:
+                    continue
+                    
+                if model_id in self.installed_models:
+                    # Кнопка удаления всегда активна (когда нет процесса установки)
+                    button.setEnabled(True)
+                else:
+                    # Кнопка установки
+                    can_install = True
+                    supported_vendors = model_data.get('gpu_vendor', [])
+                    allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
+                    is_amd_user = self.detected_gpu_vendor == "AMD"
+                    is_amd_supported = "AMD" in supported_vendors
+                    is_gpu_unsupported_amd = is_amd_user and not is_amd_supported
+                    
+                    if is_gpu_unsupported_amd and not allow_unsupported_gpu:
+                        can_install = False
+                        
+                    button.setEnabled(can_install)
+                
+                # Восстанавливаем оригинальный текст, если он был сохранен
+                if hasattr(button, '_original_text') and button.text() in [_("Ожидание...", "Waiting..."), _("Загрузка...", "Downloading..."), _("Удаление...", "Uninstalling...")]:
+                    button.setText(button._original_text)
+                    delattr(button, '_original_text')
 
     def show_setting_description(self, key):
         if self.description_label_widget:

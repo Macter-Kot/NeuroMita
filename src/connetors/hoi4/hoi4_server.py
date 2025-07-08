@@ -10,7 +10,8 @@ LOG_PATH = pathlib.Path(
     )
 )
 
-LINE_PREFIX = "MITA_OUT:"         # такой же как в моде
+LINE_PREFIX = ("MITA_OUTpp 50"
+               "ё")         # такой же как в моде
 GAME_WINDOW_TITLE = "Hearts of Iron IV"
 
 # -----------------------------------------------------------------------------
@@ -52,11 +53,12 @@ class LogTailer(threading.Thread):
                 f, inode = self.reopen_if_rotated(f, inode)
                 continue
 
-            print(f"Найдена новая линия {line}")
             if self.prefix in line:
+                print(f"Найден новый вызов! {line}")
                 payload = line.split(self.prefix, 1)[1].strip()
                 try:
-                    data = json.loads(payload)
+                    #data = json.loads(payload)
+                    data = {"type":"heartbeat"}
                     self.out_queue.put(data)  # кидаем в очередь «события от игры»
                     print("[Tailer] >", data)
                 except json.JSONDecodeError:

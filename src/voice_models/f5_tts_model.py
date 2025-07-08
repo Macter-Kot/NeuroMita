@@ -147,6 +147,12 @@ class F5TTSModel(IVoiceModel):
                 description=_("Установка f5-tts...", "Installing f5-tts...")
             ):
                 return False
+            
+            if not installer.install_package(
+                    "librosa==0.9.1",
+                    description=_("Установка дополнительной библиотеки librosa...", "Installing additional library librosa...")
+                ):
+                    return False
 
             update_progress(50)
 

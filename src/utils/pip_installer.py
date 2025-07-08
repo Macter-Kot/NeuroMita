@@ -187,7 +187,7 @@ class PipInstaller:
         if not packages:
             self.update_log("Список пакетов для удаления пуст.")
             return True
-        cmd = [self.script_path, "-m", "uv", "pip", "uninstall", "--yes"] + packages
+        cmd = [self.script_path, "-m", "uv", "pip", "uninstall", "--target", self.libs_path] + packages
         return self._run_pip_process(cmd, description)
 
     def _ensure_libs_path(self):

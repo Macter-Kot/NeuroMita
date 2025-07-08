@@ -203,34 +203,7 @@ except ImportError:
     def get_cuda_devices(): return []
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer, Qt
-class _InstallWorker(QObject):
-    progress = pyqtSignal(int)
-    status   = pyqtSignal(str)
-    log      = pyqtSignal(str)
-    finished = pyqtSignal(bool)
 
-    def __init__(self, local_voice, model_id):
-        super().__init__()
-        self.local_voice = local_voice
-        self.model_id    = model_id
-
-    # --------------------------------------------------------
-    def run(self):
-        self.log.emit("[DEBUG] worker.run() стартовал")
-        try:
-            ok = self.local_voice.download_model(
-                self.model_id,
-                progress_cb=self.progress.emit,
-                status_cb=self.status.emit,
-                log_cb=self.log.emit
-            )
-        except Exception as e:
-            import traceback, io
-            buf = io.StringIO()
-            traceback.print_exc(file=buf)
-            self.log.emit("[EXCEPTION]\n" + buf.getvalue())
-            ok = False
-        self.finished.emit(ok)
 
 class VoiceCollapsibleSection(QFrame):
     def __init__(self, parent, title, collapsed=False, update_scrollregion_func=None, clear_description_func=None):
@@ -1409,65 +1382,39 @@ class VoiceModelSettingsWindow(QWidget):
         return installable_models
 
     def start_uninstall(self, model_id):
-        """Start uninstallation with button locking"""
-        
-        # Блокируем все кнопки во время удаления
+        """Uninstall model in the same (GUI) thread – как install."""
+
         self.installation_in_progress = True
         self._disable_all_action_buttons()
-        
-        button_widget = self.model_action_buttons.get(model_id)
-        if button_widget:
-            button_widget.setText(_("Удаление...", "Uninstalling..."))
-            button_widget.setEnabled(False)
 
-        if not self.local_voice:
-            logger.error(f"{_('LocalVoice не инициализирован для удаления:', 'LocalVoice not initialized for uninstallation:')} {model_id}")
-            if button_widget:
-                button_widget.setText(_("Ошибка", "Error"))
-                button_widget.setEnabled(True)
-            self.installation_in_progress = False
-            self._enable_all_action_buttons()
-            return
+        btn = self.model_action_buttons.get(model_id)
+        if btn:
+            btn.setText(_("Удаление...", "Uninstalling..."))
+            btn.setEnabled(False)
 
-        target_uninstall_func = None
-        if model_id in ["low", "low+"]:
-            target_uninstall_func = self.local_voice.uninstall_edge_tts_rvc
-        elif model_id == "medium":
-            target_uninstall_func = self.local_voice.uninstall_fish_speech
-        elif model_id in ["medium+", "medium+low"]:
-            target_uninstall_func = self.local_voice.uninstall_triton_component
-        elif model_id in ["high", "high+low"]:
-            target_uninstall_func = self.local_voice.uninstall_f5_tts
-        else:
-            logger.error(f"Неизвестный model_id для удаления: {model_id}")
-            if button_widget:
-                button_widget.setText(_("Ошибка", "Error"))
-                button_widget.setEnabled(True)
-            self.installation_in_progress = False
-            self._enable_all_action_buttons()
-            return
-
-        if not hasattr(self.local_voice, target_uninstall_func.__name__):
-            logger.error(f"{_('Метод', 'Method')} {target_uninstall_func.__name__} {_('не найден в LocalVoice.', 'not found in LocalVoice.')}")
-            if button_widget:
-                button_widget.setText(_("Ошибка", "Error"))
-                button_widget.setEnabled(True)
-            self.installation_in_progress = False
-            self._enable_all_action_buttons()
-            return
-
-        def uninstall_thread_func():
+        # ---------------- выбираем правильную функцию ----------------
+        try:
+            if   model_id in ("low", "low+"):
+                success = self.local_voice.uninstall_edge_tts_rvc()
+            elif model_id == "medium":
+                success = self.local_voice.uninstall_fish_speech()
+            elif model_id in ("medium+", "medium+low"):
+                success = self.local_voice.uninstall_triton_component()
+            elif model_id in ("high", "high+low"):
+                success = self.local_voice.uninstall_f5_tts()
+            else:
+                logger.error(f"Unknown model_id for uninstall: {model_id}")
+                success = False
+        except Exception as e:
+            logger.error(f"Uninstall exception for {model_id}: {e}", exc_info=True)
             success = False
-            try:
-                success = target_uninstall_func()
-            except Exception as e:
-                logger.error(f"{_('Ошибка в потоке удаления для', 'Error in uninstall thread for')} {model_id}: {e}")
-                logger.error(traceback.format_exc())
-            finally:
-                QTimer.singleShot(0, lambda: self.handle_uninstall_result(success, model_id))
 
-        uninstall_thread = threading.Thread(target=uninstall_thread_func, daemon=True)
-        uninstall_thread.start()
+        # ---------------- обновляем интерфейс ----------------
+        self.handle_uninstall_result(success, model_id)
+
+        # разблокировка кнопок
+        self.installation_in_progress = False
+        self._enable_all_action_buttons()
 
     def handle_download_result(self, success, model_id, models_to_mark_installed):
         """Handle download result for all related models"""

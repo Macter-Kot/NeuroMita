@@ -12,14 +12,14 @@ import gui_templates
 from settings_manager import CollapsibleSection
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QPropertyAnimation
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QPropertyAnimation, QBuffer, QIODevice, QEvent 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QScrollArea, QFrame, QSplitter,
     QMessageBox, QComboBox, QCheckBox, QDialog, QProgressBar,
     QTextBrowser, QLineEdit, QFileDialog, QStyle, QGraphicsOpacityEffect
 )
-from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon, QPalette
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon, QPalette, QKeyEvent
 import qtawesome as qta
 
 from ui import chat_area, status_indicators, debug_area, news_area
@@ -180,6 +180,12 @@ class ChatGUI(QMainWindow):
         self.attachment_label.setStyleSheet("font-size: 10px; color: #888888; margin-left: 5px;")
         button_bar_layout.addWidget(self.attachment_label)
 
+        self.clear_attach_btn = QPushButton(qta.icon('fa6s.xmark', color='white'), '')
+        self.clear_attach_btn.setFixedHeight(28)
+        self.clear_attach_btn.clicked.connect(self._clear_staged_images)
+        self.clear_attach_btn.setVisible(False)
+        button_bar_layout.addWidget(self.clear_attach_btn)
+
         button_bar_layout.addStretch()
 
         input_layout.addLayout(button_bar_layout)
@@ -261,16 +267,27 @@ class ChatGUI(QMainWindow):
         self.scroll_to_bottom_btn.move(QPoint(x, y))
 
     def eventFilter(self, obj, event):
-        from PyQt6.QtCore import QEvent
         if obj == self.chat_window.viewport() and event.type() in (
                 QEvent.Type.Resize, QEvent.Type.Paint):
             if hasattr(self, 'scroll_to_bottom_btn'):
                 self._reposition_scroll_button()
+
         if obj == self.user_entry and event.type() == QEvent.Type.KeyPress:
-            if event.key() == Qt.Key.Key_Return and not (
-                    event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            if not isinstance(event, QKeyEvent) and not hasattr(event, "key"):
+                return super().eventFilter(obj, event)
+
+            key = event.key()
+            modifiers = event.modifiers()
+
+            if key == Qt.Key.Key_V and modifiers & Qt.KeyboardModifier.ControlModifier:
+                if self._clipboard_image_to_controller():
+                    return True
+
+            if key == Qt.Key.Key_Return and not (
+                    modifiers & Qt.KeyboardModifier.ShiftModifier):
                 self.send_message()
                 return True
+
         return super().eventFilter(obj, event)
 
     def setup_right_frame(self, parent):
@@ -795,6 +812,7 @@ class ChatGUI(QMainWindow):
         if self.controller.staged_images:
             self.controller.staged_images.clear()
             self.attachment_label.setText("")
+            self.clear_attach_btn.setVisible(False)
             logger.info("Список прикрепленных изображений очищен.")
 
     def load_more_history(self):
@@ -1386,6 +1404,7 @@ class ChatGUI(QMainWindow):
             self._insert_formatted_text(cursor, f"{MitaName}: ", QColor("hot pink"), bold=True)
             cursor.insertText(f"{response}\n\n")
 
+    # region изображения
     def attach_images(self):
         file_paths, t = QFileDialog.getOpenFileNames(
             self,
@@ -1401,6 +1420,8 @@ class ChatGUI(QMainWindow):
                     count=len(self.controller.staged_images))
             )
             logger.info(f"Прикреплены изображения: {self.controller.staged_images}")
+        
+        self.clear_attach_btn.setVisible(True)
 
     def send_screen_capture(self):
         logger.info("Запрошена отправка скриншота.")
@@ -1424,6 +1445,44 @@ class ChatGUI(QMainWindow):
                 self.controller.async_send_message(user_input="", system_input="", image_data=frames),
                 self.controller.loop
             )
+
+    def _clear_staged_images(self):
+        self.controller.clear_staged_images()
+        self.attachment_label.setText("")
+        self.clear_attach_btn.setVisible(False)
+
+    def _clipboard_image_to_controller(self) -> bool:
+        """
+        Если в буфере обмена есть изображение – передаёт его байты
+        контроллеру и обновляет UI. Возвращает True, если картинка
+        была обработана.
+        """
+        cb = QApplication.clipboard()
+        if not cb.mimeData().hasImage():
+            return False
+
+        qimg = cb.image()
+        if qimg.isNull():
+            return False
+
+        # QImage → bytes (PNG)
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        qimg.save(buf, "PNG")
+        img_bytes = buf.data().data()
+
+        # делегируем бизнес-логику контроллеру
+        count = self.controller.stage_image_bytes(img_bytes)
+
+        # UI-обновление
+        self.attachment_label.setText(
+            _("{count} изображений прикреплено",
+            "{count} images attached").format(count=count)
+        )
+        self.clear_attach_btn.setVisible(True)
+        return True
+
+    # endregion
 
     def prompt_for_code(self, code_future):
         dialog = QDialog(self)

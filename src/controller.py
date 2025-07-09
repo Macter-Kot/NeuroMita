@@ -40,6 +40,8 @@ import functools
 from PyQt6.QtCore import QTimer, QObject, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QProgressBar
 
+import tempfile, os
+
 class TelegramAuthSignals(QObject):
     code_required = pyqtSignal(object)
     password_required = pyqtSignal(object)
@@ -369,6 +371,25 @@ class ChatController:
     def clear_user_input(self):
         self.user_input = ""
         self.view.user_entry.clear()
+
+    def stage_image_bytes(self, img_bytes: bytes) -> int:
+        """
+        Сохраняет bytes изображения во временный *.png,
+        добавляет путь в self.staged_images и возвращает
+        текущее количество прикреплённых изображений.
+        """
+        fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="nm_clip_")
+        os.close(fd)
+        with open(tmp_path, "wb") as f:
+            f.write(img_bytes)
+
+        self.staged_images.append(tmp_path)
+        logger.info(f"Clipboard image staged: {tmp_path}")
+        return len(self.staged_images)
+
+    def clear_staged_images(self):
+        """Очищает список прикреплённых изображений."""
+        self.staged_images.clear()
 
     def start_server(self):
         if not self.running:

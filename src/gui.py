@@ -35,6 +35,7 @@ from ui.overlay_widget import OverlayWidget
 from ui.image_viewer_widget import ImageViewerWidget
 from ui.image_preview_widget import ImagePreviewBar
 
+from ui.mita_status_widget import MitaStatusWidget
 
 class ChatGUI(QMainWindow):
     update_chat_signal = pyqtSignal(str, str, bool, str)
@@ -75,6 +76,7 @@ class ChatGUI(QMainWindow):
         self.finish_stream_signal.connect(self._finish_stream_slot)
 
         self.setup_ui()
+        self.chat_window.installEventFilter(self)
 
         self.overlay = OverlayWidget(self)
         self.image_preview_bar = None
@@ -92,6 +94,10 @@ class ChatGUI(QMainWindow):
         self.check_timer.start(150)
 
         QTimer.singleShot(500, self.initialize_last_local_model_on_startup)
+
+        
+        self.prepare_stream_signal.connect(self._on_stream_start)
+        self.finish_stream_signal.connect(self._on_stream_finish)
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -148,6 +154,10 @@ class ChatGUI(QMainWindow):
         layout.addWidget(self.chat_window, 1)
 
         self._create_scroll_to_bottom_button()
+
+        
+        self.mita_status = MitaStatusWidget(self.chat_window)
+        self._position_mita_status()
         
         input_frame = QFrame()
         input_frame.setStyleSheet(get_stylesheet())
@@ -297,6 +307,9 @@ class ChatGUI(QMainWindow):
                     modifiers & Qt.KeyboardModifier.ShiftModifier):
                 self.send_message()
                 return True
+
+        if obj == self.chat_window and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._position_mita_status)
 
         return super().eventFilter(obj, event)
 
@@ -780,6 +793,9 @@ class ChatGUI(QMainWindow):
 
         all_image_data = (image_data or []) + current_image_data + staged_image_data
 
+
+
+
         if self.controller.settings.get("ENABLE_CAMERA_CAPTURE", False):
             if hasattr(self.controller, 'camera_capture') and self.controller.camera_capture is not None and self.controller.camera_capture.is_running():
                 history_limit = int(self.controller.settings.get("CAMERA_CAPTURE_HISTORY_LIMIT", 1))
@@ -792,6 +808,9 @@ class ChatGUI(QMainWindow):
 
         if not user_input and not system_input and not all_image_data:
             return
+        
+        
+        self.controller.show_mita_thinking()
 
         self.controller.last_image_request_time = time.time()
 
@@ -1617,6 +1636,8 @@ class ChatGUI(QMainWindow):
         super().resizeEvent(event)
         # Подгоняем размер overlay
         self.overlay.resize(self.size())
+        # Репозиционируем статус Миты
+        QTimer.singleShot(0, self._position_mita_status)
 
     # endregion
 
@@ -1730,3 +1751,32 @@ class ChatGUI(QMainWindow):
             self.controller.settings.set(key, value)
             self.controller.settings.save_settings()
             self.controller.all_settings_actions(key, value)
+
+    def _position_mita_status(self):
+        """Позиционировать статус Миты внизу чата"""
+        if not hasattr(self, 'mita_status') or not self.mita_status:
+            return
+            
+        # Размеры чата
+        chat_width = self.chat_window.width()
+        chat_height = self.chat_window.height()
+        
+        # Размеры статуса
+        status_width = min(300, chat_width - 20)  # Максимум 300px, но не больше ширины чата минус отступы
+        status_height = 40
+        
+        # Позиция: по центру внизу с бОльшим отступом
+        x = (chat_width - status_width) // 2
+        y = chat_height - status_height - 5  # Увеличил отступ с 15px до 50px
+        
+        self.mita_status.setGeometry(x, y, status_width, status_height)
+
+    def _on_stream_start(self):
+        """Вызывается при начале стрима"""
+        # Статус уже должен быть показан, ничего не делаем
+        pass
+
+    def _on_stream_finish(self):
+        """Вызывается при завершении стрима"""
+        print("[DEBUG] Стрим завершен, скрываем статус")
+        self.controller.hide_mita_status()

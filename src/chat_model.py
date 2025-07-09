@@ -531,14 +531,20 @@ class ChatModel:
             logger.warning(f"Attempted to change to unknown character: {self.current_character_to_change}")
             self.current_character_to_change = ""
 
-    def _generate_chat_response(self, combined_messages,stream_callback: callable = None):
+    def _generate_chat_response(self, combined_messages, stream_callback: callable = None):
         max_attempts = self.max_request_attempts
         retry_delay = self.request_delay
         request_timeout = 45
 
         self._log_generation_start()
+        
         for attempt in range(1, max_attempts + 1):
             logger.info(f"Generation attempt {attempt}/{max_attempts}")
+            
+            # Обновляем статус с номером попытки
+            if attempt > 1 and hasattr(self.gui, 'controller'):
+                self.gui.controller.show_mita_thinking()
+                
             response_text = None
 
             save_combined_messages(combined_messages, "SavedMessages/last_attempt_log")
@@ -596,9 +602,14 @@ class ChatModel:
 
             if attempt < max_attempts:
                 logger.info(f"Waiting {retry_delay}s before next attempt...")
+                # Показываем ошибку с информацией о повторе
+                if hasattr(self.gui, 'controller'):
+                    self.gui.controller.show_mita_error(f"Попытка {attempt}/{max_attempts} не удалась. Повтор...")
                 time.sleep(retry_delay)
 
         logger.error("All generation attempts failed.")
+        if hasattr(self.gui, 'controller'):
+            self.gui.controller.show_mita_error("Не удалось получить ответ после всех попыток")
         return None, False
 
     def _execute_with_timeout(self, func, args=(), kwargs={}, timeout=30):

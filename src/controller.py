@@ -773,6 +773,10 @@ class ChatController:
         image_data: list[bytes] | None = None
     ):
         try:
+            # ПОКАЗЫВАЕМ СТАТУС СРАЗУ В НАЧАЛЕ!
+            print("[DEBUG] Начинаем async_send_message, показываем статус")
+            self.show_mita_thinking()
+            
             is_streaming = bool(self.settings.get("ENABLE_STREAMING", False))
 
             def stream_callback_handler(chunk: str):
@@ -794,6 +798,10 @@ class ChatController:
                 timeout=120.0
             )
 
+            # Скрываем статус после успешного ответа
+            print("[DEBUG] Получили ответ, скрываем статус")
+            self.hide_mita_status()
+
             if is_streaming:
                 self.view.finish_stream_signal.emit()
             else:
@@ -810,10 +818,13 @@ class ChatController:
                     logger.info("Ответ отправлен в игру.")
                 except Exception as e:
                     logger.error(f"Не удалось отправить ответ в игру: {e}")
+                    
         except asyncio.TimeoutError:
             logger.warning("Тайм-аут: генерация ответа заняла слишком много времени.")
+            self.show_mita_error("Превышено время ожидания ответа")
         except Exception as e:
             logger.error(f"Ошибка в async_send_message: {e}", exc_info=True)
+            self.show_mita_error(f"Ошибка: {str(e)[:50]}...")
 
     @staticmethod
     def delete_all_sound_files():
@@ -1057,4 +1068,28 @@ class ChatController:
             return self.view.finish_stream_signal
         return None
     
-    
+    def show_mita_thinking(self):
+        """Показать, что Мита думает"""
+        print("[DEBUG] Controller: показываем статус 'думает'")
+        if hasattr(self.view, 'mita_status') and self.view.mita_status:
+            character_name = self.model.current_character.name if self.model.current_character else "Мита"
+            # Используем QTimer.singleShot для выполнения в основном потоке UI
+            QTimer.singleShot(0, lambda: self.view.mita_status.show_thinking(character_name))
+        else:
+            print("[DEBUG] mita_status не найден!")
+            
+    def show_mita_error(self, error_message):
+        """Показать ошибку Миты"""
+        print(f"[DEBUG] Controller: показываем ошибку: {error_message}")
+        if hasattr(self.view, 'mita_status') and self.view.mita_status:
+            # Используем QTimer.singleShot для выполнения в основном потоке UI
+            QTimer.singleShot(0, lambda: self.view.mita_status.show_error(error_message))
+            
+    def hide_mita_status(self):
+        """Скрыть статус Миты"""
+        print("[DEBUG] Controller: скрываем статус")
+        if hasattr(self.view, 'mita_status') and self.view.mita_status:
+            # Используем QTimer.singleShot для выполнения в основном потоке UI
+            QTimer.singleShot(0, self.view.mita_status.hide_animated)
+        else:
+            print("[DEBUG] mita_status не найден при попытке скрыть!")

@@ -1,3 +1,5 @@
+#hoi4_connector.py
+
 import ctypes
 import time
 import pyautogui

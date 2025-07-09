@@ -1,4 +1,4 @@
-# cheats_country.py ─────────────────────────────────────────────────────────
+# hoi4_cheats.py
 """
 Cheat-обёртка с параметром country_tag.
 Работает поверх injector.run_console_cmd().

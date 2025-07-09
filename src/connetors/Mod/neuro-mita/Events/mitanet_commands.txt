@@ -1,3 +1,5 @@
+# events\mitanet_commands.txt
+
 namespace = mitanet
 
 country_event = {

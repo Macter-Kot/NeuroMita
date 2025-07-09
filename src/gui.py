@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QComboBox, QCheckBox, QDialog, QProgressBar,
     QTextBrowser, QLineEdit, QFileDialog, QStyle, QGraphicsOpacityEffect
 )
-from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon, QPalette, QKeyEvent
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon, QPalette, QKeyEvent, QPixmap
 import qtawesome as qta
 
 from ui import chat_area, status_indicators, debug_area, news_area
@@ -30,6 +30,11 @@ from ui.settings import (
     token_settings, voiceover_settings, command_replacer_settings, history_compressor,
     prompt_catalogue_settings
 )
+
+from ui.overlay_widget import OverlayWidget
+from ui.image_viewer_widget import ImageViewerWidget
+from ui.image_preview_widget import ImagePreviewBar
+
 
 class ChatGUI(QMainWindow):
     update_chat_signal = pyqtSignal(str, str, bool, str)
@@ -70,6 +75,11 @@ class ChatGUI(QMainWindow):
         self.finish_stream_signal.connect(self._finish_stream_slot)
 
         self.setup_ui()
+
+        self.overlay = OverlayWidget(self)
+        self.image_preview_bar = None
+        self._init_image_preview()
+
         self.load_chat_history()
 
         try:
@@ -756,8 +766,8 @@ class ChatGUI(QMainWindow):
             except Exception as e:
                 logger.error(f"Ошибка чтения прикрепленного файла: {e}")
                 QMessageBox.critical(self, _("Ошибка файла", "File Error"),
-                                     _("Не удалось прочитать один из прикрепленных файлов.",
-                                       "Could not read one of the attached files."))
+                                    _("Не удалось прочитать один из прикрепленных файлов.",
+                                    "Could not read one of the attached files."))
                 return
 
         if self.controller.settings.get("ENABLE_SCREEN_ANALYSIS", False):
@@ -814,6 +824,14 @@ class ChatGUI(QMainWindow):
             self.attachment_label.setText("")
             self.clear_attach_btn.setVisible(False)
             logger.info("Список прикрепленных изображений очищен.")
+            
+            # Очищаем превью
+            self.staged_image_data.clear()
+            if self.image_preview_bar:
+                self.image_preview_bar.clear()
+                self._hide_image_preview_bar()
+
+
 
     def load_more_history(self):
         if self.controller.loaded_messages_offset >= self.controller.total_messages_in_history:
@@ -1406,6 +1424,7 @@ class ChatGUI(QMainWindow):
 
     # region изображения
     def attach_images(self):
+        """Обновленный метод прикрепления изображений"""
         file_paths, t = QFileDialog.getOpenFileNames(
             self,
             _("Выберите изображения", "Select Images"),
@@ -1415,6 +1434,20 @@ class ChatGUI(QMainWindow):
 
         if file_paths:
             self.controller.staged_images.extend(file_paths)
+            
+            # Добавляем превью
+            for file_path in file_paths:
+                try:
+                    with open(file_path, "rb") as f:
+                        img_data = f.read()
+                        self.staged_image_data.append(img_data)
+                        
+                        # Показываем превью
+                        self._show_image_preview_bar()
+                        self.image_preview_bar.add_image(img_data)
+                except Exception as e:
+                    logger.error(f"Ошибка чтения файла {file_path}: {e}")
+            
             self.attachment_label.setText(
                 _("{count} изображений прикреплено", "{count} images attached").format(
                     count=len(self.controller.staged_images))
@@ -1424,32 +1457,43 @@ class ChatGUI(QMainWindow):
         self.clear_attach_btn.setVisible(True)
 
     def send_screen_capture(self):
+        """Обновленный метод отправки скриншота"""
         logger.info("Запрошена отправка скриншота.")
         frames = self.controller.screen_capture_instance.get_recent_frames(1)
 
         if not frames:
             QMessageBox.warning(self, _("Ошибка", "Error"),
                                 _("Не удалось захватить экран. Убедитесь, что анализ экрана включен в настройках.",
-                                  "Failed to capture the screen. Make sure screen analysis is enabled in settings."))
+                                "Failed to capture the screen. Make sure screen analysis is enabled in settings."))
             return
 
-        image_content_for_display = [{"type": "image_url", "image_url": {
-            "url": f"data:image/jpeg;base64,{base64.b64encode(img).decode('utf-8')}"}} for img in frames]
-        image_content_for_display.insert(0, {"type": "text",
-                                             "content": _("<Изображение экрана>", "<Screen Image>") + "\n"})
-        self.insert_message("user", image_content_for_display)
-
-        if self.controller.loop and self.controller.loop.is_running():
-            import asyncio
-            asyncio.run_coroutine_threadsafe(
-                self.controller.async_send_message(user_input="", system_input="", image_data=frames),
-                self.controller.loop
-            )
+        # Добавляем в staged для превью
+        for frame_data in frames:
+            self.staged_image_data.append(frame_data)
+            self.controller.stage_image_bytes(frame_data)
+        
+        # Показываем превью
+        self._show_image_preview_bar()
+        for frame_data in frames:
+            self.image_preview_bar.add_image(frame_data)
+        
+        # Обновляем счетчик
+        self.attachment_label.setText(
+            _("{count} изображений прикреплено", "{count} images attached").format(
+                count=len(self.controller.staged_images))
+        )
+        self.clear_attach_btn.setVisible(True)
 
     def _clear_staged_images(self):
         self.controller.clear_staged_images()
         self.attachment_label.setText("")
         self.clear_attach_btn.setVisible(False)
+        
+        # Очищаем превью
+        self.staged_image_data.clear()
+        if self.image_preview_bar:
+            self.image_preview_bar.clear()
+            self._hide_image_preview_bar()
 
     def _clipboard_image_to_controller(self) -> bool:
         """
@@ -1471,7 +1515,10 @@ class ChatGUI(QMainWindow):
         qimg.save(buf, "PNG")
         img_bytes = buf.data().data()
 
-        # делегируем бизнес-логику контроллеру
+        # Сохраняем данные для превью
+        self.staged_image_data.append(img_bytes)
+        
+        # Делегируем бизнес-логику контроллеру
         count = self.controller.stage_image_bytes(img_bytes)
 
         # UI-обновление
@@ -1480,7 +1527,96 @@ class ChatGUI(QMainWindow):
             "{count} images attached").format(count=count)
         )
         self.clear_attach_btn.setVisible(True)
+        
+        # Показываем превью
+        self._show_image_preview_bar()
+        self.image_preview_bar.add_image(img_bytes)
+        
         return True
+
+
+    def _init_image_preview(self):
+        """Инициализация системы превью изображений"""
+        self.staged_image_data = []  # Храним данные изображений
+        
+    def _show_image_preview_bar(self):
+        """Показать панель превью изображений"""
+        if not self.image_preview_bar:
+            # Находим input_frame
+            input_frame = self.user_entry.parent()
+            if input_frame:
+                # Создаем панель превью
+                self.image_preview_bar = ImagePreviewBar(input_frame)
+                self.image_preview_bar.thumbnail_clicked.connect(self._show_full_image)
+                self.image_preview_bar.remove_requested.connect(self._remove_staged_image)
+                
+                # Вставляем между полем ввода и кнопками
+                input_frame.layout().insertWidget(2, self.image_preview_bar)
+        
+        self.image_preview_bar.show()
+
+    def _remove_staged_image(self, index):
+        """Удалить изображение из списка прикрепленных"""
+        if 0 <= index < len(self.staged_image_data):
+            # Удаляем из данных
+            self.staged_image_data.pop(index)
+            
+            # Удаляем из контроллера
+            if 0 <= index < len(self.controller.staged_images):
+                self.controller.staged_images.pop(index)
+            
+            # Удаляем превью
+            self.image_preview_bar.remove_at(index)
+            
+            # Обновляем UI
+            count = len(self.staged_image_data)
+            if count > 0:
+                self.attachment_label.setText(
+                    _("{count} изображений прикреплено",
+                    "{count} images attached").format(count=count)
+                )
+            else:
+                self.attachment_label.setText("")
+                self.clear_attach_btn.setVisible(False)
+                self._hide_image_preview_bar()
+    
+    
+    def _hide_image_preview_bar(self):
+        """Скрыть панель превью"""
+        if self.image_preview_bar:
+            self.image_preview_bar.hide()
+            
+    def _show_full_image(self, image_data):
+        """Показать полноразмерное изображение в overlay"""
+        try:
+            # Конвертируем данные в QPixmap
+            if isinstance(image_data, str) and image_data.startswith("data:image"):
+                base64_data = image_data.split(",")[1]
+                img_bytes = base64.b64decode(base64_data)
+            elif isinstance(image_data, bytes):
+                img_bytes = image_data
+            else:
+                return
+                
+            pixmap = QPixmap()
+            pixmap.loadFromData(img_bytes)
+            
+            # Создаем виджет просмотра
+            viewer = ImageViewerWidget(pixmap)
+            viewer.close_requested.connect(self.overlay.hide_animated)
+            
+            # Устанавливаем контент и показываем
+            self.overlay.set_content(viewer)
+            self.overlay.show_animated()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при показе изображения: {e}")
+            
+    def resizeEvent(self, event):
+        """Обработка изменения размера окна"""
+        super().resizeEvent(event)
+        # Подгоняем размер overlay
+        self.overlay.resize(self.size())
 
     # endregion
 

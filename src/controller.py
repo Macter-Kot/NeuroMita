@@ -1056,3 +1056,5 @@ class ChatController:
         if self.view:
             return self.view.finish_stream_signal
         return None
+    
+    

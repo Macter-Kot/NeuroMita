@@ -159,6 +159,8 @@ def setup_api_controls(self, parent):
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}key={key}"
         return url
+    
+    self._skip_next_provider_save = False
 
     # ── state helpers ─────────────────────────────────────
     def save_provider_state(pid: str):
@@ -302,7 +304,12 @@ def setup_api_controls(self, parent):
     # ── provider change ───────────────────────────────────
     self._last_provider = combo_current_id()
     def on_provider_changed():
-        save_provider_state(self._last_provider)
+        # если попросили пропустить сохранение
+        if not getattr(self, "_skip_next_provider_save", False):
+            save_provider_state(self._last_provider)
+        else:
+            self._skip_next_provider_save = False
+
         new_id = combo_current_id()
         load_provider_state(new_id, fallback=True)
         self._last_provider = new_id
@@ -324,6 +331,12 @@ def setup_api_controls(self, parent):
         from PyQt6.QtWidgets import QInputDialog
         cur_id = combo_current_id()
 
+        cur_url   = api_url_entry.text().strip()        # >>> FIX (NEW)
+        cur_model = api_model_entry.text().strip()      # >>> FIX (NEW)
+        cur_key   = api_key_entry.text().strip()        # >>> FIX (NEW)
+        cur_req   = nm_api_req_checkbox.isChecked()     # >>> FIX (NEW)
+        cur_case  = gemini_case_checkbox.isChecked()    # >>> FIX (NEW)
+
         if cur_id in API_PRESETS or cur_id == "custom":
             name, ok = QInputDialog.getText(
                 self, _("Имя пресета", "Preset name"),
@@ -341,17 +354,33 @@ def setup_api_controls(self, parent):
             return
 
         custom_presets[pid] = {
-            "url":   api_url_entry.text().strip(),
-            "model": api_model_entry.text().strip(),
-            "pricing": "mixed"
+            "url":     cur_url,
+            "model":   cur_model,
+            "pricing": "mixed",
+            # можно добавить 'add_key': True,
+            # если вам нужно автоматическое приклеивание ?key=
         }
+
+        provider_data[pid] = {                         # >>> FIX (NEW)
+            "NM_API_URL":    cur_url,
+            "NM_API_MODEL":  cur_model,
+            "NM_API_KEY":    cur_key,
+            "NM_API_KEY_RES": self.settings.get("NM_API_KEY_RES", ""),
+            "NM_API_REQ":    cur_req,
+            "GEMINI_CASE":   cur_case,
+        }
+
         self.settings.set("CUSTOM_API_PRESETS", custom_presets)
+        self.settings.set("API_PROVIDER_DATA",   provider_data)
         self.settings.save_settings()
         MIXED_PRESETS[pid] = custom_presets[pid]
 
+        self._skip_next_provider_save = True
+
         if pid not in [p[0] for p in provider_pairs]:
             provider_pairs.append((pid, pid))
-            DISPLAY2ID[pid] = pid; ID2DISPLAY[pid] = pid
+            DISPLAY2ID[pid] = pid
+            ID2DISPLAY[pid]  = pid
             api_provider_combo.addItem(pid)
 
         api_provider_combo.setCurrentText(ID2DISPLAY[pid])

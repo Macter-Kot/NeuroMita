@@ -225,7 +225,7 @@ import threading
 from gui import ChatGUI
 from controller import ChatController
 
-def main():
+if __name__ == "__main__":
     logger.info("Функция main() запущена")
     try:
         app = QApplication(sys.argv)
@@ -270,5 +270,3 @@ def main():
     except Exception as e:
         logger.error(f"Ошибка в main(): {e}", exc_info=True)
         raise
-
-main()

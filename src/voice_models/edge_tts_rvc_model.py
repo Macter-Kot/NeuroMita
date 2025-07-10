@@ -143,12 +143,15 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             return True
         except Exception as e:
             logger.error(f"Ошибка при установке Edge-TTS + RVC: {e}", exc_info=True)
-            if gui_elements and gui_elements["window"]:
-                gui_elements["window"].close()
+            
+            QTimer.singleShot(5000, progress_window.close)
             return False
 
     def uninstall(self, model_id) -> bool:
-        return self.parent._uninstall_component("EdgeTTS+RVC", "tts-with-rvc")
+        if self.parent.provider in ["NVIDIA"]:
+            return self.parent._uninstall_component("EdgeTTS+RVC", "tts-with-rvc")
+        else:
+            return self.parent._uninstall_component("EdgeTTS+RVC", "tts-with-rvc-onnx")
 
     def cleanup_state(self):
         super().cleanup_state()

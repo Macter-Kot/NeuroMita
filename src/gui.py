@@ -37,6 +37,8 @@ from ui.image_preview_widget import ImagePreviewBar
 
 from ui.mita_status_widget import MitaStatusWidget
 
+from voice_model_controller import VoiceModelController
+
 class ChatGUI(QMainWindow):
     update_chat_signal = pyqtSignal(str, str, bool, str)
     update_status_signal = pyqtSignal()
@@ -1303,7 +1305,6 @@ class ChatGUI(QMainWindow):
 
     def open_local_model_installation_window(self):
         try:
-            from voice_model_settings import VoiceModelSettingsWindow
             import os
 
             config_dir = "Settings"
@@ -1334,22 +1335,22 @@ class ChatGUI(QMainWindow):
             dialog_layout = QVBoxLayout(install_dialog)
             dialog_layout.setContentsMargins(0, 0, 0, 0)
             
-            settings_widget = VoiceModelSettingsWindow(
-                master=None,
+            # Создаем Controller, который создаст View внутри
+            controller = VoiceModelController(
+                view_parent=install_dialog,
                 config_dir=config_dir,
                 on_save_callback=on_save_callback,
                 local_voice=self.controller.local_voice,
                 check_installed_func=self.controller.check_module_installed,
             )
             
-            dialog_layout.addWidget(settings_widget)
-            
+            # View уже добавлен в layout внутри Controller
             install_dialog.show()
             
         except ImportError:
-            logger.error("Не найден модуль voice_model_settings.py. Установка моделей недоступна.")
+            logger.error("Не найден модуль voice_model_controller.py. Установка моделей недоступна.")
             QMessageBox.critical(self, _("Ошибка", "Error"),
-                _("Не найден файл voice_model_settings.py", "voice_model_settings.py not found."))
+                _("Не найден файл voice_model_controller.py", "voice_model_controller.py not found."))
         except Exception as e:
             logger.error(f"Ошибка при открытии окна установки моделей: {e}", exc_info=True)
             QMessageBox.critical(self, _("Ошибка", "Error"), 

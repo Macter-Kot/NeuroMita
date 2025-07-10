@@ -119,7 +119,7 @@ class LocalVoice:
         self._dialog_choice = None
         
         self.known_main_packages = ["tts-with-rvc", "fish-speech-lib", "triton-windows", "f5-tts"]
-        self.protected_package = "g4f"
+        self.protected_packages = ["g4f", "gigaam", "pillow", "silero-vad"]
         
         if self.is_triton_installed():
             try:
@@ -891,59 +891,112 @@ class LocalVoice:
         self._update_status_display()
         logger.info(_("Статус обновлен.", "Status updated."))
 
-    def _uninstall_component(self, component_name: str, main_package_to_remove: str):
+    def _uninstall_component(self, component_name: str, main_package_to_remove: str) -> bool:
         gui_elements = self._create_action_window(
-            title=f"Удаление {component_name}", 
-            initial_status=f"Удаление {main_package_to_remove}..."
+            title=_(f"Удаление {component_name}", f"Uninstalling {component_name}"),
+            initial_status=_(f"Удаление {main_package_to_remove}...", f"Uninstalling {main_package_to_remove}...")
         )
-        if not gui_elements: 
+        if not gui_elements:
             return False
-        
-        installer = PipInstaller(
-            script_path=r"libs\python\python.exe", 
-            libs_path="Lib", 
-            update_status=gui_elements["update_status"], 
-            update_log=gui_elements["update_log"], 
-            progress_window=gui_elements["window"]
-        )
-        
-        uninstall_success = installer.uninstall_packages(
-            [main_package_to_remove], 
-            description=f"Удаление {main_package_to_remove}..."
-        )
-        
-        if uninstall_success:
-            cleanup_success = self._cleanup_orphans(installer, gui_elements["update_log"])
-            if cleanup_success:
-                gui_elements["update_status"]("Удаление завершено.")
-            else:
-                gui_elements["update_status"]("Ошибка при очистке зависимостей.")
-            self._cleanup_after_uninstall(main_package_to_remove)
-        else:
-            gui_elements["update_status"](f"Ошибка удаления {main_package_to_remove}")
 
-        QTimer.singleShot(3000, gui_elements["window"].close)
-        return uninstall_success
+        try:
+            update_status = gui_elements["update_status"]
+            update_log = gui_elements["update_log"]
+
+            installer = PipInstaller(
+                script_path=r"libs\python\python.exe", libs_path="Lib",
+                update_status=update_status, update_log=update_log,
+                progress_window=gui_elements["window"]
+            )
+
+            # Этап 1: Удаление основного пакета
+            update_log(_(f"Удаление '{main_package_to_remove}'...", f"Uninstalling '{main_package_to_remove}'..."))
+            uninstall_success = installer.uninstall_packages(
+                [main_package_to_remove],  # Позиционный аргумент: список пакетов
+                _(f"Удаление {main_package_to_remove}...", f"Uninstalling {main_package_to_remove}...")
+            )
+
+            if not uninstall_success:
+                update_log(_(f"Не удалось удалить '{main_package_to_remove}'.", f"Failed to uninstall '{main_package_to_remove}'."))
+                update_status(_(f"Ошибка удаления {main_package_to_remove}", f"Error uninstalling {main_package_to_remove}"))
+                return False
+
+            # Этап 2: Очистка orphans
+            update_status(_("Очистка зависимостей...", "Cleaning up dependencies..."))
+            update_log(_("Поиск 'осиротевших' зависимостей...", "Finding 'orphaned' dependencies..."))
+            cleanup_success = self._cleanup_orphans(installer, update_log)
+
+            # Финал
+            if cleanup_success:
+                update_status(_("Удаление завершено.", "Uninstallation complete."))
+                update_log(_("Очистка завершена.", "Cleanup complete."))
+            else:
+                update_status(_("Ошибка очистки.", "Cleanup error."))
+                update_log(_("Не удалось удалить некоторые зависимости.", "Failed to remove some dependencies."))
+
+            self._cleanup_after_uninstall(main_package_to_remove)
+            if cleanup_success:
+                QTimer.singleShot(3000, gui_elements["window"].close)
+            return uninstall_success and cleanup_success
+
+        except Exception as e:
+            logger.error(f"Ошибка при удалении {component_name}: {e}")
+            traceback.print_exc()
+            if gui_elements and gui_elements["window"].isVisible():
+                gui_elements["update_log"](f"{_('Ошибка:', 'Error:')} {e}\n{traceback.format_exc()}")
+                gui_elements["update_status"](_("Критическая ошибка!", "Critical error!"))
+                QTimer.singleShot(5000, gui_elements["window"].close)
+            return False
 
     def _cleanup_orphans(self, installer: PipInstaller, update_log_func) -> bool:
         try:
             resolver = DependencyResolver(installer.libs_path_abs, update_log_func)
-            all_installed = resolver.get_all_installed_packages()
-            known_main = set(canonicalize_name(p) for p in self.known_main_packages)
-            protected = canonicalize_name(self.protected_package)
+            all_installed_canon = resolver.get_all_installed_packages()  # set[NormalizedName]
+            known_main_canon = set(canonicalize_name(p) for p in self.known_main_packages)
+            remaining_main_canon = all_installed_canon & known_main_canon
 
-            remaining_main = all_installed & known_main
-            required_set = set()
-            if protected in all_installed:
-                required_set.update(resolver.get_dependency_tree(self.protected_package))
-            for pkg in remaining_main:
-                required_set.update(resolver.get_dependency_tree(pkg))
-            
-            orphans = all_installed - required_set
-            if orphans:
-                orphans_str_list = [str(o) for o in orphans]
-                return installer.uninstall_packages(orphans_str_list, "Удаление осиротевших зависимостей...")
-            return True
+            # Защищённые пакеты и их deps (универсально для списка)
+            protected_deps_canon = set()
+            for prot_pkg in self.protected_packages:
+                prot_canon = canonicalize_name(prot_pkg)
+                if prot_canon in all_installed_canon:
+                    deps = resolver.get_dependency_tree(prot_pkg) or {prot_canon}  # Включаем себя, если deps пустые
+                    protected_deps_canon.update(deps)
+                    update_log_func(_(f"Зависимости {prot_pkg}: {deps or 'Нет'}", f"Dependencies of {prot_pkg}: {deps or 'None'}"))
+
+            # Deps оставшихся main пакетов
+            other_required_deps_canon = set()
+            for pkg_canon in remaining_main_canon:
+                deps = resolver.get_dependency_tree(str(pkg_canon)) or {pkg_canon}  # str на случай, если нужно original
+                other_required_deps_canon.update(deps)
+
+            required_set_canon = protected_deps_canon | other_required_deps_canon
+            orphans_canon = all_installed_canon - required_set_canon
+
+            if not orphans_canon:
+                update_log_func(_("Осиротевшие не найдены.", "No orphans found."))
+                return True
+
+            # Получаем original names из dist-info
+            installed_packages_map = {}
+            if os.path.exists(installer.libs_path_abs):
+                for item in os.listdir(installer.libs_path_abs):
+                    if item.endswith(".dist-info"):
+                        try:
+                            dist_name = item.split('-')[0]
+                            installed_packages_map[canonicalize_name(dist_name)] = dist_name
+                        except Exception:
+                            pass
+
+            orphans_original_names = [installed_packages_map.get(o, str(o)) for o in orphans_canon]
+            update_log_func(_(f"Удаление сирот: {orphans_original_names}", f"Uninstalling orphans: {orphans_original_names}"))
+
+            return installer.uninstall_packages(
+                orphans_original_names,  # Позиционный аргумент: список пакетов
+                _("Удаление осиротевших...", "Uninstalling orphaned...")
+            )
+
         except Exception as e:
-            update_log_func(f"Ошибка во время очистки сирот: {e}")
+            update_log_func(_(f"Ошибка очистки: {e}", f"Cleanup error: {e}"))
+            update_log_func(traceback.format_exc())
             return False

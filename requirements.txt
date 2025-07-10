@@ -86,3 +86,4 @@ python-chess
 google-api-core
 qtawesome
 pyqt6
+pillow

@@ -22,8 +22,10 @@ def check_gpu_provider():
 
     def parse_output(output):
         """Вспомогательная функция для анализа вывода"""
-        if "NVIDIA" in output:
-            return "NVIDIA" if not amd_test else "AMD"
+        if amd_test:
+            return "AMD"
+        elif "NVIDIA" in output:
+            return "NVIDIA"
         elif "AMD" in output or "Radeon" in output:
             return "AMD"
         return None

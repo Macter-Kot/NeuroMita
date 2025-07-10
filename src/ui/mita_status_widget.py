@@ -1,5 +1,5 @@
 import qtawesome as qta
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal, QSize, pyqtProperty, QSequentialAnimationGroup
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QGraphicsOpacityEffect
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
 
@@ -74,6 +74,13 @@ class MitaStatusWidget(QWidget):
         super().__init__(parent)
         self.current_state = "idle"
         self.is_animating = False
+        self._pulse_intensity = 0.0
+        self.normal_bg = QColor(45, 45, 45, 200)
+        self.error_bg = QColor(74, 40, 40, 220)
+        self.normal_border = QColor(74, 74, 74, 150)
+        self.error_border = QColor(138, 48, 48, 180)
+        self.normal_text = QColor(160, 160, 160, 180)
+        self.error_text = QColor(255, 107, 107, 200)
         self.setup_ui()
         self.hide()
         
@@ -108,6 +115,49 @@ class MitaStatusWidget(QWidget):
         self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         
         self._apply_normal_style()
+        
+    @pyqtProperty(float)
+    def pulseIntensity(self):
+        return self._pulse_intensity
+
+    @pulseIntensity.setter
+    def pulseIntensity(self, value):
+        self._pulse_intensity = value
+        self.set_pulse_intensity(value)
+        
+    def set_pulse_intensity(self, factor):
+        bg = self._interpolate_color(self.normal_bg, self.error_bg, factor)
+        border = self._interpolate_color(self.normal_border, self.error_border, factor)
+        text = self._interpolate_color(self.normal_text, self.error_text, factor)
+        
+        self.setStyleSheet(f"""
+            #MitaStatusWidget {{
+                background-color: {self._color_to_rgba(bg)};
+                border: 1px solid {self._color_to_rgba(border)};
+                border-radius: 8px;
+                margin: 0px;
+            }}
+        """)
+        
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self._color_to_rgba(text)};
+                font-size: 10pt;
+                background: transparent;
+                font-weight: 400;
+            }}
+        """)
+        
+    def _interpolate_color(self, c1, c2, factor):
+        return QColor(
+            int(c1.red() + (c2.red() - c1.red()) * factor),
+            int(c1.green() + (c2.green() - c1.green()) * factor),
+            int(c1.blue() + (c2.blue() - c1.blue()) * factor),
+            int(c1.alpha() + (c2.alpha() - c1.alpha()) * factor)
+        )
+    
+    def _color_to_rgba(self, c):
+        return f"rgba({c.red()}, {c.green()}, {c.blue()}, {c.alpha()})"
         
     def _apply_normal_style(self):
         self.setStyleSheet("""
@@ -173,6 +223,10 @@ class MitaStatusWidget(QWidget):
         if self.current_state == "thinking" and self.isVisible() and self.opacity_effect.opacity() > 0.5:
             return
             
+        if hasattr(self, 'pulse_anim'):
+            self.pulse_anim.stop()
+        self.set_pulse_intensity(0.0)
+            
         self.current_state = "thinking"
         self.is_animating = False
         
@@ -197,6 +251,10 @@ class MitaStatusWidget(QWidget):
         self.fade_animation.start()
         
     def show_error(self, error_message="Произошла ошибка"):
+        if hasattr(self, 'pulse_anim'):
+            self.pulse_anim.stop()
+        self.set_pulse_intensity(0.0)
+        
         self.current_state = "error"
         self.is_animating = False
         
@@ -230,6 +288,10 @@ class MitaStatusWidget(QWidget):
         QTimer.singleShot(5000, self.hide_animated)
         
     def show_success(self, message="Готово"):
+        if hasattr(self, 'pulse_anim'):
+            self.pulse_anim.stop()
+        self.set_pulse_intensity(0.0)
+        
         self.current_state = "success"
         self.is_animating = False
         
@@ -262,8 +324,28 @@ class MitaStatusWidget(QWidget):
         if self.current_state != "thinking" or not self.isVisible():
             return
 
-        self._apply_error_style()
-        QTimer.singleShot(400, self._revert_to_thinking_style)
+        if hasattr(self, 'pulse_anim'):
+            self.pulse_anim.stop()
+        
+        self.pulse_anim = QSequentialAnimationGroup()
+        
+        fade_in = QPropertyAnimation(self, b"pulseIntensity")
+        fade_in.setDuration(300)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        fade_out = QPropertyAnimation(self, b"pulseIntensity")
+        fade_out.setDuration(400)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QEasingCurve.Type.InQuad)
+        
+        self.pulse_anim.addAnimation(fade_in)
+        self.pulse_anim.addPause(200)
+        self.pulse_anim.addAnimation(fade_out)
+        
+        self.pulse_anim.start()
 
     def _revert_to_thinking_style(self):
         if self.current_state != "thinking":
@@ -273,6 +355,10 @@ class MitaStatusWidget(QWidget):
     def hide_animated(self):
         if self.current_state == "idle" or self.is_animating:
             return
+        
+        if hasattr(self, 'pulse_anim'):
+            self.pulse_anim.stop()
+        self.set_pulse_intensity(0.0)
             
         self.current_state = "idle"
         self.is_animating = True

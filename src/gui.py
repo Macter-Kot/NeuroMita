@@ -1772,12 +1772,11 @@ class ChatGUI(QMainWindow):
         chat_height = self.chat_window.height()
         
         # Размеры статуса
-        status_width = min(300, chat_width - 20)  # Максимум 300px, но не больше ширины чата минус отступы
+        status_width = min(300, chat_width - 20)
         status_height = 40
         
-        # Позиция: по центру внизу с бОльшим отступом
         x = (chat_width - status_width) // 2
-        y = chat_height - status_height - 5  # Увеличил отступ с 15px до 50px
+        y = chat_height - status_height + 3
         
         self.mita_status.setGeometry(x, y, status_width, status_height)
 

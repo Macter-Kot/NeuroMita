@@ -45,7 +45,12 @@ class ChatGUI(QMainWindow):
     prepare_stream_signal = pyqtSignal()
     append_stream_chunk_signal = pyqtSignal(str)
     finish_stream_signal = pyqtSignal()
+
     
+    show_thinking_signal = pyqtSignal(str)
+    show_error_signal = pyqtSignal(str)
+    hide_status_signal = pyqtSignal()
+    pulse_error_signal = pyqtSignal()
 
     def __init__(self, controller):
         super().__init__()
@@ -74,6 +79,12 @@ class ChatGUI(QMainWindow):
         self.prepare_stream_signal.connect(self._prepare_stream_slot)
         self.append_stream_chunk_signal.connect(self._append_stream_chunk_slot)
         self.finish_stream_signal.connect(self._finish_stream_slot)
+
+        
+        self.show_thinking_signal.connect(self._show_thinking_slot)
+        self.show_error_signal.connect(self._show_error_slot)
+        self.hide_status_signal.connect(self._hide_status_slot)
+        self.pulse_error_signal.connect(self._pulse_error_slot)
 
         self.setup_ui()
         self.chat_window.installEventFilter(self)
@@ -810,8 +821,6 @@ class ChatGUI(QMainWindow):
             return
         
         
-        self.controller.show_mita_thinking()
-
         self.controller.last_image_request_time = time.time()
 
         if user_input:
@@ -1751,7 +1760,8 @@ class ChatGUI(QMainWindow):
             self.controller.settings.set(key, value)
             self.controller.settings.save_settings()
             self.controller.all_settings_actions(key, value)
-
+    
+    # region митастатус
     def _position_mita_status(self):
         """Позиционировать статус Миты внизу чата"""
         if not hasattr(self, 'mita_status') or not self.mita_status:
@@ -1770,6 +1780,31 @@ class ChatGUI(QMainWindow):
         y = chat_height - status_height - 5  # Увеличил отступ с 15px до 50px
         
         self.mita_status.setGeometry(x, y, status_width, status_height)
+
+    def _show_thinking_slot(self, character_name: str):
+        """Слот для показа статуса 'думает'."""
+        if hasattr(self, 'mita_status') and self.mita_status:
+            logger.info('Показываем статус "Думает" для персонажа: %s', character_name)
+            self.mita_status.show_thinking(character_name)
+
+    def _show_error_slot(self, error_message: str):
+        """Слот для показа статуса ошибки."""
+        if hasattr(self, 'mita_status') and self.mita_status:
+            logger.info('Показываем статус ошибки: %s', error_message)
+            self.mita_status.show_error(error_message)
+
+    def _hide_status_slot(self):
+        """Слот для скрытия виджета статуса."""
+        if hasattr(self, 'mita_status') and self.mita_status:
+            logger.info('Скрываем статус')
+            self.mita_status.hide_animated()
+    
+    def _pulse_error_slot(self):
+        """Слот для 'пульсации' виджета статуса красным цветом."""
+        if hasattr(self, 'mita_status') and self.mita_status:
+            self.mita_status.pulse_error_animation()
+
+    #endregion
 
     def _on_stream_start(self):
         """Вызывается при начале стрима"""

@@ -799,13 +799,14 @@ class ChatController:
             )
 
             # Скрываем статус после успешного ответа
-            print("[DEBUG] Получили ответ, скрываем статус")
-            self.hide_mita_status()
+            if response is not None:
+                print("[DEBUG] Получили ответ, скрываем статус")
+                self.hide_mita_status()
 
             if is_streaming:
                 self.view.finish_stream_signal.emit()
             else:
-                self.view.update_chat_signal.emit("assistant", response, False, "")
+                self.view.update_chat_signal.emit("assistant", response if response is not None else "...", False, "")
 
             self.view.update_status_signal.emit()
             self.view.update_debug_signal.emit()
@@ -1069,27 +1070,29 @@ class ChatController:
         return None
     
     def show_mita_thinking(self):
-        """Показать, что Мита думает"""
-        print("[DEBUG] Controller: показываем статус 'думает'")
-        if hasattr(self.view, 'mita_status') and self.view.mita_status:
+        """Показать, что Мита думает (через сигнал)"""
+        print("[DEBUG] Controller: запрос на показ статуса 'думает'")
+        if self.view and hasattr(self.view, 'show_thinking_signal'):
             character_name = self.model.current_character.name if self.model.current_character else "Мита"
-            # Используем QTimer.singleShot для выполнения в основном потоке UI
-            QTimer.singleShot(0, lambda: self.view.mita_status.show_thinking(character_name))
+            self.view.show_thinking_signal.emit(character_name)
         else:
-            print("[DEBUG] mita_status не найден!")
+            print("[DEBUG] view или show_thinking_signal не найден!")
             
     def show_mita_error(self, error_message):
-        """Показать ошибку Миты"""
-        print(f"[DEBUG] Controller: показываем ошибку: {error_message}")
-        if hasattr(self.view, 'mita_status') and self.view.mita_status:
-            # Используем QTimer.singleShot для выполнения в основном потоке UI
-            QTimer.singleShot(0, lambda: self.view.mita_status.show_error(error_message))
+        """Показать ошибку Миты (через сигнал)"""
+        print(f"[DEBUG] Controller: запрос на показ ошибки: {error_message}")
+        if self.view and hasattr(self.view, 'show_error_signal'):
+            self.view.show_error_signal.emit(error_message)
             
     def hide_mita_status(self):
-        """Скрыть статус Миты"""
-        print("[DEBUG] Controller: скрываем статус")
-        if hasattr(self.view, 'mita_status') and self.view.mita_status:
-            # Используем QTimer.singleShot для выполнения в основном потоке UI
-            QTimer.singleShot(0, self.view.mita_status.hide_animated)
+        """Скрыть статус Миты (через сигнал)"""
+        print("[DEBUG] Controller: запрос на скрытие статуса")
+        if self.view and hasattr(self.view, 'hide_status_signal'):
+            self.view.hide_status_signal.emit()
         else:
-            print("[DEBUG] mita_status не найден при попытке скрыть!")
+            print("[DEBUG] view или hide_status_signal не найден при попытке скрыть!")
+
+    def show_mita_error_pulse(self):
+        """Послать сигнал для 'пульсации' статуса красным."""
+        if self.view and hasattr(self.view, 'pulse_error_signal'):
+            self.view.pulse_error_signal.emit()

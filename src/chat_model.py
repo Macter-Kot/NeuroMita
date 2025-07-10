@@ -29,9 +29,9 @@ from utils import SH, save_combined_messages, calculate_cost_for_combined_messag
 
 
 class ChatModel:
-    def __init__(self, gui, api_key, api_key_res, api_url, api_model, api_make_request, pip_installer: PipInstaller):
+    def __init__(self, controller, api_key, api_key_res, api_url, api_model, api_make_request, pip_installer: PipInstaller):
         self.last_key = 0
-        self.gui = gui
+        self.controller = controller
         self.pip_installer = pip_installer
         self.g4fClient = None
         self.g4f_available = False
@@ -41,7 +41,7 @@ class ChatModel:
         self.api_key_res = api_key_res
         self.api_url = api_url
         self.api_model = api_model
-        self.gpt4free_model = self.gui.settings.get("gpt4free_model")
+        self.gpt4free_model = self.controller.settings.get("gpt4free_model")
         self.makeRequest = api_make_request  # This seems to be a boolean flag
 
         self.tool_manager = ToolManager()
@@ -65,43 +65,43 @@ class ChatModel:
             logger.error(f"Ошибка инициализации tiktoken: {e}")
             self.hasTokenizer = False
 
-        self.max_response_tokens = int(self.gui.settings.get("MODEL_MAX_RESPONSE_TOKENS", 3200))
-        self.temperature = float(self.gui.settings.get("MODEL_TEMPERATURE", 0.5))
-        self.presence_penalty = float(self.gui.settings.get("MODEL_PRESENCE_PENALTY", 0.0))
-        self.top_k = int(self.gui.settings.get("MODEL_TOP_K", 0))
-        self.top_p = float(self.gui.settings.get("MODEL_TOP_P", 1.0))
-        self.thinking_budget = float(self.gui.settings.get("MODEL_THINKING_BUDGET", 0.0))
-        self.presence_penalty = float(self.gui.settings.get("MODEL_PRESENCE_PENALTY", 0.0))
-        self.frequency_penalty = float(self.gui.settings.get("MODEL_FREQUENCY_PENALTY", 0.0))
-        self.log_probability = float(self.gui.settings.get("MODEL_LOG_PROBABILITY", 0.0))
+        self.max_response_tokens = int(self.controller.settings.get("MODEL_MAX_RESPONSE_TOKENS", 3200))
+        self.temperature = float(self.controller.settings.get("MODEL_TEMPERATURE", 0.5))
+        self.presence_penalty = float(self.controller.settings.get("MODEL_PRESENCE_PENALTY", 0.0))
+        self.top_k = int(self.controller.settings.get("MODEL_TOP_K", 0))
+        self.top_p = float(self.controller.settings.get("MODEL_TOP_P", 1.0))
+        self.thinking_budget = float(self.controller.settings.get("MODEL_THINKING_BUDGET", 0.0))
+        self.presence_penalty = float(self.controller.settings.get("MODEL_PRESENCE_PENALTY", 0.0))
+        self.frequency_penalty = float(self.controller.settings.get("MODEL_FREQUENCY_PENALTY", 0.0))
+        self.log_probability = float(self.controller.settings.get("MODEL_LOG_PROBABILITY", 0.0))
 
         # Настройки стоимости токенов и лимитов
-        self.token_cost_input = float(self.gui.settings.get("TOKEN_COST_INPUT", 0.0432))
-        self.token_cost_output = float(self.gui.settings.get("TOKEN_COST_OUTPUT", 0.1728))
-        self.max_model_tokens = int(self.gui.settings.get("MAX_MODEL_TOKENS", 128000)) # Default to a common large limit
+        self.token_cost_input = float(self.controller.settings.get("TOKEN_COST_INPUT", 0.0432))
+        self.token_cost_output = float(self.controller.settings.get("TOKEN_COST_OUTPUT", 0.1728))
+        self.max_model_tokens = int(self.controller.settings.get("MAX_MODEL_TOKENS", 128000)) # Default to a common large limit
 
-        self.memory_limit = int(self.gui.settings.get("MODEL_MESSAGE_LIMIT", 40))  # For historical messages
+        self.memory_limit = int(self.controller.settings.get("MODEL_MESSAGE_LIMIT", 40))  # For historical messages
 
         # Настройки для сжатия истории
-        self.enable_history_compression_on_limit = bool(self.gui.settings.get("ENABLE_HISTORY_COMPRESSION_ON_LIMIT", False))
-        self.enable_history_compression_periodic = bool(self.gui.settings.get("ENABLE_HISTORY_COMPRESSION_PERIODIC", False))
-        self.history_compression_periodic_interval = int(self.gui.settings.get("HISTORY_COMPRESSION_PERIODIC_INTERVAL", 20))
-        self.history_compression_prompt_template = str(self.gui.settings.get("HISTORY_COMPRESSION_PROMPT_TEMPLATE", "Prompts/System/compression_prompt.txt"))
-        self.history_compression_output_target = str(self.gui.settings.get("HISTORY_COMPRESSION_OUTPUT_TARGET", "memory"))
+        self.enable_history_compression_on_limit = bool(self.controller.settings.get("ENABLE_HISTORY_COMPRESSION_ON_LIMIT", False))
+        self.enable_history_compression_periodic = bool(self.controller.settings.get("ENABLE_HISTORY_COMPRESSION_PERIODIC", False))
+        self.history_compression_periodic_interval = int(self.controller.settings.get("HISTORY_COMPRESSION_PERIODIC_INTERVAL", 20))
+        self.history_compression_prompt_template = str(self.controller.settings.get("HISTORY_COMPRESSION_PROMPT_TEMPLATE", "Prompts/System/compression_prompt.txt"))
+        self.history_compression_output_target = str(self.controller.settings.get("HISTORY_COMPRESSION_OUTPUT_TARGET", "memory"))
 
         self._messages_since_last_periodic_compression = 0 # Счетчик сообщений с момента последнего периодического сжатия
 
         self.current_character: Character = None
-        self.current_character_to_change = str(self.gui.settings.get("CHARACTER"))
+        self.current_character_to_change = str(self.controller.settings.get("CHARACTER"))
         self.characters: Dict[str, Character] = {}
 
         # Настройки для снижения качества изображений в истории
-        self.image_quality_reduction_enabled = bool(self.gui.settings.get("IMAGE_QUALITY_REDUCTION_ENABLED", False))
-        self.image_quality_reduction_start_index = int(self.gui.settings.get("IMAGE_QUALITY_REDUCTION_START_INDEX", 25))
-        self.image_quality_reduction_use_percentage = bool(self.gui.settings.get("IMAGE_QUALITY_REDUCTION_USE_PERCENTAGE", False))
-        min_quolity = self.gui.settings.get("IMAGE_QUALITY_REDUCTION_MIN_QUALITY", 30)
+        self.image_quality_reduction_enabled = bool(self.controller.settings.get("IMAGE_QUALITY_REDUCTION_ENABLED", False))
+        self.image_quality_reduction_start_index = int(self.controller.settings.get("IMAGE_QUALITY_REDUCTION_START_INDEX", 25))
+        self.image_quality_reduction_use_percentage = bool(self.controller.settings.get("IMAGE_QUALITY_REDUCTION_USE_PERCENTAGE", False))
+        min_quolity = self.controller.settings.get("IMAGE_QUALITY_REDUCTION_MIN_QUALITY", 30)
         self.image_quality_reduction_min_quality = int(min_quolity) if min_quolity!='' else 30
-        self.image_quality_reduction_decrease_rate = int(self.gui.settings.get("IMAGE_QUALITY_REDUCTION_DECREASE_RATE", 5))
+        self.image_quality_reduction_decrease_rate = int(self.controller.settings.get("IMAGE_QUALITY_REDUCTION_DECREASE_RATE", 5))
 
 
         # Game-specific state - these should ideally be passed to character or managed elsewhere if possible
@@ -129,8 +129,8 @@ class ChatModel:
 
         self.init_characters()
         self.HideAiData = True  # Unused?
-        self.max_request_attempts = int(self.gui.settings.get("MODEL_MESSAGE_ATTEMPTS_COUNT", 5))
-        self.request_delay = float(self.gui.settings.get("MODEL_MESSAGE_ATTEMPTS_TIME", 0.20))
+        self.max_request_attempts = int(self.controller.settings.get("MODEL_MESSAGE_ATTEMPTS_COUNT", 5))
+        self.request_delay = float(self.controller.settings.get("MODEL_MESSAGE_ATTEMPTS_TIME", 0.20))
 
     def _initialize_g4f(self):
         logger.info("Проверка и инициализация g4f (после возможного обновления при запуске)...")
@@ -148,7 +148,7 @@ class ChatModel:
         except ImportError:
             logger.info("Модуль g4f не найден (при проверке). Попытка первоначальной установки...")
 
-            target_version = self.gui.settings.get("G4F_VERSION", "0.4.7.7")  # Using "0.x.y.z" format
+            target_version = self.controller.settings.get("G4F_VERSION", "0.4.7.7")  # Using "0.x.y.z" format
             package_spec = f"g4f=={target_version}" if target_version != "latest" else "g4f"
 
             if self.pip_installer:
@@ -294,7 +294,7 @@ class ChatModel:
         # 4. Системные промпты / память -------------------------------------------------
         combined_messages = []
 
-        separate_prompts =  bool(self.gui.settings.get("SEPARATE_PROMPTS", True))
+        separate_prompts =  bool(self.controller.settings.get("SEPARATE_PROMPTS", True))
         messages = self.current_character.get_full_system_setup_for_llm(separate_prompts)
         combined_messages.extend(messages)
 
@@ -319,7 +319,7 @@ class ChatModel:
             llm_messages_history_limited = llm_messages_history[-8:]
 
         # Если включена настройка сохранения пропущенных сообщений и есть что сохранять
-        if missed_messages and bool(self.gui.settings.get("SAVE_MISSED_HISTORY", True)):
+        if missed_messages and bool(self.controller.settings.get("SAVE_MISSED_HISTORY", True)):
             logger.info(
                 f"Сохраняю {len(missed_messages)} пропущенных сообщений для персонажа {self.current_character.char_id}.")
             self.current_character.history_manager.save_missed_history(missed_messages)
@@ -369,14 +369,14 @@ class ChatModel:
 
             if not success or not llm_response_content:
                 logger.warning("LLM generation failed or returned empty.")
-                return "..."
+                return None
 
             processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content)
 
             # --- Встраивание «command replacer» (embeddings) ---------------------------
             final_response_text = processed_response_text
             try:
-                use_cmd_replacer  = self.gui.settings.get("USE_COMMAND_REPLACER", False)
+                use_cmd_replacer  = self.controller.settings.get("USE_COMMAND_REPLACER", False)
                 # enable_by_default = os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") == "1"
 
                 if use_cmd_replacer:
@@ -387,9 +387,9 @@ class ChatModel:
                         from utils.command_parser import CommandParser
                         self.parser = CommandParser(model_handler=self.model_handler)
 
-                    min_sim     = float(self.gui.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
-                    cat_switch  = float(self.gui.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
-                    skip_comma  = bool (self.gui.settings.get("SKIP_COMMA_PARAMETERS", True))
+                    min_sim     = float(self.controller.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
+                    cat_switch  = float(self.controller.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
+                    skip_comma  = bool (self.controller.settings.get("SKIP_COMMA_PARAMETERS", True))
 
                     logger.info(f"Attempting command replacement on: {processed_response_text[:100]}...")
                     final_response_text, _ = self.parser.parse_and_replace(
@@ -409,7 +409,7 @@ class ChatModel:
             assistant_message_content = final_response_text
 
             # Проверяем настройку замены изображений заглушками
-            if bool(self.gui.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
+            if bool(self.controller.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
                 logger.info("Настройка REPLACE_IMAGES_WITH_PLACEHOLDERS включена. Заменяю изображения заглушками.")
                 # Здесь предполагается, что final_response_text - это строка.
                 # Если модель может возвращать изображения в ответе, нужно будет адаптировать эту логику.
@@ -429,14 +429,14 @@ class ChatModel:
 
             self.current_character.save_character_state_to_history(llm_messages_history_limited)
 
-            if self.current_character != self.GameMaster or bool(self.gui.settings.get("GM_VOICE")):
-                self.gui.textToTalk           = process_text_to_voice(final_response_text)
-                self.gui.textSpeaker          = self.current_character.silero_command
-                self.gui.textSpeakerMiku      = self.current_character.miku_tts_name
-                self.gui.silero_turn_off_video= self.current_character.silero_turn_off_video
-                logger.info(f"TTS Text: {self.gui.textToTalk}, Speaker: {self.gui.textSpeaker}")
+            if self.current_character != self.GameMaster or bool(self.controller.settings.get("GM_VOICE")):
+                self.controller.textToTalk           = process_text_to_voice(final_response_text)
+                self.controller.textSpeaker          = self.current_character.silero_command
+                self.controller.textSpeakerMiku      = self.current_character.miku_tts_name
+                self.controller.silero_turn_off_video= self.current_character.silero_turn_off_video
+                logger.info(f"TTS Text: {self.controller.textToTalk}, Speaker: {self.controller.textSpeaker}")
 
-            self.gui.update_debug_signal.emit()
+            self.controller.update_debug_signal.emit()
             return final_response_text
 
         except Exception as e:
@@ -446,7 +446,7 @@ class ChatModel:
     def process_history_compression(self,llm_messages_history):
         """Сжимает старые воспоминания"""
 
-        compress_percent = float(self.gui.settings.get("HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS",0.85))
+        compress_percent = float(self.controller.settings.get("HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS",0.85))
         if self.enable_history_compression_on_limit and len(llm_messages_history) >= self.memory_limit*compress_percent:
 
             messages_to_compress = llm_messages_history[:round(-self.memory_limit*compress_percent)]
@@ -537,20 +537,20 @@ class ChatModel:
         request_timeout = 45
 
         self._log_generation_start()
+
+        
+        self.controller.show_mita_thinking()
         
         for attempt in range(1, max_attempts + 1):
             logger.info(f"Generation attempt {attempt}/{max_attempts}")
             
-            # Обновляем статус с номером попытки
-            if attempt > 1 and hasattr(self.gui, 'controller'):
-                self.gui.controller.show_mita_thinking()
                 
             response_text = None
 
             save_combined_messages(combined_messages, "SavedMessages/last_attempt_log")
 
             try:
-                if bool(self.gui.settings.get("NM_API_REQ", False)):
+                if bool(self.controller.settings.get("NM_API_REQ", False)):
                     if attempt > 1 and self.api_key_res:
                         new_key = self.GetOtherKey()
                         if new_key:
@@ -561,7 +561,7 @@ class ChatModel:
                             logger.info(f"[NM_API_REQ] переключился на резервный ключ (masked): {SH(new_key)}")
 
                     formatted_for_request = combined_messages
-                    if bool(self.gui.settings.get("GEMINI_CASE", False)):
+                    if bool(self.controller.settings.get("GEMINI_CASE", False)):
                         formatted_for_request = self._format_messages_for_gemini(combined_messages)
 
                     response_text = self._execute_with_timeout(
@@ -571,8 +571,8 @@ class ChatModel:
 
                     )
                 else:
-                    use_gpt4free_for_this_attempt = bool(self.gui.settings.get("gpt4free")) or \
-                                                    (bool(self.gui.settings.get(
+                    use_gpt4free_for_this_attempt = bool(self.controller.settings.get("gpt4free")) or \
+                                                    (bool(self.controller.settings.get(
                                                         "GPT4FREE_LAST_ATTEMPT")) and attempt >= max_attempts)
 
                     if use_gpt4free_for_this_attempt:
@@ -602,14 +602,11 @@ class ChatModel:
 
             if attempt < max_attempts:
                 logger.info(f"Waiting {retry_delay}s before next attempt...")
-                # Показываем ошибку с информацией о повторе
-                if hasattr(self.gui, 'controller'):
-                    self.gui.controller.show_mita_error(f"Попытка {attempt}/{max_attempts} не удалась. Повтор...")
+                self.controller.show_mita_error_pulse()
                 time.sleep(retry_delay)
 
         logger.error("All generation attempts failed.")
-        if hasattr(self.gui, 'controller'):
-            self.gui.controller.show_mita_error("Не удалось получить ответ после всех попыток")
+        self.controller.show_mita_error("Не удалось получить ответ.")
         return None, False
 
     def _execute_with_timeout(self, func, args=(), kwargs={}, timeout=30):
@@ -628,13 +625,13 @@ class ChatModel:
         logger.info("Preparing to generate LLM response.")
         logger.info(f"Max Response Tokens: {self.max_response_tokens}, Temperature: {self.temperature}")
         logger.info(
-            f"Presence Penalty: {self.presence_penalty} (Used: {bool(self.gui.settings.get('USE_MODEL_PRESENCE_PENALTY'))})")
+            f"Presence Penalty: {self.presence_penalty} (Used: {bool(self.controller.settings.get('USE_MODEL_PRESENCE_PENALTY'))})")
         logger.info(f"API URL: {self.api_url}, API Model: {self.api_model}")
-        logger.info(f"g4f Enabled: {bool(self.gui.settings.get('gpt4free'))}, g4f Model: {self.gpt4free_model}")
-        logger.info(f"Custom Request (NM_API_REQ): {bool(self.gui.settings.get('NM_API_REQ', False))}")
-        if bool(self.gui.settings.get('NM_API_REQ', False)):
-            logger.info(f"  Custom Request Model (NM_API_MODEL): {self.gui.settings.get('NM_API_MODEL')}")
-            logger.info(f"  Gemini Case for Custom Req: {bool(self.gui.settings.get('GEMINI_CASE', False))}")
+        logger.info(f"g4f Enabled: {bool(self.controller.settings.get('gpt4free'))}, g4f Model: {self.gpt4free_model}")
+        logger.info(f"Custom Request (NM_API_REQ): {bool(self.controller.settings.get('NM_API_REQ', False))}")
+        if bool(self.controller.settings.get('NM_API_REQ', False)):
+            logger.info(f"  Custom Request Model (NM_API_MODEL): {self.controller.settings.get('NM_API_MODEL')}")
+            logger.info(f"  Gemini Case for Custom Req: {bool(self.controller.settings.get('GEMINI_CASE', False))}")
 
     def _format_messages_for_gemini(self, combined_messages):
         formatted_messages = []
@@ -649,7 +646,7 @@ class ChatModel:
 
     def _generate_request_response(self, formatted_messages,stream_callback):
         try:
-            if bool(self.gui.settings.get("GEMINI_CASE", False)):
+            if bool(self.controller.settings.get("GEMINI_CASE", False)):
                 logger.info("Dispatching to Gemini request generation.")
                 return self.generate_request_gemini(formatted_messages,stream_callback)
             else:
@@ -716,13 +713,13 @@ class ChatModel:
             "contents": contents,
             "generationConfig": params
         }
-        if self.gui.settings.get("TOOLS_ON", True):
+        if self.controller.settings.get("TOOLS_ON", True):
             data["tools"] = self.tool_manager.get_tools_payload("gemini")
 
         headers = {"Content-Type": "application/json"}
 
         # stream имеет смысл, только если нет tools
-        need_stream = bool(self.gui.settings.get("ENABLE_STREAMING", False)
+        need_stream = bool(self.controller.settings.get("ENABLE_STREAMING", False)
                            and "tools" not in data)
 
         logger.info(f"Gemini: POST (stream={need_stream})  depth={_depth}")
@@ -771,7 +768,7 @@ class ChatModel:
 
     def generate_request_common(self, combined_messages, stream_callback: callable = None):
         data = {
-            "model": self.gui.settings.get("NM_API_MODEL"),
+            "model": self.controller.settings.get("NM_API_MODEL"),
             "messages": [
                 {"role": msg["role"], "content": msg["content"]} for msg in combined_messages
             ]
@@ -791,10 +788,10 @@ class ChatModel:
         logger.debug(f"Отправляемые данные (RequestCommon): {data}")  # Добавляем логирование содержимого
         save_combined_messages(data, "SavedMessages/last_request_common_log")
         response = requests.post(self.api_url, headers=headers, json=data,
-                                 stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
+                                 stream=bool(self.controller.settings.get("ENABLE_STREAMING", False)))
 
         if response.status_code == 200:
-            if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
+            if bool(self.controller.settings.get("ENABLE_STREAMING", False)):
                 return self._handle_common_stream(response,stream_callback)
             else:
                 response_data = response.json()
@@ -815,7 +812,7 @@ class ChatModel:
                 logger.error("gpt4free selected, but client is not available.")
                 return None
             target_client = self.g4fClient
-            model_to_use = self.gui.settings.get("gpt4free_model", "gpt-3.5-turbo")
+            model_to_use = self.controller.settings.get("gpt4free_model", "gpt-3.5-turbo")
             logger.info(f"Using g4f client with model: {model_to_use}")
         else:
             if not self.client:
@@ -840,10 +837,10 @@ class ChatModel:
             final_params = self.get_final_params(model_to_use, cleaned_messages)
 
             logger.info(
-                f"Requesting completion from {model_to_use} with temp={final_params.get('temperature')}, max_tokens={final_params.get('max_tokens')}, stream={bool(self.gui.settings.get("ENABLE_STREAMING", False))}")
-            completion = target_client.chat.completions.create(**final_params, stream=bool(self.gui.settings.get("ENABLE_STREAMING", False)))
+                f"Requesting completion from {model_to_use} with temp={final_params.get('temperature')}, max_tokens={final_params.get('max_tokens')}, stream={bool(self.controller.settings.get("ENABLE_STREAMING", False))}")
+            completion = target_client.chat.completions.create(**final_params, stream=bool(self.controller.settings.get("ENABLE_STREAMING", False)))
 
-            if bool(self.gui.settings.get("ENABLE_STREAMING", False)):
+            if bool(self.controller.settings.get("ENABLE_STREAMING", False)):
                 return self._handle_openai_stream(completion,stream_callback)
             elif completion and completion.choices:
                 response_content = completion.choices[0].message.content
@@ -1085,7 +1082,7 @@ class ChatModel:
                             relative_index = i - actual_start_index
 
                             # Начальное качество для снижения. Берем из настроек захвата экрана.
-                            initial_quality = int(self.gui.settings.get("SCREEN_CAPTURE_QUALITY", 75))
+                            initial_quality = int(self.controller.settings.get("SCREEN_CAPTURE_QUALITY", 75))
 
                             calculated_quality = initial_quality - (self.image_quality_reduction_decrease_rate * relative_index)
 
@@ -1167,7 +1164,7 @@ class ChatModel:
             # 4. Вызов LLM для получения сжатой сводки
             system_message = {"role": "system", "content": full_prompt}
 
-            hc_provider = self.gui.settings.get("HC_PROVIDER", "Current")
+            hc_provider = self.controller.settings.get("HC_PROVIDER", "Current")
             with self._temporary_provider(hc_provider):
                 compressed_summary, success = self._generate_chat_response(
                     [system_message])  # ← как было
@@ -1202,10 +1199,10 @@ class ChatModel:
         Возвращает максимальное количество токенов для текущей активной модели.
         """
         current_model = self.api_model
-        if bool(self.gui.settings.get("gpt4free")):
+        if bool(self.controller.settings.get("gpt4free")):
             current_model = self.gpt4free_model
-        elif bool(self.gui.settings.get("NM_API_REQ", False)):
-            current_model = self.gui.settings.get("NM_API_MODEL")
+        elif bool(self.controller.settings.get("NM_API_REQ", False)):
+            current_model = self.controller.settings.get("NM_API_MODEL")
 
         # Возвращаем лимит из настроек, если он задан и больше 0, иначе из маппинга
         if self.max_model_tokens > 0:
@@ -1224,7 +1221,7 @@ class ChatModel:
         combined_messages = []
 
         # 1. Системные промпты / память
-        separate_prompts = bool(self.gui.settings.get("SEPARATE_PROMPTS", True))
+        separate_prompts = bool(self.controller.settings.get("SEPARATE_PROMPTS", True))
         messages = self.current_character.get_cached_system_setup()
         combined_messages.extend(messages)
 
@@ -1262,7 +1259,7 @@ class ChatModel:
             combined_messages.extend(event_system_infos)
 
         # 4. Текущий ввод пользователя (если есть)
-        user_input_from_gui = self.gui.user_entry.toPlainText().strip()
+        user_input_from_gui = self.controller.user_entry.toPlainText().strip()
         if user_input_from_gui:
             combined_messages.append({"role": "user", "content": user_input_from_gui})
 
@@ -1305,7 +1302,7 @@ class ChatModel:
         if self.api_key:
             all_keys.append(self.api_key)
 
-        reserve_keys_str = self.gui.settings.get("NM_API_KEY_RES", "")
+        reserve_keys_str = self.controller.settings.get("NM_API_KEY_RES", "")
         if reserve_keys_str:
             all_keys.extend([key.strip() for key in reserve_keys_str.split() if key.strip()])
 
@@ -1373,7 +1370,7 @@ class ChatModel:
             params['temperature'] = self.temperature
 
         # Макс. токены - названия могут различаться
-        if bool(self.gui.settings.get("USE_MODEL_MAX_RESPONSE_TOKENS")) and self.max_response_tokens is not None:
+        if bool(self.controller.settings.get("USE_MODEL_MAX_RESPONSE_TOKENS")) and self.max_response_tokens is not None:
             if provider_key == 'openai' or provider_key == 'deepseek' or provider_key == 'anthropic':
                 params['max_tokens'] = self.max_response_tokens
             elif provider_key == 'gemini':
@@ -1381,37 +1378,37 @@ class ChatModel:
             # Добавьте другие провайдеры
 
         # Штраф за присутствие - названия могут различаться, и параметр может отсутствовать у некоторых провайдеров
-        if bool(self.gui.settings.get("USE_MODEL_PRESENCE_PENALTY")) and self.presence_penalty is not None:
+        if bool(self.controller.settings.get("USE_MODEL_PRESENCE_PENALTY")) and self.presence_penalty is not None:
             if provider_key == 'openai' or provider_key == 'deepseek':
                 params['presence_penalty'] = self.presence_penalty
             elif provider_key == 'gemini':
                 params['presencePenalty'] = self.presence_penalty
 
-        if bool(self.gui.settings.get("USE_MODEL_FREQUENCY_PENALTY")) and self.frequency_penalty is not None:
+        if bool(self.controller.settings.get("USE_MODEL_FREQUENCY_PENALTY")) and self.frequency_penalty is not None:
             if provider_key == 'openai' or provider_key == 'deepseek':
                 params['frequency_penalty'] = self.frequency_penalty
             elif provider_key == 'gemini':
                 params['frequencyPenalty'] = self.frequency_penalty
 
-        if bool(self.gui.settings.get("USE_MODEL_LOG_PROBABILITY")) and self.log_probability is not None:
+        if bool(self.controller.settings.get("USE_MODEL_LOG_PROBABILITY")) and self.log_probability is not None:
             if provider_key == 'openai' or provider_key == 'deepseek':
                 params['logprobs'] = self.log_probability  # OpenAI/DeepSeek
             # Gemini не имеет прямого аналога logprobs в том же виде
 
         # Добавляем top_k, top_p и thought_process, если они заданы
-        if bool(self.gui.settings.get("USE_MODEL_TOP_K")) and self.top_k > 0:
+        if bool(self.controller.settings.get("USE_MODEL_TOP_K")) and self.top_k > 0:
             if provider_key == 'openai' or provider_key == 'deepseek' or provider_key == 'anthropic':
                 params['top_k'] = self.top_k
             elif provider_key == 'gemini':
                 params['topK'] = self.top_k
 
-        if bool(self.gui.settings.get("USE_MODEL_TOP_P")):
+        if bool(self.controller.settings.get("USE_MODEL_TOP_P")):
             if provider_key == 'openai' or provider_key == 'deepseek' or provider_key == 'anthropic':
                 params['top_p'] = self.top_p
             elif provider_key == 'gemini':
                 params['topP'] = self.top_p
 
-        if bool(self.gui.settings.get("USE_MODEL_THINKING_BUDGET")):
+        if bool(self.controller.settings.get("USE_MODEL_THINKING_BUDGET")):
             params['thinking_budget'] = self.thinking_budget
             # Anthropic, например, не имеет прямого аналога этого параметра в том же виде.
             # Поэтому мы просто не добавляем его для Anthropic.
@@ -1473,15 +1470,15 @@ class ChatModel:
                     ...
                     #add_temporary_system_message(messages, "Игрок был не распилен, произошла ошибка")
 
-                    #if self.gui:
-                    #   self.gui.close_app()
+                    #if self.controller:
+                    #   self.controller.close_app()
 
                 elif command == "Выключить игрока":
                     ...
                     #add_temporary_system_message(messages, "Игрок был отпавлен в главное меню, но скоро он вернется...")
 
-                    #if self.gui:
-                    #   self.gui.close_app()
+                    #if self.controller:
+                    #   self.controller.close_app()
 
                 else:
                     # Обработка неизвестных команд
@@ -1518,9 +1515,9 @@ class ChatModel:
             return
 
         if provider_name.lower() in ("current", "текущий"):
-            provider_name = self.gui.settings.get("API_PROVIDER", "")
+            provider_name = self.controller.settings.get("API_PROVIDER", "")
 
-        provider_data_all = self.gui.settings.get("API_PROVIDER_DATA", {})
+        provider_data_all = self.controller.settings.get("API_PROVIDER_DATA", {})
         cfg = provider_data_all.get(provider_name)
 
         if not cfg:  # данных нет – ничего не меняем
@@ -1534,8 +1531,8 @@ class ChatModel:
             "api_url": self.api_url,
             "api_model": self.api_model,
             "makeRequest": self.makeRequest,
-            "NM_API_REQ": self.gui.settings.get("NM_API_REQ"),
-            "GEMINI_CASE": self.gui.settings.get("GEMINI_CASE"),
+            "NM_API_REQ": self.controller.settings.get("NM_API_REQ"),
+            "GEMINI_CASE": self.controller.settings.get("GEMINI_CASE"),
         }
 
         # 3) применяем конфигурацию провайдера (даже если совпадает)
@@ -1546,16 +1543,16 @@ class ChatModel:
             "api_model": cfg.get("NM_API_MODEL"),
             "makeRequest": cfg.get("NM_API_REQ"),
         })
-        self.gui.settings.set("NM_API_REQ", cfg.get("NM_API_REQ", False))
-        self.gui.settings.set("GEMINI_CASE", cfg.get("GEMINI_CASE", False))
+        self.controller.settings.set("NM_API_REQ", cfg.get("NM_API_REQ", False))
+        self.controller.settings.set("GEMINI_CASE", cfg.get("GEMINI_CASE", False))
 
         try:
             yield
         finally:
             # 4) откатываемся к исходным
             self.apply_config(original)
-            self.gui.settings.set("NM_API_REQ", original["NM_API_REQ"])
-            self.gui.settings.set("GEMINI_CASE", original["GEMINI_CASE"])
+            self.controller.settings.set("NM_API_REQ", original["NM_API_REQ"])
+            self.controller.settings.set("GEMINI_CASE", original["GEMINI_CASE"])
 
     def apply_config(self, cfg: dict) -> list[str]:
         """

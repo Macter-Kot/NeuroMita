@@ -540,7 +540,23 @@ class ChatModel:
 
         
         self.controller.show_mita_thinking()
-        
+
+        # Region Tools
+
+        tools_on = self.controller.settings.get("TOOLS_ON", True)
+        tools_mode = self.controller.settings.get("TOOLS_MODE", "native")
+
+        if tools_mode == "off":
+            tools_on = False
+
+        # Для legacy: добавляем промпт с описанием тулов (если не native)
+        if tools_on and tools_mode == "legacy":
+            tools_desc = json.dumps(self.tool_manager.json_schema())
+            legacy_prompt = self.tool_manager.tools_prompt().format(tools_json=tools_desc)
+            combined_messages.insert(0, {"role": "system", "content": legacy_prompt})  # Добавляем в начало
+
+        # endregion
+
         for attempt in range(1, max_attempts + 1):
             logger.info(f"Generation attempt {attempt}/{max_attempts}")
             
@@ -584,6 +600,9 @@ class ChatModel:
                     response_text = self._generate_openapi_response(combined_messages,
                                                                     use_gpt4free=use_gpt4free_for_this_attempt,
                                                                     stream_callback=stream_callback)
+
+                if response_text and tools_on and tools_mode == "legacy":
+                    response_text = self._handle_legacy_tool_calls(response_text, combined_messages, stream_callback)
 
                 if response_text:
                     cleaned_response = self._clean_response(response_text)
@@ -766,7 +785,10 @@ class ChatModel:
         logger.info("Gemini ответ получен.")
         return generated_text or "…"
 
-    def generate_request_common(self, combined_messages, stream_callback: callable = None):
+    def generate_request_common(self, combined_messages, stream_callback: callable = None, _depth=0):
+        if _depth > 3:
+            return None
+
         data = {
             "model": self.controller.settings.get("NM_API_MODEL"),
             "messages": [
@@ -784,6 +806,13 @@ class ChatModel:
             "Authorization": f"Bearer {self.api_key}"
         }
 
+        tools_on = self.controller.settings.get("TOOLS_ON", True)
+        if tools_on and self.controller.settings.get("TOOLS_MODE", "native") == "native":
+            tools_payload = self.tool_manager.get_tools_payload("deepseek")  # Или "openai", в зависимости от модели
+            if tools_payload:
+                data["tools"] = tools_payload
+                # Отключаем stream
+
         logger.info("Отправляю запрос к RequestCommon.")
         logger.debug(f"Отправляемые данные (RequestCommon): {data}")  # Добавляем логирование содержимого
         save_combined_messages(data, "SavedMessages/last_request_common_log")
@@ -795,6 +824,19 @@ class ChatModel:
                 return self._handle_common_stream(response,stream_callback)
             else:
                 response_data = response.json()
+
+                message = response_data.get("choices", [{}])[0].get("message", {})
+                if "tool_calls" in message:  # Обработка как в OpenAI
+                    for tool_call in message["tool_calls"]:
+                        name = tool_call["function"]["name"]
+                        args = json.loads(tool_call["function"]["arguments"])
+                        tool_result = self.tool_manager.run(name, args)
+
+                        combined_messages.append(mk_tool_call_msg(name, args))
+                        combined_messages.append(mk_tool_resp_msg(name, tool_result))
+
+                    return self.generate_request_common(combined_messages, stream_callback, _depth + 1)
+
                 # Формат ответа DeepSeek отличается от Gemini
                 generated_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 logger.info("Common request: \n" + generated_text)
@@ -803,7 +845,11 @@ class ChatModel:
             logger.error(f"Ошибка: {response.status_code}, {response.text}")
             return None
 
-    def _generate_openapi_response(self, combined_messages, use_gpt4free=False,stream_callback: callable = None):
+    def _generate_openapi_response(self, combined_messages, use_gpt4free=False,stream_callback: callable = None, _depth=0):
+        if _depth > 3:
+            logger.error("Слишком много рекурсивных tool-вызовов (OpenAI).")
+            return None
+
         target_client = None
         model_to_use = ""
 
@@ -836,13 +882,39 @@ class ChatModel:
 
             final_params = self.get_final_params(model_to_use, cleaned_messages)
 
+            # Tools
+            tools_on = self.controller.settings.get("TOOLS_ON", True)
+            if tools_on and self.controller.settings.get("TOOLS_MODE", "native") == "native":
+                tools_payload = self.tool_manager.get_tools_payload("openai")
+                if tools_payload:
+                    final_params["tools"] = tools_payload
+                    # Отключаем stream для tools
+                    final_params["stream"] = False
+            # Tools end
+
             logger.info(
                 f"Requesting completion from {model_to_use} with temp={final_params.get('temperature')}, max_tokens={final_params.get('max_tokens')}, stream={bool(self.controller.settings.get("ENABLE_STREAMING", False))}")
             completion = target_client.chat.completions.create(**final_params, stream=bool(self.controller.settings.get("ENABLE_STREAMING", False)))
 
+
             if bool(self.controller.settings.get("ENABLE_STREAMING", False)):
                 return self._handle_openai_stream(completion,stream_callback)
             elif completion and completion.choices:
+
+                message = completion.choices[0].message
+                if message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        name = tool_call.function.name
+                        args = json.loads(tool_call.function.arguments)
+                        tool_result = self.tool_manager.run(name, args)
+
+                        # Добавляем служебные
+                        combined_messages.append(mk_tool_call_msg(name, args))
+                        combined_messages.append(mk_tool_resp_msg(name, tool_result))
+
+                    # Рекурсивный follow-up
+                    return self._generate_openapi_response(combined_messages, use_gpt4free, stream_callback, _depth + 1)
+
                 response_content = completion.choices[0].message.content
                 logger.info("Completion successful.")
                 return response_content.strip() if response_content else None
@@ -1494,9 +1566,40 @@ class ChatModel:
 
         return response
 
-    #region TokensCounting
+    def _handle_legacy_tool_calls(self, response_text: str, messages: List[Dict], stream_callback,
+                                  _depth: int = 0) -> str:
+        if _depth > 3:
+            logger.error("Слишком много рекурсивных legacy tool-вызовов.")
+            return response_text
 
-    #endregion
+        parse_regex = self.controller.settings.get("LEGACY_TOOLS_PARSE_REGEX",
+                                                   r'\{.*?"tool":\s*"(.*?)",\s*"args":\s*(\{.*?\})\}')
+        matches = re.findall(parse_regex, response_text)
+
+        if not matches:
+            return response_text  # Нет вызовов — возвращаем как есть
+
+        for tool_name, args_str in matches:
+            try:
+                args = json.loads(args_str)
+                logger.info(f"Legacy tool call: {tool_name}({args})")
+                tool_result = self.tool_manager.run(tool_name, args)
+
+                # Добавляем служебные сообщения
+                messages.append(mk_tool_call_msg(tool_name, args))
+                messages.append(mk_tool_resp_msg(tool_name, tool_result))
+
+                # Удаляем вызов из ответа (чтобы не путать)
+                response_text = re.sub(parse_regex, "", response_text).strip()
+
+            except Exception as e:
+                logger.error(f"Ошибка legacy tool: {e}")
+                self.add_temporary_system_message(messages, f"Tool call failed: {e}")
+
+        # Рекурсивно генерируем новый ответ с обновленными messages
+        new_response, _ = self._generate_chat_response(messages, stream_callback)
+        return new_response or response_text
+
 
     @contextmanager
     def _temporary_provider(self, provider_name: str):

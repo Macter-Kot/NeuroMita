@@ -200,7 +200,7 @@ class Character:
             self.system_messages.clear()
         return messages
 
-    def process_response_nlp_commands(self, response: str) -> str:
+    def process_response_nlp_commands(self, response: str,save_as_missed = False) -> str:
         original_response_for_log = response[:200] + "..." if len(response) > 200 else response
         logger.info(f"[{self.char_id}] Original LLM response: {original_response_for_log}")
 
@@ -214,7 +214,7 @@ class Character:
         self.set_variable("LongMemoryRememberCount", self.get_variable("LongMemoryRememberCount", 0) + 1)
         self.update_app_vars(SettingsController.get_app_vars())
 
-        response = self.extract_and_process_memory_data(response)
+        response = self.extract_and_process_memory_data(response,save_as_missed)
         try:
             response = self._process_behavior_changes_from_llm(response)
         except Exception as e:
@@ -284,7 +284,7 @@ class Character:
         return response.strip()
 
 
-    def extract_and_process_memory_data(self, response: str) -> str:
+    def extract_and_process_memory_data(self, response: str,save_as_missed = False) -> str:
         """
         Extracts memory operation tags (<+memory>, <#memory>, <-memory>)
         from the LLM response, processes them, and removes them from the response string.
@@ -330,18 +330,19 @@ class Character:
                         logger.warning(f"[{self.char_id}] Invalid format for memory update: {content}")
                 
                 elif operation == "-":
+
                     content_cleaned = content.strip()
                     if "," in content_cleaned:
                         numbers_str = [num.strip() for num in content_cleaned.split(",")]
                         for num_str in numbers_str:
-                            if num_str.isdigit(): self.memory_system.delete_memory(number=int(num_str))
+                            if num_str.isdigit(): self.memory_system.delete_memory(int(num_str),save_as_missed)
                     elif "-" in content_cleaned:
                         start_end = [s.strip() for s in content_cleaned.split("-")]
                         if len(start_end) == 2 and start_end[0].isdigit() and start_end[1].isdigit():
                             for num_to_del in range(int(start_end[0]), int(start_end[1]) + 1):
-                                self.memory_system.delete_memory(number=num_to_del)
+                                self.memory_system.delete_memory(num_to_del,save_as_missed)
                     elif content_cleaned.isdigit():
-                        self.memory_system.delete_memory(number=int(content_cleaned))
+                        self.memory_system.delete_memory(int(content_cleaned),save_as_missed)
                     else:
                         logger.warning(f"[{self.char_id}] Invalid format for memory deletion: {content_cleaned}")
             

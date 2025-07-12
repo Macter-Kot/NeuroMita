@@ -6,6 +6,7 @@ import datetime
 
 class MemoryManager:
     def __init__(self, character_name):
+        self.character_name = character_name
         self.history_dir = f"Histories\\{character_name}"
         os.makedirs(self.history_dir, exist_ok=True)
 
@@ -70,14 +71,55 @@ class MemoryManager:
                 return True
         return False
 
-    def delete_memory(self, number):
+    def delete_memory(self, number, save_as_missing = False):
         for i, memory in enumerate(self.memories):
             if memory["N"] == number:
-                self.total_characters -= len(memory["content"])  # Обновляем счетчик
+                if save_as_missing:
+                    # Сохраняем копию в missed перед удалением
+                    missed_memory = memory.copy()  # Полная копия воспоминания
+                    self.save_missed_memory(missed_memory)
+
+                # Обновляем счетчик и удаляем
+                self.total_characters -= len(memory["content"])
                 del self.memories[i]
                 self.save_memories()
+                logging.info(f"Memory {number} deleted")
                 return True
+        logging.warning(f"Memory {number} not found for deletion.")
         return False
+
+    def save_missed_memory(self, missed_memory: dict):
+        """
+        Сохраняет удалённое воспоминание в отдельный файл для персонажа.
+        Воспоминание добавляется к существующему файлу, если он есть.
+        """
+        missed_dir = self.history_dir  # Используем ту же директорию
+        os.makedirs(missed_dir, exist_ok=True)
+        missed_file_path = os.path.join(missed_dir, f"{self.character_name}_missed_memories.json")
+
+        existing_missed_memories = []
+        if os.path.exists(missed_file_path):
+            try:
+                with open(missed_file_path, 'r', encoding='utf-8') as f:
+                    existing_missed_memories = json.load(f)
+                    if not isinstance(existing_missed_memories, list):
+                        logging.warning(
+                            f"Файл пропущенных воспоминаний {missed_file_path} поврежден или имеет неверный формат. Создаю новый.")
+                        existing_missed_memories = []
+            except (json.JSONDecodeError, FileNotFoundError):
+                logging.warning(
+                    f"Не удалось загрузить существующие пропущенные воспоминания из {missed_file_path}. Создаю новый файл.")
+                existing_missed_memories = []
+
+        # Добавляем новое пропущенное воспоминание
+        existing_missed_memories.append(missed_memory)
+
+        try:
+            with open(missed_file_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_missed_memories, f, ensure_ascii=False, indent=4)
+            logging.info(f"Пропущенное воспоминание сохранено в {missed_file_path}")
+        except Exception as e:
+            logging.error(f"Ошибка при сохранении пропущенного воспоминания в {missed_file_path}: {e}", exc_info=True)
 
     def clear_memories(self):
         self.memories = []
@@ -88,7 +130,7 @@ class MemoryManager:
     def get_memories_formatted(self):
         formatted_memories = []
         for memory in self.memories:
-            if memory.get('memory_type',"") == "summary":
+            if memory.get('memory_type', "") == "summary":
                 formatted_memories.append(
                     f"N:{memory['N']}, Date {memory['date']}, Type: Summary: {memory['content']}"
                 )

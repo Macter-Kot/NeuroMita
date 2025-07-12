@@ -131,8 +131,12 @@ def setup_general_settings_control(self, parent):
          'tooltip': _(
              'Позволяет использовать инструменты такие как поиск в сети',
              'Allow using tools like seacrh')},
+        {'label': _("Режим инструментов","Tools mode"), 'key': 'TOOLS_MODE', 'type': 'combobox',
+         'options': ["native", "legacy"], 'default': "native",
+         'tooltip': _('Native - использует вшитые возможности модели, legacy - добавляет промпт и ловит вызов вручную',
+                    'Native - using buit-in tools, legacy - using own prompts and handler')},
 
-        {'type': 'end'},  # ── конец подп-секции 3 ──
+        {'type': 'end'},  # ── конец под-секции 3 ──
     ]
 
     self.create_settings_section(

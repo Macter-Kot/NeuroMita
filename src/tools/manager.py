@@ -1,4 +1,6 @@
 # tools/manager.py
+import json
+import uuid
 from typing import Dict, List, Any
 from .calc import CalculatorTool
 from .web_read import WebPageReaderTool
@@ -50,12 +52,9 @@ class ToolManager:
             return [{"functionDeclarations": self.json_schema()}]
 
         # OpenAI-совместимые
-        if ("gpt" in model_lower or "deepseek" in model_lower
-                or "claude" in model_lower or "mistral" in model_lower):
+        else:
             return self.json_schema()
 
-        # провайдер не поддерживает функции
-        return []
 
     def run(self, name: str, arguments: dict):
         """
@@ -72,33 +71,34 @@ class ToolManager:
         except Exception as e:
             return f"[Tool-Error] {name} вызвал исключение: {e}"
 
+    def tools_prompt(self):
+        return (
+            "You can use the following tools by responding with a JSON object: {tools_json}. "
+            "For example: {{ \"tool\": \"tool_name\", \"args\": {{ \"param\": \"value\" }} }}."
+        )
 
-def mk_tool_call_msg(name: str, args: dict):
-    """
-    Универсальный service-message: LLM → вызов инструмента.
-    """
-    return {
-        "role": "assistant",
-        "content": {          # важно: есть 'content', внутри объект
-            "functionCall": {
-                "name": name,
-                "args": args or {}
-            }
+def mk_tool_call_msg(name: str, args: dict, provider: str = "gemini"):
+    if provider in ("openai", "deepseek"):
+        return {
+            "role": "assistant",
+            "tool_calls": [{
+                "id": f"call_{uuid.uuid4().hex[:8]}",  # Генерируем ID (нужен import uuid)
+                "type": "function",
+                "function": {"name": name, "arguments": json.dumps(args)}
+            }]
         }
-    }
+    else:  # gemini
+        return { "role": "assistant", "content": {"functionCall": {"name": name, "args": args}} }
 
-
-def mk_tool_resp_msg(name: str, result: str | dict):
-    """
-    Универсальный service-message: ответ инструмента → LLM.
-    """
-    return {
-        "role": "tool",
-        "content": {
-            "functionResponse": {
-                "name": name,
-                "response": (result if isinstance(result, dict)
-                             else {"result": result})
-            }
+def mk_tool_resp_msg(name: str, result: str | dict, provider: str = "gemini", tool_call_id: str = None):
+    if provider in ("openai", "deepseek"):
+        content = json.dumps(result) if isinstance(result, dict) else result
+        return {
+            "role": "tool",
+            "content": content,
+            "tool_call_id": tool_call_id or f"call_{uuid.uuid4().hex[:8]}"
         }
-    }
+    else:  # gemini
+        response = result if isinstance(result, dict) else {"result": result}
+        return { "role": "tool", "content": {"functionResponse": {"name": name, "response": response}} }
+

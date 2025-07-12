@@ -112,6 +112,8 @@ class ChatGUI(QMainWindow):
         self.prepare_stream_signal.connect(self._on_stream_start)
         self.finish_stream_signal.connect(self._on_stream_finish)
 
+        self.update_status_colors()
+
     def setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)

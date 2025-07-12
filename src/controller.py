@@ -182,7 +182,6 @@ class ChatController:
         if self.settings.get("MIC_ACTIVE", False):
             SpeechRecognition.speech_recognition_start(self.device_id, self.loop)
             self.mic_recognition_active = True
-            self.view.update_status_colors()
 
         if self.settings.get("ENABLE_SCREEN_ANALYSIS", False):
             logger.info("Настройка 'ENABLE_SCREEN_ANALYSIS' включена. Автоматический запуск захвата экрана.")

@@ -5,7 +5,7 @@ from main_logger import logger  # Use OpenMita's logger
 
 if TYPE_CHECKING:
     from character import Character  # OpenMita's Character
-    from DSL.path_resolver import AbstractPathResolver
+    from .path_resolver import AbstractPathResolver
 
 
 # (Consider moving DslError from Editor's dsl_engine to a common error module if not already)

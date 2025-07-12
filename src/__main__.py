@@ -223,7 +223,7 @@ import threading
 
 
 from ui.windows.main_view import ChatGUI
-from controllers.chat_controller import ChatController
+from controllers.main_controller import MainController
 
 if __name__ == "__main__":
     logger.info("Функция main() запущена")
@@ -238,7 +238,7 @@ if __name__ == "__main__":
 
         # Создаем пустой объект для контроллера
         logger.info("Создаю ChatController...")
-        controller = ChatController(None)
+        controller = MainController(None)
         logger.info("ChatController создан")
         
         logger.info("Создаю ChatGUI...")

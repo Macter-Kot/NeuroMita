@@ -12,7 +12,7 @@ from contextlib import contextmanager
 LOG_DIR = "Logs"
 LOG_FILE = os.path.join(LOG_DIR, "dsl_execution.log")
 # Import the resolver components
-from DSL.path_resolver import AbstractPathResolver, PathResolverError
+from .path_resolver import AbstractPathResolver, PathResolverError
 
 
 RED = "\033[91m"

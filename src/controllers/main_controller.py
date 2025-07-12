@@ -18,7 +18,7 @@ from main_logger import logger
 from utils.ffmpeg_installer import install_ffmpeg
 from utils.pip_installer import PipInstaller
 
-class ChatController:
+class MainController:
     def __init__(self, view):
         self.view = view
         

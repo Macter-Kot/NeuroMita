@@ -223,7 +223,7 @@ import threading
 
 
 from ui.windows.main_view import ChatGUI
-from controllers.main_controller import ChatController
+from controllers.chat_controller import ChatController
 
 if __name__ == "__main__":
     logger.info("Функция main() запущена")

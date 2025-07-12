@@ -20,9 +20,6 @@ def setup_microphone_controls(gui, parent_layout):
          'options': ["auto", "cuda", "cpu", "dml"], 'default': "auto",
          'tooltip': _("Устройство для GigaAM. auto - выберет CUDA для NVIDIA и DML/CPU для остальных. dml - только для AMD/Intel.", "Device for GigaAM. auto - selects CUDA for NVIDIA and DML/CPU for others. dml - for AMD/Intel only."),
          'widget_name': 'GIGAAM_DEVICE_frame', 'command': lambda: on_gigaam_device_selected(gui)},
-        # {'label': _("Модель Vosk", "Vosk Model"), 'type': 'combobox', 'key': 'VOSK_MODEL',
-        #  'options': ["vosk-model-ru-0.10"], 'default': "vosk-model-ru-0.10",
-        #  'tooltip': _("Выберите модель Vosk.", "Select Vosk model."), 'widget_name': 'VOSK_MODEL_frame'},
         {'label': _("Порог тишины (VAD)", "Silence Threshold (VAD)"), 'type': 'entry', 'key': 'SILENCE_THRESHOLD',
          'default': '0.01', 'validation': gui.validate_float_positive,
          'tooltip': _("Порог громкости для определения начала/конца речи (VAD).", "Volume threshold for Voice Activity Detection (VAD).")},
@@ -49,7 +46,7 @@ def get_microphone_list():
         input_devices = [f"{d['name']} ({i})" for i, d in enumerate(devices) if d['max_input_channels'] > 0]
         return input_devices or [_("Микрофоны не найдены", "No microphones found")]
     except Exception as e:
-        logger.info(f"Ошибка получения списка микрофонов: {e}")
+        logger.error(f"Ошибка получения списка микрофонов: {e}")
         return [_("Ошибка загрузки", "Loading error")]
 
 def update_recognizer_specific_widgets(gui, recognizer_type):
@@ -63,28 +60,58 @@ def update_recognizer_specific_widgets(gui, recognizer_type):
         gui.GIGAAM_DEVICE_frame.setVisible(show_gigaam)
 
 def on_mic_selected(gui):
-    if not hasattr(gui, 'mic_combobox'): return
+    if not hasattr(gui, 'mic_combobox'): 
+        return
+        
     selection = gui.mic_combobox.currentText()
+    
     if selection and '(' in selection:
         try:
-            gui.selected_microphone = selection.split(" (")[0]
+            microphone_name = selection.split(" (")[0]
             device_id_match = re.search(r'\((\d+)\)$', selection)
+            
             if device_id_match:
                 device_id = int(device_id_match.group(1))
-                gui.device_id = device_id
-                logger.info(f"Выбран микрофон: {gui.selected_microphone} (ID: {device_id})")
-                gui.settings.set("NM_MICROPHONE_ID", device_id)
-                gui.settings.set("NM_MICROPHONE_NAME", gui.selected_microphone)
-                gui.settings.save_settings()
-        except (AttributeError, IndexError, ValueError) as e:
-            logger.error(f"Could not parse microphone selection '{selection}': {e}")
+                
+                # Безопасно обновляем контроллер
+                if hasattr(gui, 'controller'):
+                    gui.controller.speech_controller.selected_microphone = microphone_name
+                    gui.controller.speech_controller.device_id = device_id
+                    gui.controller.selected_microphone = microphone_name
+                    gui.controller.device_id = device_id
+                    
+                    # Сохраняем настройки
+                    gui.controller.settings.set("NM_MICROPHONE_ID", device_id)
+                    gui.controller.settings.set("NM_MICROPHONE_NAME", microphone_name)
+                    gui.controller.settings.save_settings()
+                    
+                    logger.info(f"Выбран микрофон: {microphone_name} (ID: {device_id})")
+                    
+                    # Перезапускаем распознавание если активно
+                    if gui.controller.speech_controller.mic_recognition_active:
+                        def restart_recognition():
+                            try:
+                                SpeechRecognition.speech_recognition_stop()
+                                import time
+                                time.sleep(0.5)
+                                SpeechRecognition.speech_recognition_start(device_id, gui.controller.loop)
+                                logger.info("Распознавание перезапущено с новым микрофоном")
+                            except Exception as e:
+                                logger.error(f"Ошибка перезапуска распознавания: {e}")
+                        
+                        # Запускаем в отдельном потоке чтобы избежать блокировки UI
+                        import threading
+                        threading.Thread(target=restart_recognition, daemon=True).start()
+                        
+        except Exception as e:
+            logger.error(f"Ошибка выбора микрофона: {e}")
 
 def on_gigaam_device_selected(gui):
-    if not hasattr(gui, 'GIGAAM_DEVICE_combobox'): return
+    if not hasattr(gui, 'GIGAAM_DEVICE_combobox'): 
+        return
     device = gui.GIGAAM_DEVICE_combobox.currentText()
     SpeechRecognition.set_gigaam_options(device=device)
     logger.info(f"Выбрано устройство для GigaAM: {device}")
-
 
 def update_mic_list(gui):
     if hasattr(gui, 'mic_combobox'):
@@ -97,8 +124,8 @@ def update_mic_list(gui):
 
 def load_mic_settings(gui):
     try:
-        device_id = gui.settings.get("NM_MICROPHONE_ID", 0)
-        device_name = gui.settings.get("NM_MICROPHONE_NAME", "")
+        device_id = gui.controller.settings.get("NM_MICROPHONE_ID", 0)
+        device_name = gui.controller.settings.get("NM_MICROPHONE_NAME", "")
         
         all_devices = get_microphone_list()
         full_device_name = f"{device_name} ({device_id})"
@@ -109,9 +136,10 @@ def load_mic_settings(gui):
             elif all_devices:
                 gui.mic_combobox.setCurrentIndex(0)
             
-            gui.device_id = device_id
-            gui.selected_microphone = device_name
-            logger.info(f"Загружен микрофон: {device_name} (ID: {device_id})")
+            gui.controller.speech_controller.device_id = device_id
+            gui.controller.speech_controller.selected_microphone = device_name
+            gui.controller.device_id = device_id
+            gui.controller.selected_microphone = device_name
 
     except Exception as e:
-        logger.info(f"Ошибка загрузки настроек микрофона: {e}")
+        logger.error(f"Ошибка загрузки настроек микрофона: {e}")

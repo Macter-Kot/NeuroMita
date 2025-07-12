@@ -454,7 +454,7 @@ class ChatController:
 
     def update_game_connection(self, is_connected):
         self.ConnectedToGame = is_connected
-        QTimer.singleShot(0, self.view.update_status_colors)
+        QTimer.singleShot(0, self.update_status_colors)
 
     def load_api_settings(self, update_model):
         logger.info("Начинаю загрузку настроек")
@@ -560,7 +560,7 @@ class ChatController:
             else:
                 SpeechRecognition.speech_recognition_stop()
                 self.mic_recognition_active = False
-            self.view.update_status_colors()
+            self.update_status_colors()
 
         elif key == "ENABLE_SCREEN_ANALYSIS":
             if bool(value):
@@ -717,14 +717,14 @@ class ChatController:
                                               capture_height)
             logger.info(f"Поток захвата с камеры запущен с индексом {camera_index}")
             self.camera_capture_active = True
-            self.view.update_status_colors()
+            self.update_status_colors()
 
     def stop_camera_capture_thread(self):
         if hasattr(self, 'camera_capture') and self.camera_capture is not None and self.camera_capture.is_running():
             self.camera_capture.stop_capture()
             logger.info("Поток захвата с камеры остановлен.")
         self.camera_capture_active = False
-        self.view.update_status_colors()
+        self.update_status_colors()
 
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:
@@ -744,7 +744,7 @@ class ChatController:
             self.screen_capture_active = True
             if self.settings.get("SEND_IMAGE_REQUESTS", 1):
                 self.start_image_request_timer()
-            self.view.update_status_colors()
+            self.update_status_colors()
 
     def stop_screen_capture_thread(self):
         if self.screen_capture_running:
@@ -752,7 +752,7 @@ class ChatController:
             self.screen_capture_running = False
             logger.info("Поток захвата экрана остановлен.")
         self.screen_capture_active = False
-        self.view.update_status_colors()
+        self.update_status_colors()
 
     def start_image_request_timer(self):
         if not self.image_request_timer_running:
@@ -1095,3 +1095,7 @@ class ChatController:
         """Послать сигнал для 'пульсации' статуса красным."""
         if self.view and hasattr(self.view, 'pulse_error_signal'):
             self.view.pulse_error_signal.emit()
+
+    def update_status_colors(self):
+        if self.view:
+            self.view.update_status_colors()

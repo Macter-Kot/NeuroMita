@@ -125,9 +125,10 @@ def get_stylesheet():
             border-radius: 3px;
         }
 
-        /* ----- QCheckBox ----- */
+       /* ----- QCheckBox ----- */
         QCheckBox {
             spacing: 8px;
+            color: #dcdcdc;  /* Яркий текст даже в disabled */
         }
         QCheckBox::indicator {
             width: 13px;
@@ -142,6 +143,25 @@ def get_stylesheet():
         }
         QCheckBox::indicator:hover {
             border-color: #8a2be2;
+        }
+
+        /* ----- DISABLED STATE для QCheckBox ----- */
+        QCheckBox:disabled {
+            color: #a0a0a0;  /* Чуть тусклее текст, но читаемый */
+        }
+        QCheckBox::indicator:disabled {
+            border: 1px solid #4a4a4a;
+            background: #333333;
+        }
+        QCheckBox::indicator:disabled:checked {
+            background-color: #dcdcdc;  /*
+            image: url(./pyqt_styles/check_disabled.png);  /* Иконка для disabled (не none!) */
+            opacity: 0.7;  /* Лёгкая тусклость, но галочка видна */
+        }
+        QCheckBox::indicator:disabled:unchecked {
+            background: #333333;
+            image: none;  /* Только для unchecked убираем image */
+            opacity: 0.5;  /* Тусклый вид */
         }
 
         /* ----- QScrollArea & ScrollBar ----- */

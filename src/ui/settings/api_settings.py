@@ -175,8 +175,8 @@ def setup_api_controls(self, parent):
             "NM_API_REQ": nm_api_req_checkbox.isChecked(),
             "GEMINI_CASE": gemini_case_checkbox.isChecked(),
         }
-        if is_g4f:  # Сохраняем g4f-специфику
-            state["gpt4free_model"] = api_model_entry.text().strip()  # Переиспользуем поле модели
+        if is_g4f:  # Сохраняем g4f-специфику, включая G4F_VERSION per-пресет
+            state["gpt4free_model"] = api_model_entry.text().strip()
             state["G4F_VERSION"] = g4f_version_entry.text().strip()
             state["is_g4f"] = True
         provider_data[pid] = state
@@ -202,10 +202,16 @@ def setup_api_controls(self, parent):
             self._save_setting("NM_API_KEY_RES", stored.get("NM_API_KEY_RES", ""))
 
             if is_g4f:
+                # Загружаем per-пресет версию в entry
                 g4f_version_entry.setText(stored.get("G4F_VERSION", "0.4.7.7"))
-                self._save_setting("G4F_VERSION", stored.get("G4F_VERSION", "0.4.7.7"))
-                self._save_setting("gpt4free", True)  # Автоматически включаем флаг
+                self._save_setting("gpt4free", True)
                 self._save_setting("gpt4free_model", stored.get("gpt4free_model", ""))
+
+                # Обновляем label актуальной версией
+                actual_version = _get_actual_g4f_version()
+                g4f_installed_label = getattr(self, 'g4f_installed_label', None)
+                if g4f_installed_label:
+                    g4f_installed_label.setText(f"Installed: {actual_version}")
         elif fallback:
             api_key_entry.setText("")
             self._save_setting("NM_API_KEY", "")
@@ -269,7 +275,8 @@ def setup_api_controls(self, parent):
          'widget_name': 'nm_api_key_res_label'},
 
         # НОВЫЕ ПОЛЯ ДЛЯ G4F
-        {'label': _('Версия gpt4free', 'gpt4free Version'),
+        {'type': 'text', 'label': '', 'widget_name': 'g4f_installed_label'},  # Label будет динамически обновляться
+        {'label': _('Сменить версию на ', 'Change version on '),
          'key': 'G4F_VERSION', 'type': 'entry', 'default': '0.4.7.7',
          'widget_name': 'g4f_version_entry',
          'tooltip': _('Укажите версию g4f (например, 0.4.7.7 или latest). Обновление произойдет при следующем запуске.',
@@ -330,8 +337,14 @@ def setup_api_controls(self, parent):
         if is_g4f:
             self._save_setting("gpt4free", True)
             self._save_setting("gpt4free_model", pre.get("model", ""))
-            self._save_setting("G4F_VERSION", "0.4.7.7")  # Дефолт
-            g4f_version_entry.setText("0.4.7.7")
+            # Загружаем per-пресет версию (если есть в pre, иначе дефолт)
+            g4f_version_entry.setText(pre.get("G4F_VERSION", "0.4.7.7"))
+
+            # Обновляем label актуальной версией
+            actual_version = _get_actual_g4f_version()
+            g4f_installed_label = getattr(self, 'g4f_installed_label', None)
+            if g4f_installed_label:
+                g4f_installed_label.setText(f"Installed: {actual_version}")
         else:
             self._save_setting("gpt4free", False)
 
@@ -366,9 +379,12 @@ def setup_api_controls(self, parent):
             if frame:
                 frame.setVisible(is_g4f)
 
-        # Для модели: если g4f, сохраняем в gpt4free_model
+        # Обновляем label актуальной версией, если is_g4f
         if is_g4f:
-            self._save_setting("gpt4free_model", api_model_entry.text())
+            actual_version = _get_actual_g4f_version()
+            g4f_installed_label = getattr(self, 'g4f_installed_label', None)
+            if g4f_installed_label:
+                g4f_installed_label.setText(f"Installed: {actual_version}")
 
         # Для модели: если g4f, сохраняем в gpt4free_model
         if is_g4f:
@@ -416,7 +432,7 @@ def setup_api_controls(self, parent):
             "is_g4f": is_g4f,
         }
         if is_g4f:
-            custom_presets[pid]["G4F_VERSION"] = g4f_version_entry.text().strip()
+            custom_presets[pid]["G4F_VERSION"] = g4f_version_entry.text().strip()  # Сохраняем per-пресет
 
         self.settings.set("CUSTOM_API_PRESETS", custom_presets)
         self.settings.save_settings()
@@ -452,3 +468,17 @@ def setup_api_controls(self, parent):
             if idx >= 0:
                 api_provider_combo.removeItem(idx)
             api_provider_combo.setCurrentText('Custom')
+
+    def save_g4f_version():
+        current_pid = combo_current_id()
+        self._save_setting("G4F_VERSION", g4f_version_entry.text().strip())  # Глобально, но при смене пресета перезагружается
+        save_provider_state(current_pid)  # Сохраняем в state пресета
+
+    # Вспомогательная функция для получения актуальной версии
+    def _get_actual_g4f_version():
+        try:
+            from Lib import g4f
+            if g4f and hasattr(g4f, '__version__'):
+                return g4f.__version__
+        finally:
+            return "not installed"

@@ -36,15 +36,7 @@ API_PRESETS: dict = {
         "nm_api_req": False,
         "gemini_case": False,
     },
-    "chutes": {
-        "name": "Chutes.ai",
-        "pricing": "mixed",
-        "url": "https://llm.chutes.ai/v1/chat/completions",
-        "add_key": False,
-        "model": "deepseek-ai/DeepSeek-V3-0324",
-        "nm_api_req": True,
-        "gemini_case": False,
-    },
+
 
     # Google
     "google_ai_studio": {
@@ -104,6 +96,14 @@ API_PRESETS: dict = {
         "nm_api_req": False,
         "gemini_case": False,
     },
-
+    "chutes": {
+        "name": "Chutes.ai",
+        "pricing": "paid",
+        "url": "https://llm.chutes.ai/v1/chat/completions",
+        "add_key": False,
+        "model": "deepseek-ai/DeepSeek-V3-0324",
+        "nm_api_req": True,
+        "gemini_case": False,
+    },
 
 }

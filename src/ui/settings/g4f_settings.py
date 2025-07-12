@@ -1,4 +1,4 @@
-from gui_templates import create_settings_section
+from ui.gui_templates import create_settings_section
 from utils import getTranslationVariant as _
 
 def setup_g4f_controls(gui, parent_layout):

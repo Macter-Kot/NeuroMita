@@ -186,3 +186,9 @@ web/vtt/models/*
 /lc0_engine_files
 
 *.test
+/Prompts
+/PromptsCatalogue
+/features.env
+/init.py
+/include
+/ActualAssetbundles

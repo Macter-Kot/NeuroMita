@@ -1,9 +1,9 @@
 import re
 from PyQt6.QtWidgets import QComboBox, QCheckBox
 
-from gui_templates import create_settings_section
+from ui.gui_templates import create_settings_section
 from main_logger import logger
-from asr_handler import SpeechRecognition
+from handlers.asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
 import sounddevice as sd
 

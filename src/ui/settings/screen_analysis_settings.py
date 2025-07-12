@@ -1,5 +1,5 @@
 
-from gui_templates import create_settings_section
+from ui.gui_templates import create_settings_section
 from utils import getTranslationVariant as _
 from main_logger import logger
 

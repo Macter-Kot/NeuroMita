@@ -6,7 +6,7 @@ import re
 from num2words import num2words
 
 from main_logger import logger
-from settings_manager import SettingsManager
+from managers.settings_manager import SettingsManager
 
 
 def clamp(value, min_value, max_value):

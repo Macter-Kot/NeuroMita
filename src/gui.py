@@ -72,6 +72,9 @@ class ChatGUI(QMainWindow):
         self.setWindowTitle(_("Чат с NeuroMita", "NeuroMita Chat"))
         self.setWindowIcon(QIcon('src/Icon.png'))
 
+        
+        self.staged_image_data = []
+
         self.ffmpeg_install_popup = None
 
         self.update_chat_signal.connect(self._insert_message_slot)
@@ -182,50 +185,225 @@ class ChatGUI(QMainWindow):
         self.token_count_label.setStyleSheet("font-size: 10px;")
         input_layout.addWidget(self.token_count_label)
         
-        input_row_layout = QHBoxLayout()
+        # Создаем контейнер для поля ввода с кнопками внутри
+        input_container = QWidget()
+        input_container.setStyleSheet("""
+            QWidget {
+                background-color: #252525;
+                border: 1px solid #4a4a4a;
+                border-radius: 3px;
+            }
+            QWidget:focus-within {
+                border: 1px solid #8a2be2;
+            }
+        """)
         
+        # Используем QGridLayout для более точного позиционирования
+        from PyQt6.QtWidgets import QGridLayout
+        container_layout = QGridLayout(input_container)
+        container_layout.setContentsMargins(5, 5, 5, 5)
+        container_layout.setSpacing(5)
+        
+        # Поле ввода текста
         self.user_entry = QTextEdit()
-        self.user_entry.setMaximumHeight(60)
+        self.user_entry.setMinimumHeight(24)  # Минимум как у кнопок
+        self.user_entry.setMaximumHeight(80)  # Максимум для расширения
+        self.user_entry.setFixedHeight(36)    # Начальная высота = 1.5 * 24
         self.user_entry.installEventFilter(self)
+        self.user_entry.setStyleSheet("""
+            QTextEdit {
+                background-color: transparent;
+                border: none;
+                color: #dcdcdc;
+                padding: 2px;
+            }
+            QTextEdit:focus {
+                background-color: transparent;
+                border: none;
+            }
+        """)
         
-        self.send_button = QPushButton(_("Отправить", "Send"))
-        self.send_button.clicked.connect(self.send_message)
-        self.send_button.setMaximumHeight(60)
+        # Подключаем автоматическое изменение размера
+        self.user_entry.textChanged.connect(self._adjust_input_height)
+        self.user_entry.textChanged.connect(self._update_send_button_state)
         
-        input_row_layout.addWidget(self.user_entry)
-        input_row_layout.addWidget(self.send_button)
+        # Добавляем поле ввода в сетку (занимает всю верхнюю часть)
+        container_layout.addWidget(self.user_entry, 0, 0, 1, 2)
         
-        input_layout.addLayout(input_row_layout)
-
-        button_bar_layout = QHBoxLayout()
-        button_bar_layout.setContentsMargins(0, 5, 0, 0)
-
-        self.attach_button = QPushButton(qta.icon('fa6s.paperclip', color='white'), _("Прикрепить", "Attach"))
+        # Контейнер для кнопок внизу слева БЕЗ БОРДЕРА
+        button_container = QWidget()
+        button_container.setFixedHeight(24)
+        button_container.setStyleSheet("""
+            background-color: transparent;
+            border: none;
+        """)
+        button_layout_inner = QHBoxLayout(button_container)
+        button_layout_inner.setContentsMargins(0, 0, 0, 0)
+        button_layout_inner.setSpacing(4)
+        
+        # Кнопка прикрепить - круглая без бордера
+        self.attach_button = QPushButton(qta.icon('fa6s.paperclip', color='#b0b0b0', scale_factor=0.7), '')
         self.attach_button.clicked.connect(self.attach_images)
-        self.attach_button.setMaximumHeight(28)
-        button_bar_layout.addWidget(self.attach_button)
-
-        self.send_screen_button = QPushButton(qta.icon('fa6s.camera', color='white'), _("Скриншот", "Screenshot"))
-        self.send_screen_button.setToolTip(_("Отправить текущий экран", "Send current screen"))
+        self.attach_button.setFixedSize(20, 20)
+        self.attach_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.attach_button.setToolTip(_("Прикрепить изображения", "Attach images"))
+        self.attach_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.1);
+                border: 0px;
+                border-radius: 10px;
+                padding: 3px;
+            }
+            QPushButton:hover {
+                background-color: rgba(138, 43, 226, 0.3);
+            }
+            QPushButton:pressed {
+                background-color: rgba(138, 43, 226, 0.5);
+            }
+        """)
+        
+        # Кнопка скриншот - круглая без бордера  
+        self.send_screen_button = QPushButton(qta.icon('fa6s.camera', color='#b0b0b0', scale_factor=0.7), '')
         self.send_screen_button.clicked.connect(self.send_screen_capture)
-        self.send_screen_button.setMaximumHeight(28)
-        button_bar_layout.addWidget(self.send_screen_button)
+        self.send_screen_button.setFixedSize(20, 20)
+        self.send_screen_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.send_screen_button.setToolTip(_("Сделать скриншот экрана", "Take screenshot"))
+        self.send_screen_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.1);
+                border: 0px;
+                border-radius: 10px;
+                padding: 3px;
+            }
+            QPushButton:hover {
+                background-color: rgba(138, 43, 226, 0.3);
+            }
+            QPushButton:pressed {
+                background-color: rgba(138, 43, 226, 0.5);
+            }
+        """)
+        
+        button_layout_inner.addWidget(self.attach_button)
+        button_layout_inner.addWidget(self.send_screen_button)
+        button_layout_inner.addStretch()
+        
+        # Добавляем кнопки в левый нижний угол
+        container_layout.addWidget(button_container, 1, 0)
+        
+        # Кнопка отправить в правом нижнем углу с иконкой
+        self.send_button = QPushButton(qta.icon('fa6s.paper-plane', color='white', scale_factor=0.8), '')
+        self.send_button.clicked.connect(self.send_message)
+        self.send_button.setFixedSize(28, 28)
+        self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.send_button.setToolTip(_("Отправить сообщение", "Send message"))
+        self.send_button.setStyleSheet("""
+            QPushButton {
+                background-color: #8a2be2;
+                border: 0px;
+                border-radius: 14px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #9932CC;
+            }
+            QPushButton:pressed {
+                background-color: #9400D3;
+            }
+        """)
+        
+        # Контейнер для кнопки отправки БЕЗ БОРДЕРА
+        send_container = QWidget()
+        send_container.setStyleSheet("""
+            background-color: transparent;
+            border: none;
+        """)
+        send_layout = QHBoxLayout(send_container)
+        send_layout.setContentsMargins(0, 0, 0, 0)
+        send_layout.addStretch()
+        send_layout.addWidget(self.send_button)
+        
+        # Добавляем кнопку отправки в правый нижний угол
+        container_layout.addWidget(send_container, 1, 1)
+        
+        input_layout.addWidget(input_container)
 
+        # Скрытые элементы для совместимости (убираем их из UI)
         self.attachment_label = QLabel("")
-        self.attachment_label.setStyleSheet("font-size: 10px; color: #888888; margin-left: 5px;")
-        button_bar_layout.addWidget(self.attachment_label)
-
-        self.clear_attach_btn = QPushButton(qta.icon('fa6s.xmark', color='white'), '')
-        self.clear_attach_btn.setFixedHeight(28)
-        self.clear_attach_btn.clicked.connect(self._clear_staged_images)
+        self.attachment_label.setVisible(False)
+        self.clear_attach_btn = QPushButton("")
         self.clear_attach_btn.setVisible(False)
-        button_bar_layout.addWidget(self.clear_attach_btn)
-
-        button_bar_layout.addStretch()
-
-        input_layout.addLayout(button_bar_layout)
 
         layout.addWidget(input_frame)
+
+        self._update_send_button_state()
+        
+
+    def _adjust_input_height(self):
+        """Автоматически подстраивает высоту поля ввода под содержимое"""
+        doc = self.user_entry.document()
+        doc_height = doc.size().height()
+        
+        # Добавляем небольшой отступ
+        new_height = int(doc_height + 10)
+        
+        # Ограничиваем минимальной и максимальной высотой
+        new_height = max(36, min(new_height, 80))
+        
+        self.user_entry.setFixedHeight(new_height)
+
+    def _update_send_button_state(self):
+        """Обновляет доступность кнопки отправки в зависимости от наличия контента"""
+        has_text = bool(self.user_entry.toPlainText().strip())
+        has_images = bool(self.staged_image_data) or bool(getattr(self.controller, 'staged_images', []))
+        
+        # Проверяем также автоматические изображения если они включены
+        has_auto_images = False
+        if hasattr(self.controller, 'settings'):
+            if self.controller.settings.get("ENABLE_SCREEN_ANALYSIS", False):
+                if hasattr(self.controller, 'screen_capture_instance'):
+                    frames = self.controller.screen_capture_instance.get_recent_frames(1)
+                    has_auto_images = bool(frames)
+            
+            if self.controller.settings.get("ENABLE_CAMERA_CAPTURE", False):
+                if hasattr(self.controller, 'camera_capture') and self.controller.camera_capture is not None:
+                    if self.controller.camera_capture.is_running():
+                        camera_frames = self.controller.camera_capture.get_recent_frames(1)
+                        has_auto_images = has_auto_images or bool(camera_frames)
+        
+        # Кнопка активна если есть текст ИЛИ изображения
+        is_enabled = has_text or has_images or has_auto_images
+        
+        self.send_button.setEnabled(is_enabled)
+        
+        # Визуально показываем состояние
+        if is_enabled:
+            self.send_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #8a2be2;
+                    border: 0px;
+                    border-radius: 14px;
+                    padding: 5px;
+                }
+                QPushButton:hover {
+                    background-color: #9932CC;
+                }
+                QPushButton:pressed {
+                    background-color: #9400D3;
+                }
+            """)
+        else:
+            self.send_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a4a4a;
+                    border: 0px;
+                    border-radius: 14px;
+                    padding: 5px;
+                }
+                QPushButton:disabled {
+                    background-color: #4a4a4a;
+                    color: #666666;
+                }
+            """)
 
     def _create_scroll_to_bottom_button(self):
         btn = QPushButton(qta.icon('fa6s.angle-down', color='white'), '', self.chat_window)
@@ -808,9 +986,6 @@ class ChatGUI(QMainWindow):
 
         all_image_data = (image_data or []) + current_image_data + staged_image_data
 
-
-
-
         if self.controller.settings.get("ENABLE_CAMERA_CAPTURE", False):
             if hasattr(self.controller, 'camera_capture') and self.controller.camera_capture is not None and self.controller.camera_capture.is_running():
                 history_limit = int(self.controller.settings.get("CAMERA_CAPTURE_HISTORY_LIMIT", 1))
@@ -823,7 +998,6 @@ class ChatGUI(QMainWindow):
 
         if not user_input and not system_input and not all_image_data:
             return
-        
         
         self.controller.last_image_request_time = time.time()
 
@@ -849,12 +1023,10 @@ class ChatGUI(QMainWindow):
         if self.controller.loop and self.controller.loop.is_running():
             import asyncio
             asyncio.run_coroutine_threadsafe(self.controller.async_send_message(user_input, system_input, all_image_data),
-                                             self.controller.loop)
+                                            self.controller.loop)
 
         if self.controller.staged_images:
             self.controller.staged_images.clear()
-            self.attachment_label.setText("")
-            self.clear_attach_btn.setVisible(False)
             logger.info("Список прикрепленных изображений очищен.")
             
             # Очищаем превью
@@ -1479,13 +1651,11 @@ class ChatGUI(QMainWindow):
                 except Exception as e:
                     logger.error(f"Ошибка чтения файла {file_path}: {e}")
             
-            self.attachment_label.setText(
-                _("{count} изображений прикреплено", "{count} images attached").format(
-                    count=len(self.controller.staged_images))
-            )
             logger.info(f"Прикреплены изображения: {self.controller.staged_images}")
-        
-        self.clear_attach_btn.setVisible(True)
+            # Обновляем состояние кнопки отправки
+            self._update_send_button_state()
+
+
 
     def send_screen_capture(self):
         """Обновленный метод отправки скриншота"""
@@ -1508,24 +1678,22 @@ class ChatGUI(QMainWindow):
         for frame_data in frames:
             self.image_preview_bar.add_image(frame_data)
         
-        # Обновляем счетчик
-        self.attachment_label.setText(
-            _("{count} изображений прикреплено", "{count} images attached").format(
-                count=len(self.controller.staged_images))
-        )
-        self.clear_attach_btn.setVisible(True)
+        # Обновляем состояние кнопки отправки
+        self._update_send_button_state()
 
     def _clear_staged_images(self):
         self.controller.clear_staged_images()
-        self.attachment_label.setText("")
-        self.clear_attach_btn.setVisible(False)
         
         # Очищаем превью
         self.staged_image_data.clear()
         if self.image_preview_bar:
             self.image_preview_bar.clear()
             self._hide_image_preview_bar()
+        
+        # Обновляем состояние кнопки отправки
+        self._update_send_button_state()
 
+    # Обновите метод _clipboard_image_to_controller:
     def _clipboard_image_to_controller(self) -> bool:
         """
         Если в буфере обмена есть изображение – передаёт его байты
@@ -1550,18 +1718,14 @@ class ChatGUI(QMainWindow):
         self.staged_image_data.append(img_bytes)
         
         # Делегируем бизнес-логику контроллеру
-        count = self.controller.stage_image_bytes(img_bytes)
+        self.controller.stage_image_bytes(img_bytes)
 
-        # UI-обновление
-        self.attachment_label.setText(
-            _("{count} изображений прикреплено",
-            "{count} images attached").format(count=count)
-        )
-        self.clear_attach_btn.setVisible(True)
-        
         # Показываем превью
         self._show_image_preview_bar()
         self.image_preview_bar.add_image(img_bytes)
+        
+        # Обновляем состояние кнопки отправки
+        self._update_send_button_state()
         
         return True
 
@@ -1573,16 +1737,40 @@ class ChatGUI(QMainWindow):
     def _show_image_preview_bar(self):
         """Показать панель превью изображений"""
         if not self.image_preview_bar:
-            # Находим input_frame
-            input_frame = self.user_entry.parent()
+            # Находим input_frame (основной фрейм с токенами и полем ввода)
+            # НЕ input_container, а именно input_frame
+            input_frame = None
+            
+            # Ищем input_frame через иерархию виджетов
+            widget = self.user_entry
+            while widget:
+                if isinstance(widget, QFrame) and widget.objectName() != "":
+                    break
+                if hasattr(widget, 'layout') and widget.layout():
+                    # Проверяем, есть ли token_count_label среди дочерних виджетов
+                    for i in range(widget.layout().count()):
+                        item = widget.layout().itemAt(i)
+                        if item and item.widget() == self.token_count_label:
+                            input_frame = widget
+                            break
+                if input_frame:
+                    break
+                widget = widget.parent()
+            
+            # Если не нашли по иерархии, используем прямую ссылку
+            if not input_frame:
+                # input_frame - это родитель token_count_label
+                input_frame = self.token_count_label.parent()
+            
             if input_frame:
                 # Создаем панель превью
                 self.image_preview_bar = ImagePreviewBar(input_frame)
                 self.image_preview_bar.thumbnail_clicked.connect(self._show_full_image)
                 self.image_preview_bar.remove_requested.connect(self._remove_staged_image)
                 
-                # Вставляем между полем ввода и кнопками
-                input_frame.layout().insertWidget(2, self.image_preview_bar)
+                # Вставляем между token_count_label (индекс 0) и input_row_layout (индекс 1)
+                # Поэтому вставляем на позицию 1
+                input_frame.layout().insertWidget(1, self.image_preview_bar)
         
         self.image_preview_bar.show()
 
@@ -1599,19 +1787,13 @@ class ChatGUI(QMainWindow):
             # Удаляем превью
             self.image_preview_bar.remove_at(index)
             
-            # Обновляем UI
-            count = len(self.staged_image_data)
-            if count > 0:
-                self.attachment_label.setText(
-                    _("{count} изображений прикреплено",
-                    "{count} images attached").format(count=count)
-                )
-            else:
-                self.attachment_label.setText("")
-                self.clear_attach_btn.setVisible(False)
+            # Если больше нет изображений, скрываем панель превью
+            if len(self.staged_image_data) == 0:
                 self._hide_image_preview_bar()
-    
-    
+            
+            # Обновляем состояние кнопки отправки
+            self._update_send_button_state()
+
     def _hide_image_preview_bar(self):
         """Скрыть панель превью"""
         if self.image_preview_bar:

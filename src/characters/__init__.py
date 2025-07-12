@@ -30,8 +30,8 @@ class CrazyMita(Character):
 
 
 
-    def process_response_nlp_commands(self, response: str) -> str:
-        response = super().process_response_nlp_commands(response)
+    def process_response_nlp_commands(self, response: str,save_as_missed = False) -> str:
+        response = super().process_response_nlp_commands(response,save_as_missed)
 
         if "<Secret!>" in response:
             if not self.get_variable("secretExposedFirst", False):

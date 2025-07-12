@@ -371,7 +371,8 @@ class ChatModel:
                     logger.warning("LLM generation failed or returned empty.")
                     return None
 
-                processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content)
+                processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
+                                                                                               self.controller.settings.get("SAVE_MISSED_MEMORY",False))
 
                 # --- Встраивание «command replacer» (embeddings) ---------------------------
                 final_response_text = processed_response_text

@@ -12,6 +12,8 @@ def setup_general_settings_control(self, parent):
          'tooltip': _('Сколько сообщений будет помнить мита', 'How much messages Mita will remember')},
         {'label': _('Сохранять утерянную историю ', 'Save lost history'),
          'key': 'GPT4FREE_LAST_ATTEMPT', 'type': 'checkbutton', 'default_checkbutton': False},
+        {'label': _('Сохранять утерянную память ', 'Save lost memory'),
+         'key': 'SAVE_MISSED_MEMORY', 'type': 'checkbutton', 'default_checkbutton': False},
 
         {'label': _('Кол-во попыток', 'Attempt count'), 'key': 'MODEL_MESSAGE_ATTEMPTS_COUNT',
          'type': 'entry', 'default': 3},

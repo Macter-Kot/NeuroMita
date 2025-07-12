@@ -115,7 +115,16 @@ class ChatController:
             except Exception as e:
                 logger.info(f"Ошибка в цикле событий asyncio: {e}")
             finally:
+                logger.info("Начинаем shutdown asyncio loop...")
+                pending = asyncio.all_tasks(self.loop)
+                for task in pending:
+                    task.cancel()
+                try:
+                    self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                except Exception as e:
+                    logger.error(f"Ошибка при завершении pending tasks: {e}")
                 self.loop.close()
+                logger.info("Цикл событий asyncio закрыт.")
         except Exception as e:
             logger.info(f"Ошибка при запуске цикла событий asyncio: {e}")
             self.loop_ready_event.set()
@@ -245,10 +254,45 @@ class ChatController:
             logger.info("FFmpeg found. No installation needed.")
 
     def close_app(self):
+        logger.info("Начинаем закрытие приложения...")
+        
         self.capture_controller.stop_screen_capture_thread()
         self.capture_controller.stop_camera_capture_thread()
         self.audio_controller.delete_all_sound_files()
-        self.server_controller.stop_server()
+        
+        # Остановка сервера с обработкой ошибок
+        try:
+            self.server_controller.stop_server()
+        except Exception as e:
+            logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
+        
+        # Остановка распознавания речи
+        from handlers.asr_handler import SpeechRecognition
+        SpeechRecognition.speech_recognition_stop()
+        time.sleep(2)  # Увеличенное ожидание для завершения задач
+        
+        # Остановка asyncio loop
+        if self.loop and not self.loop.is_closed():
+            logger.info("Остановка asyncio loop...")
+            try:
+                # Shutdown default executor для предотвращения ошибок futures
+                if self.loop.is_running():
+                    self.loop.run_until_complete(self.loop.shutdown_default_executor())
+                
+                self.loop.call_soon_threadsafe(self.loop.stop)
+                self.loop.run_forever()  # Чтобы обработать stop
+            except Exception as e:
+                logger.error(f"Ошибка при shutdown loop: {e}")
+            finally:
+                if not self.loop.is_closed():
+                    self.loop.close()
+                logger.info("Asyncio loop остановлен.")
+        
+        if self.asyncio_thread.is_alive():
+            self.asyncio_thread.join(timeout=5)
+            if self.asyncio_thread.is_alive():
+                logger.warning("Asyncio thread didn't stop in time.")
+        
         logger.info("Закрываемся")
 
     def _check_and_perform_pending_update(self):

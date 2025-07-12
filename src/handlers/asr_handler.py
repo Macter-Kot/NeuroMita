@@ -213,63 +213,71 @@ class SpeechRecognition:
         max_retries = 3
         retry_count = 0
         
-        while retry_count < max_retries and SpeechRecognition.active:
-            try:
-                if not SpeechRecognition._init_dependencies():
-                    logger.error("Не удалось инициализировать зависимости.")
-                    return
-                
-                if not await SpeechRecognition._recognizer_instance.install():
-                    logger.error("Не удалось установить зависимости распознавателя.")
-                    return
+        try:
+            while retry_count < max_retries and SpeechRecognition.active:
+                try:
+                    if not SpeechRecognition._init_dependencies():
+                        logger.error("Не удалось инициализировать зависимости.")
+                        return
                     
-                if not await SpeechRecognition._recognizer_instance.init():
-                    logger.error("Не удалось инициализировать распознаватель.")
-                    return
-
-                retry_count = 0  # Сбрасываем счетчик при успешной инициализации
-
-                if SpeechRecognition._recognizer_type == "google":
-                    await SpeechRecognition._recognizer_instance.live_recognition(
-                        SpeechRecognition.microphone_index,
-                        SpeechRecognition.handle_voice_message,
-                        None,
-                        lambda: SpeechRecognition.active,
-                        chunk_size=SpeechRecognition.CHUNK_SIZE
-                    )
-                else:
-                    if not await SpeechRecognition._init_vad_dependencies():
-                        logger.error("Не удалось инициализировать VAD.")
+                    if not await SpeechRecognition._recognizer_instance.install():
+                        logger.error("Не удалось установить зависимости распознавателя.")
                         return
                         
-                    await SpeechRecognition._recognizer_instance.live_recognition(
-                        SpeechRecognition.microphone_index,
-                        SpeechRecognition.handle_voice_message,
-                        SpeechRecognition._silero_vad_model,
-                        lambda: SpeechRecognition.active,
-                        sample_rate=SpeechRecognition.VOSK_SAMPLE_RATE,
-                        chunk_size=SpeechRecognition.CHUNK_SIZE,
-                        vad_threshold=SpeechRecognition.VAD_THRESHOLD,
-                        silence_timeout=SpeechRecognition.VAD_SILENCE_TIMEOUT_SEC,
-                        pre_buffer_duration=SpeechRecognition.VAD_PRE_BUFFER_DURATION_SEC
-                    )
-                    
-                # Если мы дошли сюда, значит распознавание завершилось нормально
-                break
-                    
-            except Exception as e:
-                retry_count += 1
-                logger.error(f"Ошибка в цикле распознавания (попытка {retry_count}/{max_retries}): {e}", exc_info=True)
-                
-                if retry_count < max_retries and SpeechRecognition.active:
-                    logger.info(f"Перезапуск через 2 секунды...")
-                    await asyncio.sleep(2)
-                else:
-                    logger.error("Превышено количество попыток перезапуска. Распознавание остановлено.")
+                    if not await SpeechRecognition._recognizer_instance.init():
+                        logger.error("Не удалось инициализировать распознаватель.")
+                        return
+
+                    retry_count = 0  # Сбрасываем счетчик при успешной инициализации
+
+                    if SpeechRecognition._recognizer_type == "google":
+                        await SpeechRecognition._recognizer_instance.live_recognition(
+                            SpeechRecognition.microphone_index,
+                            SpeechRecognition.handle_voice_message,
+                            None,
+                            lambda: SpeechRecognition.active,
+                            chunk_size=SpeechRecognition.CHUNK_SIZE
+                        )
+                    else:
+                        if not await SpeechRecognition._init_vad_dependencies():
+                            logger.error("Не удалось инициализировать VAD.")
+                            return
+                            
+                        await SpeechRecognition._recognizer_instance.live_recognition(
+                            SpeechRecognition.microphone_index,
+                            SpeechRecognition.handle_voice_message,
+                            SpeechRecognition._silero_vad_model,
+                            lambda: SpeechRecognition.active,
+                            sample_rate=SpeechRecognition.VOSK_SAMPLE_RATE,
+                            chunk_size=SpeechRecognition.CHUNK_SIZE,
+                            vad_threshold=SpeechRecognition.VAD_THRESHOLD,
+                            silence_timeout=SpeechRecognition.VAD_SILENCE_TIMEOUT_SEC,
+                            pre_buffer_duration=SpeechRecognition.VAD_PRE_BUFFER_DURATION_SEC
+                        )
+                        
+                    # Если мы дошли сюда, значит распознавание завершилось нормально
                     break
-        
-        SpeechRecognition._is_running = False
-        logger.info("Цикл распознавания речи остановлен.")
+                        
+                except asyncio.CancelledError:
+                    logger.info("Задача распознавания отменена.")
+                    break
+                except RuntimeError as e:
+                    if "after shutdown" in str(e):
+                        logger.warning("Попытка планирования future после shutdown loop. Игнорируем.")
+                        break
+                except Exception as e:
+                    retry_count += 1
+                    logger.error(f"Ошибка в цикле распознавания (попытка {retry_count}/{max_retries}): {e}", exc_info=True)
+                    
+                    if retry_count < max_retries and SpeechRecognition.active:
+                        logger.info(f"Перезапуск через 2 секунды...")
+                        await asyncio.sleep(2)
+                    else:
+                        logger.error("Превышено количество попыток перезапуска. Распознавание остановлено.")
+                        break
+        finally:
+            SpeechRecognition._is_running = False
+            logger.info("Цикл распознавания речи остановлен.")
 
     @staticmethod
     async def speech_recognition_start_async():
@@ -297,17 +305,22 @@ class SpeechRecognition:
             return
 
         SpeechRecognition.active = False
-        SpeechRecognition._is_running = False
         logger.info("Запрос на остановку распознавания речи...")
 
         if SpeechRecognition._recognition_task and not SpeechRecognition._recognition_task.done():
             try:
-                SpeechRecognition._recognition_task.result(timeout=2.0)
+                SpeechRecognition._recognition_task.result(timeout=5.0)  # Увеличили таймаут до 5 сек
                 logger.info("Задача распознавания речи успешно завершена.")
             except asyncio.TimeoutError:
                 logger.warning("Таймаут при ожидании завершения задачи распознавания речи.")
                 if SpeechRecognition._recognition_task:
                     SpeechRecognition._recognition_task.cancel()
+                    # Ожидаем, пока задача действительно завершится
+                    start_time = time.time()
+                    while SpeechRecognition._is_running and time.time() - start_time < 5:
+                        time.sleep(0.1)
+                    if SpeechRecognition._is_running:
+                        logger.error("Задача распознавания не завершилась после отмены.")
             except Exception as e:
                 logger.error(f"Ошибка при ожидании завершения задачи распознавания речи: {e}")
         else:

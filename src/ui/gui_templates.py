@@ -43,6 +43,7 @@ def create_settings_section(gui, parent_layout, title, cfg_list, *, icon_name=No
                 hide=cfg.get('hide', False), command=cfg.get('command'),
                 widget_name=cfg.get('widget_name', cfg.get('key')),
                 depends_on=cfg.get('depends_on'),
+                depends_on_value=cfg.get('depends_on_value',None),
                 hide_when_disabled=cfg.get('hide_when_disabled', False),
                 toggle_key=cfg.get('toggle_key'),
                 toggle_default=cfg.get('toggle_default'),
@@ -84,6 +85,7 @@ def create_setting_widget(
         widget_name=None,
         # ───────── ЗАВИСИМОСТИ ─────────
         depends_on: str | None = None,
+        depends_on_value: str | None = None,
         hide_when_disabled: bool = False,
         # ───────── «ЧЕКБОКС ВНУТРИ СТРОКИ» ─────────
         toggle_key: str | None = None,
@@ -269,8 +271,14 @@ def create_setting_widget(
                 active = True
                 if isinstance(controller, QCheckBox):
                     active = controller.isChecked()
+                elif isinstance(controller, QComboBox):
+                    if depends_on_value:
+                        active = (controller.currentText() == depends_on_value)
+                    else:
+                        active = bool(controller.currentText())
                 elif hasattr(controller, "currentText"):
                     active = bool(controller.currentText())
+
                 if hide_when_disabled:
                     frame.setVisible(active)
                 else:

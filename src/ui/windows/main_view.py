@@ -522,7 +522,6 @@ class ChatGUI(QMainWindow):
         status_indicators_widget.create_status_indicators(self, settings_layout)
         language_settings.create_language_section(self, settings_layout)
         api_settings.setup_api_controls(self, settings_layout)
-        g4f_settings.setup_g4f_controls(self, settings_layout)
         general_model_settings.setup_general_settings_control(self, settings_layout)
         voiceover_settings.setup_voiceover_controls(self, settings_layout)
         microphone_settings.setup_microphone_controls(self, settings_layout)

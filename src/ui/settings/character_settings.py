@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
+from presets.api_presets import API_PRESETS
 from ui.gui_templates import create_settings_section
 from ui.settings.prompt_catalogue_settings import list_prompt_sets
 from managers.prompt_catalogue_manager import copy_prompt_set, get_prompt_catalogue_folder_name
@@ -12,10 +13,20 @@ from main_logger import logger
 from utils import getTranslationVariant as _
 
 def setup_mita_controls(gui, parent_layout):
+
+    provider_names = list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi'] + list(gui.settings.get("CUSTOM_API_PRESETS", {}).keys())
+    provider_names = list(dict.fromkeys(provider_names))  # Убрать дубликаты
+    provider_names.insert(0, _("Текущий", "Current"))  # 'Current' как первый вариант
+
     mita_config = [
         {'label': 'Персонажи', 'key': 'CHARACTER', 'type': 'combobox', 'options': gui.model.get_all_mitas(), 'default': "Crazy", 'widget_name': "character_combobox", 'command': lambda: change_character_actions(gui)},
         {'label': 'Набор промтов', 'key': 'PROMPT_SET', 'type': 'combobox', 'options': list_prompt_sets("PromptsCatalogue", gui.model.current_character.char_id), 'default': _("Выберите", "Choose"), 'widget_name': 'prompt_pack_combobox'},
-        
+        {'label': _('Провайдер для персонажа', 'Provider for character'),
+         'key': 'CHAR_PROVIDER', 'type': 'combobox',  # Ключ базовый, но мы будем использовать с префиксом per-character
+         'options': provider_names,
+         'default': _("Текущий", "Current"),
+         'widget_name': 'char_provider_combobox'},  # Для доступа к виджету
+
         {'label': 'Управление персонажем', 'type': 'text'},
         {'type': 'button_group', 'buttons': [
             {'label': 'Открыть папку персонажа', 'command': lambda: open_character_folder(gui)},
@@ -44,6 +55,9 @@ def setup_mita_controls(gui, parent_layout):
         current_char = gui.settings.get("CHARACTER", "Crazy")
         change_character_actions(gui, current_char)
 
+    if hasattr(gui, 'char_provider_combobox'):
+        gui.char_provider_combobox.currentTextChanged.connect(lambda text: save_character_provider(gui, text))
+
 def set_default_prompt_pack(gui, combobox):
     character_name = gui.character_combobox.currentText()
     character_prompts_path = os.path.join("Prompts", character_name)
@@ -60,6 +74,13 @@ def change_character_actions(gui, character=None):
 
     gui.model.current_character_to_change = selected_character
     gui.model.check_change_current_character()
+
+    if hasattr(gui, 'char_provider_combobox'):
+        provider_key = f"CHAR_PROVIDER_{selected_character}"
+        current_provider = gui.settings.get(provider_key, _("Текущий", "Current"))
+        gui.char_provider_combobox.blockSignals(True)
+        gui.char_provider_combobox.setCurrentText(current_provider)
+        gui.char_provider_combobox.blockSignals(False)
 
     if not selected_character:
         QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран.", "No character selected."))
@@ -179,3 +200,14 @@ async def async_reload_prompts(gui):
         QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось обновить промпты.", "Failed to update prompts."))
     finally:
         gui._close_loading_popup()
+
+def save_character_provider(gui, provider: str):
+    selected_character = gui.character_combobox.currentText() if hasattr(gui, 'character_combobox') else None
+    if not selected_character:
+        QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран.", "No character selected."))
+        return
+    provider_key = f"CHAR_PROVIDER_{selected_character}"
+    gui.settings.set(provider_key, provider)
+    logger.info(f"Saved provider '{provider}' for character '{selected_character}'")
+    # Опционально: обновить модель или GUI
+    gui.model.check_change_current_character()  # Чтобы модель перезагрузилась, если нужно

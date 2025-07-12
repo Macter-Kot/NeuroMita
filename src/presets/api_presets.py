@@ -6,6 +6,17 @@ PRICING_SYMBOLS = {
 
 API_PRESETS: dict = {
 
+    "g4f": {
+        "name": "Gpt4Free",  # Отображается в ComboBox
+        "pricing": "free",
+        "url": "",  # Нет URL, т.к. внутренняя библиотека
+        "add_key": False,
+        "model": "deepseek-v3",  # Дефолтная модель для g4f
+        "nm_api_req": False,
+        "gemini_case": False,
+        "is_g4f": True,  # Специальный флаг для распознавания в UI/логике
+    },
+
     # Условно-бесплатные / бесплатные
     "openrouter": {
         "name": "OpenRouter",
@@ -25,15 +36,7 @@ API_PRESETS: dict = {
         "nm_api_req": False,
         "gemini_case": False,
     },
-    "chutes": {
-        "name": "Chutes.ai",
-        "pricing": "mixed",
-        "url": "https://llm.chutes.ai/v1/chat/completions",
-        "add_key": False,
-        "model": "deepseek-ai/DeepSeek-V3-0324",
-        "nm_api_req": True,
-        "gemini_case": False,
-    },
+
 
     # Google
     "google_ai_studio": {
@@ -93,6 +96,14 @@ API_PRESETS: dict = {
         "nm_api_req": False,
         "gemini_case": False,
     },
-
+    "chutes": {
+        "name": "Chutes.ai",
+        "pricing": "paid",
+        "url": "https://llm.chutes.ai/v1/chat/completions",
+        "add_key": False,
+        "model": "deepseek-ai/DeepSeek-V3-0324",
+        "nm_api_req": True,
+        "gemini_case": False,
+    },
 
 }

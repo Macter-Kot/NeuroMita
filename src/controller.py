@@ -239,6 +239,7 @@ class ChatController:
                 self.bot_handler_ready = True
                 if hasattr(self, 'silero_connected') and self.silero_connected:
                     logger.info("ТГ успешно подключен")
+                    self.update_status_colors()
                 else:
                     logger.info("ТГ не подключен")
             except Exception as e:

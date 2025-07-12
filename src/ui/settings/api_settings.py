@@ -151,10 +151,10 @@ def setup_api_controls(self, parent):
     # ── URL builder ───────────────────────────────────────
     def build_dynamic_url(pid: str, model: str, key: str) -> str:
         pre = MIXED_PRESETS.get(pid, {})
-        if not pre:
-            return ""
+        if not pre or pre.get("is_g4f"):
+            return ""  # Для g4f нет URL
         url_tpl = pre.get("url_tpl") or pre.get("url", "")
-        url     = url_tpl.format(model=model) if "{model}" in url_tpl else url_tpl
+        url = url_tpl.format(model=model) if "{model}" in url_tpl else url_tpl
         if pre.get("add_key") and key:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}key={key}"
@@ -163,36 +163,50 @@ def setup_api_controls(self, parent):
     self._skip_next_provider_save = False
 
     # ── state helpers ─────────────────────────────────────
+    # ── state helpers (модифицировано для g4f) ────────────
     def save_provider_state(pid: str):
         if not pid:
             return
-        provider_data[pid] = {
-            "NM_API_URL":   api_url_entry.text().strip(),
+        is_g4f = MIXED_PRESETS.get(pid, {}).get("is_g4f", False)
+        state = {
+            "NM_API_URL": api_url_entry.text().strip(),
             "NM_API_MODEL": api_model_entry.text().strip(),
-            "NM_API_KEY":   api_key_entry.text().strip(),
+            "NM_API_KEY": api_key_entry.text().strip(),
             "NM_API_KEY_RES": self.settings.get("NM_API_KEY_RES", ""),
-            "NM_API_REQ":   nm_api_req_checkbox.isChecked(),
-            "GEMINI_CASE":  gemini_case_checkbox.isChecked(),
+            "NM_API_REQ": nm_api_req_checkbox.isChecked(),
+            "GEMINI_CASE": gemini_case_checkbox.isChecked(),
         }
+        if is_g4f:  # Сохраняем g4f-специфику
+            state["gpt4free_model"] = api_model_entry.text().strip()  # Переиспользуем поле модели
+            state["G4F_VERSION"] = g4f_version_entry.text().strip()
+            state["is_g4f"] = True
+        provider_data[pid] = state
         self.settings.set("API_PROVIDER_DATA", provider_data)
         self.settings.save_settings()
 
     def load_provider_state(pid: str, fallback: bool = True):
         stored = provider_data.get(pid)
+        is_g4f = stored.get("is_g4f", False) if stored else MIXED_PRESETS.get(pid, {}).get("is_g4f", False)
         if stored:
             api_url_entry.setText(stored.get("NM_API_URL", ""))
-            api_model_entry.setText(stored.get("NM_API_MODEL", ""))
+            api_model_entry.setText(stored.get("NM_API_MODEL", "") if not is_g4f else stored.get("gpt4free_model", ""))
             api_key_entry.setText(stored.get("NM_API_KEY", ""))
 
             nm_api_req_checkbox.setChecked(stored.get("NM_API_REQ", False))
             gemini_case_checkbox.setChecked(stored.get("GEMINI_CASE", False))
 
-            self._save_setting("NM_API_URL",   stored.get("NM_API_URL", ""))
+            self._save_setting("NM_API_URL", stored.get("NM_API_URL", ""))
             self._save_setting("NM_API_MODEL", stored.get("NM_API_MODEL", ""))
-            self._save_setting("NM_API_KEY",   stored.get("NM_API_KEY", ""))
-            self._save_setting("NM_API_REQ",   stored.get("NM_API_REQ", False))
-            self._save_setting("GEMINI_CASE",  stored.get("GEMINI_CASE", False))
+            self._save_setting("NM_API_KEY", stored.get("NM_API_KEY", ""))
+            self._save_setting("NM_API_REQ", stored.get("NM_API_REQ", False))
+            self._save_setting("GEMINI_CASE", stored.get("GEMINI_CASE", False))
             self._save_setting("NM_API_KEY_RES", stored.get("NM_API_KEY_RES", ""))
+
+            if is_g4f:
+                g4f_version_entry.setText(stored.get("G4F_VERSION", "0.4.7.7"))
+                self._save_setting("G4F_VERSION", stored.get("G4F_VERSION", "0.4.7.7"))
+                self._save_setting("gpt4free", True)  # Автоматически включаем флаг
+                self._save_setting("gpt4free_model", stored.get("gpt4free_model", ""))
         elif fallback:
             api_key_entry.setText("")
             self._save_setting("NM_API_KEY", "")
@@ -254,6 +268,19 @@ def setup_api_controls(self, parent):
          'hide': bool(self.settings.get("HIDE_PRIVATE")),
          'default': "",
          'widget_name': 'nm_api_key_res_label'},
+
+        # НОВЫЕ ПОЛЯ ДЛЯ G4F (зависят от выбора "gpt4free" в combo)
+        {'label': _('Версия gpt4free', 'gpt4free Version'),
+         'key': 'G4F_VERSION', 'type': 'entry', 'default': '0.4.7.7',
+         'widget_name': 'g4f_version_entry',
+         'tooltip': _('Укажите версию g4f (например, 0.4.7.7 или latest). Обновление произойдет при следующем запуске.',
+                      'Specify the g4f version (e.g., 0.4.7.7 or latest). The update will occur on the next launch.'),
+         'depends_on': 'api_provider_combo', 'depends_on_value': 'gpt4free',  # Показывать только для g4f
+         'hide_when_disabled': True},
+        {'label': _('Запланировать обновление g4f', 'Schedule g4f Update'),
+         'type': 'button', 'command': self.trigger_g4f_reinstall_schedule,  # Предполагаю, что функция существует
+         'depends_on': 'api_provider_combo', 'depends_on_value': 'gpt4free',
+         'hide_when_disabled': True},
     ]
     self.create_settings_section(parent, _("Настройки API", "API settings"), config)
 
@@ -264,6 +291,7 @@ def setup_api_controls(self, parent):
     api_key_entry     = getattr(self, 'api_key_entry')
     gemini_case_checkbox = getattr(self, 'gemini_case_checkbox')
     nm_api_req_checkbox  = getattr(self, 'nm_api_req_checkbox')
+    g4f_version_entry = getattr(self, 'g4f_version_entry')
 
     # ── разделитель ───────────────────────────────────────
     api_provider_combo.insertSeparator(separator_index)
@@ -290,30 +318,52 @@ def setup_api_controls(self, parent):
         pre = MIXED_PRESETS.get(pid)
         if not pre:
             return
+        is_g4f = pre.get("is_g4f", False)
         api_model_entry.setText(pre.get("model", ""))
         api_key_entry.setText("")
         nm_api_req_checkbox.setChecked(pre.get("nm_api_req", False))
         gemini_case_checkbox.setChecked(pre.get("gemini_case", False))
 
-        self._save_setting("NM_API_MODEL",  pre.get("model", ""))
-        self._save_setting("NM_API_KEY",    "")
-        self._save_setting("NM_API_REQ",    pre.get("nm_api_req", False))
-        self._save_setting("GEMINI_CASE",   pre.get("gemini_case", False))
+        self._save_setting("NM_API_MODEL", pre.get("model", ""))
+        self._save_setting("NM_API_KEY", "")
+        self._save_setting("NM_API_REQ", pre.get("nm_api_req", False))
+        self._save_setting("GEMINI_CASE", pre.get("gemini_case", False))
+
+        if is_g4f:
+            self._save_setting("gpt4free", True)
+            self._save_setting("gpt4free_model", pre.get("model", ""))
+            self._save_setting("G4F_VERSION", "0.4.7.7")  # Дефолт
+            g4f_version_entry.setText("0.4.7.7")
+        else:
+            self._save_setting("gpt4free", False)
+
         update_url(force=True)
 
     # ── provider change ───────────────────────────────────
     self._last_provider = combo_current_id()
     def on_provider_changed():
-        # если попросили пропустить сохранение
-        if not getattr(self, "_skip_next_provider_save", False):
-            save_provider_state(self._last_provider)
-        else:
-            self._skip_next_provider_save = False
-
+        save_provider_state(self._last_provider)
         new_id = combo_current_id()
         load_provider_state(new_id, fallback=True)
         self._last_provider = new_id
         update_url(force=True)
+
+        # Логика для g4f: скрываем/показываем поля
+        is_g4f = MIXED_PRESETS.get(new_id, {}).get("is_g4f", False) or new_id == "g4f"
+        self._save_setting("gpt4free", is_g4f)  # Автоматический флаг
+
+        # Скрываем ненужные для g4f
+        api_url_entry.setVisible(not is_g4f)
+        api_key_entry.setVisible(not is_g4f)
+        nm_api_req_checkbox.setVisible(not is_g4f)
+        gemini_case_checkbox.setVisible(not is_g4f)
+        getattr(self, 'nm_api_key_res_label').setVisible(not is_g4f)  # Текстarea для резервных ключей
+
+        # Для модели: если g4f, сохраняем в gpt4free_model
+        if is_g4f:
+            self._save_setting("gpt4free_model", api_model_entry.text())
+
+
     api_provider_combo.currentIndexChanged.connect(lambda _: on_provider_changed())
 
     # ── live URL updates ──────────────────────────────────
@@ -331,12 +381,6 @@ def setup_api_controls(self, parent):
         from PyQt6.QtWidgets import QInputDialog
         cur_id = combo_current_id()
 
-        cur_url   = api_url_entry.text().strip()        # >>> FIX (NEW)
-        cur_model = api_model_entry.text().strip()      # >>> FIX (NEW)
-        cur_key   = api_key_entry.text().strip()        # >>> FIX (NEW)
-        cur_req   = nm_api_req_checkbox.isChecked()     # >>> FIX (NEW)
-        cur_case  = gemini_case_checkbox.isChecked()    # >>> FIX (NEW)
-
         if cur_id in API_PRESETS or cur_id == "custom":
             name, ok = QInputDialog.getText(
                 self, _("Имя пресета", "Preset name"),
@@ -353,34 +397,23 @@ def setup_api_controls(self, parent):
                                   "This ID is reserved for builtin preset"))
             return
 
+        is_g4f = MIXED_PRESETS.get(cur_id, {}).get("is_g4f", False) or cur_id == "g4f"
         custom_presets[pid] = {
-            "url":     cur_url,
-            "model":   cur_model,
-            "pricing": "mixed",
-            # можно добавить 'add_key': True,
-            # если вам нужно автоматическое приклеивание ?key=
+            "url": api_url_entry.text().strip() if not is_g4f else "",
+            "model": api_model_entry.text().strip(),
+            "pricing": "free" if is_g4f else "mixed",
+            "is_g4f": is_g4f,
         }
-
-        provider_data[pid] = {                         # >>> FIX (NEW)
-            "NM_API_URL":    cur_url,
-            "NM_API_MODEL":  cur_model,
-            "NM_API_KEY":    cur_key,
-            "NM_API_KEY_RES": self.settings.get("NM_API_KEY_RES", ""),
-            "NM_API_REQ":    cur_req,
-            "GEMINI_CASE":   cur_case,
-        }
+        if is_g4f:
+            custom_presets[pid]["G4F_VERSION"] = g4f_version_entry.text().strip()
 
         self.settings.set("CUSTOM_API_PRESETS", custom_presets)
-        self.settings.set("API_PROVIDER_DATA",   provider_data)
         self.settings.save_settings()
         MIXED_PRESETS[pid] = custom_presets[pid]
 
-        self._skip_next_provider_save = True
-
         if pid not in [p[0] for p in provider_pairs]:
             provider_pairs.append((pid, pid))
-            DISPLAY2ID[pid] = pid
-            ID2DISPLAY[pid]  = pid
+            DISPLAY2ID[pid] = pid; ID2DISPLAY[pid] = pid
             api_provider_combo.addItem(pid)
 
         api_provider_combo.setCurrentText(ID2DISPLAY[pid])

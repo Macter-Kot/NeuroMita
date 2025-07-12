@@ -6,6 +6,17 @@ PRICING_SYMBOLS = {
 
 API_PRESETS: dict = {
 
+    "g4f": {
+        "name": "gpt4free",  # Отображается в ComboBox
+        "pricing": "free",
+        "url": "",  # Нет URL, т.к. внутренняя библиотека
+        "add_key": False,
+        "model": "deepseek-chat",  # Дефолтная модель для g4f
+        "nm_api_req": False,
+        "gemini_case": False,
+        "is_g4f": True,  # Специальный флаг для распознавания в UI/логике
+    },
+
     # Условно-бесплатные / бесплатные
     "openrouter": {
         "name": "OpenRouter",

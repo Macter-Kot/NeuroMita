@@ -382,7 +382,7 @@ class ChatModel:
 
                     if use_cmd_replacer:
                         if not hasattr(self, 'model_handler'):
-                            from services.embedding_handler import EmbeddingModelHandler
+                            from handlers.embedding_handler import EmbeddingModelHandler
                             self.model_handler = EmbeddingModelHandler()
                         if not hasattr(self, 'parser'):
                             from utils.command_parser import CommandParser

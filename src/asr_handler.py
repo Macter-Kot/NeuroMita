@@ -19,7 +19,6 @@ from asr_models.speech_recognizer_base import SpeechRecognizerInterface
 from asr_models.google_recognizer import GoogleRecognizer
 from asr_models.gigaam_recognizer import GigaAMRecognizer
 
-import onnxruntime as rt
 
 class AudioState:
     def __init__(self):

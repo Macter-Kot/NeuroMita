@@ -183,6 +183,16 @@ def setup_api_controls(self, parent):
         self.settings.set("API_PROVIDER_DATA", provider_data)
         self.settings.save_settings()
 
+
+    # Вспомогательная функция для получения актуальной версии
+    def _get_actual_g4f_version():
+        try:
+            from Lib import g4f
+            if g4f and hasattr(g4f, '__version__'):
+                return g4f.__version__
+        finally:
+            return "not installed"
+
     def load_provider_state(pid: str, fallback: bool = True):
         stored = provider_data.get(pid)
         is_g4f = stored.get("is_g4f", False) if stored else MIXED_PRESETS.get(pid, {}).get("is_g4f", False)
@@ -275,8 +285,10 @@ def setup_api_controls(self, parent):
          'widget_name': 'nm_api_key_res_label'},
 
         # НОВЫЕ ПОЛЯ ДЛЯ G4F
-        {'type': 'text', 'label': '', 'widget_name': 'g4f_installed_label'},  # Label будет динамически обновляться
-        {'label': _('Сменить версию на ', 'Change version on '),
+        #{'type': 'text', 'label': _("Текущая версия","Current version")+f": {_get_actual_g4f_version()}",
+        #'key': 'G4F_VERSION',
+        # 'widget_name': 'g4f_installed_label'},  # Label будет динамически обновляться
+        {'label': _('Сменить версию на ', 'Change version on'),
          'key': 'G4F_VERSION', 'type': 'entry', 'default': '0.4.7.7',
          'widget_name': 'g4f_version_entry',
          'tooltip': _('Укажите версию g4f (например, 0.4.7.7 или latest). Обновление произойдет при следующем запуске.',
@@ -474,11 +486,3 @@ def setup_api_controls(self, parent):
         self._save_setting("G4F_VERSION", g4f_version_entry.text().strip())  # Глобально, но при смене пресета перезагружается
         save_provider_state(current_pid)  # Сохраняем в state пресета
 
-    # Вспомогательная функция для получения актуальной версии
-    def _get_actual_g4f_version():
-        try:
-            from Lib import g4f
-            if g4f and hasattr(g4f, '__version__'):
-                return g4f.__version__
-        finally:
-            return "not installed"

@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "qHGa7+JXXD4T7Ofk+P3mpcLwCebNP8YXinPCYgH1hiqTpXDb7HbIi2+ZnuTtEpC3CiSQt7eD56eBq+bOA/Ooiw==",
+  "success": true,
+  "projectFilePath": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\src\\MitaAiC#\\MitaAI\\MitaAI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\mrtak\\.nuget\\packages\\microsoft.netcore.app.ref\\6.0.19\\microsoft.netcore.app.ref.6.0.19.nupkg.sha512",
+    "C:\\Users\\mrtak\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\6.0.19\\microsoft.windowsdesktop.app.ref.6.0.19.nupkg.sha512",
+    "C:\\Users\\mrtak\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\6.0.19\\microsoft.aspnetcore.app.ref.6.0.19.nupkg.sha512"
+  ],
+  "logs": []
+}

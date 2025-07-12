@@ -9,7 +9,10 @@ import queue
 from typing import Optional, List, Callable
 from collections import deque
 import numpy as np
-import onnxruntime as rt
+try:
+    import onnxruntime as rt
+except:
+    ...
 from handlers.asr_models.speech_recognizer_base import SpeechRecognizerInterface
 from utils import getTranslationVariant as _
 from utils.gpu_utils import check_gpu_provider

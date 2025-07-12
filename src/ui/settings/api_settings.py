@@ -1,11 +1,11 @@
 # ui/settings/api_controls.py
 from utils import _
 from presets.api_presets import API_PRESETS
-from PyQt6.QtCore    import QTimer, Qt, QSize
-from PyQt6.QtGui     import (QPainter, QPixmap, QColor, QFont,
-                              QIcon, QPalette, QFontMetrics )
+from PyQt6.QtCore import QTimer, Qt, QSize
+from PyQt6.QtGui import (QPainter, QPixmap, QColor, QFont,
+                         QIcon, QPalette, QFontMetrics)
 from PyQt6.QtWidgets import (QComboBox, QMessageBox,
-                              QStyledItemDelegate, QStyle)
+                             QStyledItemDelegate, QStyle)
 import qtawesome as qta
 
 
@@ -43,23 +43,26 @@ class _ProviderDelegate(QStyledItemDelegate):
         mixed  -> [FREE] / $
     """
 
-    _free_pm:   QPixmap | None = None   # кеш «FREE»
+    _free_pm: QPixmap | None = None  # кеш «FREE»
 
     @classmethod
     def _free_pixmap(cls):
         if cls._free_pm is None:
             font = QFont("Segoe UI", 7, QFont.Weight.Bold)
             metrics = QFontMetrics(font)
-            text_w  = metrics.horizontalAdvance("FREE")
-            w, h = text_w + 8, 14              # 4 px слева + 4 px справа
+            text_w = metrics.horizontalAdvance("FREE")
+            w, h = text_w + 8, 14  # 4 px слева + 4 px справа
             pm = QPixmap(w, h)
             pm.fill(Qt.GlobalColor.transparent)
 
-            p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            p.setBrush(QColor("#ffffff")); p.setPen(Qt.PenStyle.NoPen)
+            p = QPainter(pm);
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setBrush(QColor("#ffffff"));
+            p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(0, 0, w, h, 3, 3)
 
-            p.setPen(QColor("#102035")); p.setFont(font)
+            p.setPen(QColor("#102035"));
+            p.setFont(font)
             p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "FREE")
             p.end()
 
@@ -69,10 +72,8 @@ class _ProviderDelegate(QStyledItemDelegate):
     # -----------------------------------------------------
     def __init__(self, mixed_presets: dict, display2id: dict, parent=None):
         super().__init__(parent)
-        self._mp  = mixed_presets
+        self._mp = mixed_presets
         self._d2i = display2id
-
-    
 
     # -----------------------------------------------------
     def paint(self, painter, option, index):
@@ -83,11 +84,11 @@ class _ProviderDelegate(QStyledItemDelegate):
             painter.fillRect(option.rect, option.palette.base())
 
         text = index.data()
-        pid  = self._d2i.get(text, "")
+        pid = self._d2i.get(text, "")
         pricing = self._mp.get(pid, {}).get("pricing", "")
 
         dollar_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
-        ascent      = QFontMetrics(dollar_font).ascent()   # высота над базовой
+        ascent = QFontMetrics(dollar_font).ascent()  # высота над базовой
 
         x = option.rect.x() + 4
         y = option.rect.y() + (option.rect.height() - 16) // 2
@@ -101,7 +102,7 @@ class _ProviderDelegate(QStyledItemDelegate):
             painter.setPen(QColor("#2ecc71"))
             painter.setFont(dollar_font)
             dollar_w = QFontMetrics(dollar_font).horizontalAdvance("💲")
-            baseline = y + ascent        # ← базовая линия
+            baseline = y + ascent  # ← базовая линия
             painter.drawText(x, baseline, "💲")
             x += dollar_w + 6
 
@@ -144,9 +145,9 @@ def setup_api_controls(self, parent):
     добавляется только делегат для красивых бейджей.
     """
     # ── данные из settings ─────────────────────────────────
-    provider_data   = self.settings.get("API_PROVIDER_DATA", {})
-    custom_presets  = self.settings.get("CUSTOM_API_PRESETS", {})
-    MIXED_PRESETS   = _mixed_presets(API_PRESETS, custom_presets)
+    provider_data = self.settings.get("API_PROVIDER_DATA", {})
+    custom_presets = self.settings.get("CUSTOM_API_PRESETS", {})
+    MIXED_PRESETS = _mixed_presets(API_PRESETS, custom_presets)
 
     # ── URL builder ───────────────────────────────────────
     def build_dynamic_url(pid: str, model: str, key: str) -> str:
@@ -159,8 +160,6 @@ def setup_api_controls(self, parent):
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}key={key}"
         return url
-    
-    self._skip_next_provider_save = False
 
     # ── state helpers ─────────────────────────────────────
     # ── state helpers (модифицировано для g4f) ────────────
@@ -223,13 +222,13 @@ def setup_api_controls(self, parent):
     builtin_pairs = [(pid, _display_name(pid, API_PRESETS[pid]))
                      for pid in API_PRESETS]
     builtin_pairs.append(("custom", "Custom"))
-    custom_pairs    = [(pid, pid) for pid in custom_presets]
-    provider_pairs  = builtin_pairs + custom_pairs
+    custom_pairs = [(pid, pid) for pid in custom_presets]
+    provider_pairs = builtin_pairs + custom_pairs
     separator_index = len(builtin_pairs)
 
     for pid, text in provider_pairs:
         DISPLAY2ID[text] = pid
-        ID2DISPLAY[pid]  = text
+        ID2DISPLAY[pid] = text
 
     # ── FORM CONFIG  (НЕ трогаем) ─────────────────────────
     config = [
@@ -260,8 +259,8 @@ def setup_api_controls(self, parent):
          'key': 'GEMINI_CASE', 'type': 'checkbutton',
          'default_checkbutton': False,
          'widget_name': 'gemini_case_checkbox',
-         'tooltip':_("Формат сообщений gemini отличается от других, поэтому требуется преобразование",
-                     "Gemini message format differs from others, so enable conversion")},
+         'tooltip': _("Формат сообщений gemini отличается от других, поэтому требуется преобразование",
+                      "Gemini message format differs from others, so enable conversion")},
         {'label': _('Резервные ключи', 'Reserve keys'),
          'key': 'NM_API_KEY_RES',
          'type': 'textarea',
@@ -269,28 +268,27 @@ def setup_api_controls(self, parent):
          'default': "",
          'widget_name': 'nm_api_key_res_label'},
 
-        # НОВЫЕ ПОЛЯ ДЛЯ G4F (зависят от выбора "gpt4free" в combo)
+        # НОВЫЕ ПОЛЯ ДЛЯ G4F
         {'label': _('Версия gpt4free', 'gpt4free Version'),
          'key': 'G4F_VERSION', 'type': 'entry', 'default': '0.4.7.7',
          'widget_name': 'g4f_version_entry',
          'tooltip': _('Укажите версию g4f (например, 0.4.7.7 или latest). Обновление произойдет при следующем запуске.',
                       'Specify the g4f version (e.g., 0.4.7.7 or latest). The update will occur on the next launch.'),
-         'depends_on': 'api_provider_combo', 'depends_on_value': 'gpt4free',  # Показывать только для g4f
          'hide_when_disabled': True},
         {'label': _('Запланировать обновление g4f', 'Schedule g4f Update'),
-         'type': 'button', 'command': self.trigger_g4f_reinstall_schedule,  # Предполагаю, что функция существует
-         'depends_on': 'api_provider_combo', 'depends_on_value': 'gpt4free',
+         'type': 'button', 'command': self.trigger_g4f_reinstall_schedule,
+         'widget_name': 'g4f_update_button',
          'hide_when_disabled': True},
     ]
     self.create_settings_section(parent, _("Настройки API", "API settings"), config)
 
     # ── ссылки на виджеты ────────────────────────────────
     api_provider_combo: QComboBox = getattr(self, 'api_provider_combo')
-    api_model_entry   = getattr(self, 'api_model_entry')
-    api_url_entry     = getattr(self, 'api_url_entry')
-    api_key_entry     = getattr(self, 'api_key_entry')
+    api_model_entry = getattr(self, 'api_model_entry')
+    api_url_entry = getattr(self, 'api_url_entry')
+    api_key_entry = getattr(self, 'api_key_entry')
     gemini_case_checkbox = getattr(self, 'gemini_case_checkbox')
-    nm_api_req_checkbox  = getattr(self, 'nm_api_req_checkbox')
+    nm_api_req_checkbox = getattr(self, 'nm_api_req_checkbox')
     g4f_version_entry = getattr(self, 'g4f_version_entry')
 
     # ── разделитель ───────────────────────────────────────
@@ -341,6 +339,9 @@ def setup_api_controls(self, parent):
 
     # ── provider change ───────────────────────────────────
     self._last_provider = combo_current_id()
+
+    self._last_provider = combo_current_id()
+
     def on_provider_changed():
         save_provider_state(self._last_provider)
         new_id = combo_current_id()
@@ -352,17 +353,26 @@ def setup_api_controls(self, parent):
         is_g4f = MIXED_PRESETS.get(new_id, {}).get("is_g4f", False) or new_id == "g4f"
         self._save_setting("gpt4free", is_g4f)  # Автоматический флаг
 
-        # Скрываем ненужные для g4f
-        api_url_entry.setVisible(not is_g4f)
-        api_key_entry.setVisible(not is_g4f)
-        nm_api_req_checkbox.setVisible(not is_g4f)
-        gemini_case_checkbox.setVisible(not is_g4f)
-        getattr(self, 'nm_api_key_res_label').setVisible(not is_g4f)  # Текстarea для резервных ключей
+        # Скрываем ненужные для g4f (скрываем весь frame строки)
+        for field in ['api_url_entry', 'api_key_entry', 'nm_api_req_checkbox', 'gemini_case_checkbox',
+                      'nm_api_key_res_label']:
+            frame = getattr(self, f"{field}_frame", None)
+            if frame:
+                frame.setVisible(not is_g4f)
+
+        # Показываем g4f-поля для любого is_g4f (включая пресеты на основе g4f)
+        for field in ['g4f_version_entry', 'g4f_update_button']:
+            frame = getattr(self, f"{field}_frame", None)
+            if frame:
+                frame.setVisible(is_g4f)
 
         # Для модели: если g4f, сохраняем в gpt4free_model
         if is_g4f:
             self._save_setting("gpt4free_model", api_model_entry.text())
 
+        # Для модели: если g4f, сохраняем в gpt4free_model
+        if is_g4f:
+            self._save_setting("gpt4free_model", api_model_entry.text())
 
     api_provider_combo.currentIndexChanged.connect(lambda _: on_provider_changed())
 
@@ -373,6 +383,7 @@ def setup_api_controls(self, parent):
     # ── начальное восстановление ──────────────────────────
     QTimer.singleShot(0, lambda: load_provider_state(combo_current_id(), fallback=False))
     QTimer.singleShot(0, lambda: update_url(force=True))
+    QTimer.singleShot(0, on_provider_changed)  # Инициализация видимости
 
     # ──────────────────────────────────────────────────────
     #                  SAVE / DELETE  (custom)
@@ -413,7 +424,8 @@ def setup_api_controls(self, parent):
 
         if pid not in [p[0] for p in provider_pairs]:
             provider_pairs.append((pid, pid))
-            DISPLAY2ID[pid] = pid; ID2DISPLAY[pid] = pid
+            DISPLAY2ID[pid] = pid;
+            ID2DISPLAY[pid] = pid
             api_provider_combo.addItem(pid)
 
         api_provider_combo.setCurrentText(ID2DISPLAY[pid])

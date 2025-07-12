@@ -6,11 +6,11 @@ from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices
 
 from utils import getTranslationVariant as _
-from utils.prompt_catalogue_manager import (
+from managers.prompt_catalogue_manager import (
     list_prompt_sets, read_info_json, write_info_json,
     copy_prompt_set, create_new_set, delete_prompt_set
 )
-from settings_manager import CollapsibleSection
+from managers.settings_manager import CollapsibleSection
 
 def setup_prompt_catalogue_controls(gui, parent_layout):
     catalogue_path = "PromptsCatalogue"

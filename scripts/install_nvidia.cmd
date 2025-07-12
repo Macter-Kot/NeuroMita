@@ -19,6 +19,7 @@ if errorlevel 1 (
 
 echo ----------------------------------------------
 %PY% -m uv pip install -r requirements.txt --no-cache-dir
+%PY% -m uv pip install onnxruntime --no-cache-dir
 %PY% -m uv run libs\python\Scripts\pywin32_postinstall.py -install
 echo ----------------------------------------------
 pause

@@ -3,8 +3,8 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBo
                              QPushButton, QCheckBox, QSizePolicy)
 from PyQt6.QtCore import Qt
 from main_logger import logger
-from gui_templates import create_setting_widget
-from settings_manager import CollapsibleSection
+from ui.gui_templates import create_setting_widget
+from managers.settings_manager import CollapsibleSection
 from utils import getTranslationVariant as _
 
 LOCAL_VOICE_MODELS = [

@@ -186,7 +186,7 @@ class PostDslInterpreter:
 
         # Combine all variable scopes for evaluation
         # Context vars (from regex) should take precedence, then local vars, then character vars
-        eval_scope = {**self.character.variables, **self._local_vars, **context_vars}
+        eval_scope = {**self.character.variables, **self._local_vars, **context_vars, **self.character.app_vars}
 
         try:
             # A simplified eval. The editor's version handles auto-str casting and NameError retries.

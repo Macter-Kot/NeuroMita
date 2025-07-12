@@ -222,7 +222,7 @@ class DslInterpreter:
             }
         }
         # Combine local and character variables, with local taking precedence
-        combined_vars = {**self.character.variables, **self._local_vars}
+        combined_vars = {**self.character.variables, **self._local_vars, **self.character.app_vars}  # Добавили
 
         def _raise_dsl_error(e: Exception, custom_msg: str = ""):
             err_msg = custom_msg or f"Error evaluating '{expr}': {type(e).__name__} - {e}"

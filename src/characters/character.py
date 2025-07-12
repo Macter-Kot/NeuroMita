@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional
 from DSL.dsl_engine import DslInterpreter # PROMPTS_ROOT is managed by DslInterpreter
 from DSL.path_resolver import LocalPathResolver
 from DSL.post_dsl_engine import PostDslInterpreter
+from controllers.settings_controller import SettingsController
 from managers.memory_manager import MemoryManager
 from managers.history_manager import HistoryManager
 from utils import clamp, SH # SH for masking keys if needed elsewhere
@@ -75,6 +76,7 @@ class Character:
         self.system_messages = []
 
         self._cached_system_setup: List[Dict] = []
+        self.app_vars: Dict[str, Any] = {}  # Новый: словарь для переменных программы
 
         # Compose initial variables: Base -> Subclass Overrides -> Passed-in Overrides
         composed_initials = Character.BASE_DEFAULTS.copy()
@@ -149,7 +151,8 @@ class Character:
         Generates the main system prompt string using the DSL engine.
         """
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().strftime("%Y %B %d (%A) %H:%M"))
-        
+        self.update_app_vars(SettingsController.get_app_vars())
+
         if hasattr(self.dsl_interpreter, 'char_ctx_filter'):
             self.dsl_interpreter.char_ctx_filter.set_character_id(self.char_id) # type: ignore
             
@@ -209,6 +212,8 @@ class Character:
             logger.error(f"[{self.char_id}] Error during Post-DSL processing: {e}", exc_info=True)
 
         self.set_variable("LongMemoryRememberCount", self.get_variable("LongMemoryRememberCount", 0) + 1)
+        self.update_app_vars(SettingsController.get_app_vars())
+
         response = self.extract_and_process_memory_data(response)
         try:
             response = self._process_behavior_changes_from_llm(response)
@@ -445,7 +450,13 @@ class Character:
             display_str += f"- {key}: {val}\n"
 
         return display_str.strip()
-        
+
+
+    def update_app_vars(self, app_vars: Dict[str, Any]):
+        """Обновляет переменные программы для исползования в логике DSL """
+        self.app_vars = app_vars.copy()  # Копируем, чтобы избежать мутаций
+        logger.debug(f"[{self.char_id}] App vars updated: {list(self.app_vars.keys())}")
+
     def adjust_attitude(self, amount: float):
         current = self.get_variable("attitude", 60.0)
         amount = round(amount,2)

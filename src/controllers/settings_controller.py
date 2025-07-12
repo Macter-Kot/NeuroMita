@@ -1,6 +1,8 @@
 import os
 import base64
 import json
+from typing import Dict, Any
+
 from managers.settings_manager import SettingsManager
 from main_logger import logger
 from utils import SH
@@ -181,3 +183,37 @@ class SettingsController:
         elif key == "MAX_MODEL_TOKENS":
             self.main.model_controller.model.max_model_tokens = int(value)
             self.main.view.update_token_count()
+
+    @staticmethod
+    def get_app_vars() -> Dict[str, Any]:
+        """
+        Возвращает публичные переменные программы для использования в DSL-скриптах.
+
+        Поддерживаются два способа добавления переменных:
+        1. Через список ключей (берётся значение из SettingsManager и преобразуется в bool)
+        2. Через кастомный словарь {имя_переменной: значение}
+
+        Возвращаемый словарь можно спокойно расширять.
+        """
+        # Простые флаги: автоматическое получение из SettingsManager с преобразованием в bool
+        bool_keys = [
+            "ENABLE_CAMERA_CAPTURE",
+            "ENABLE_SCREEN_ANALYSIS",
+            "MIC_ACTIVE",
+            # Добавь сюда другие ключи, если нужно
+        ]
+
+        # Кастомные переменные: имя переменной => конкретное значение
+        custom_vars: Dict[str, Any] = {
+            "app_version": "1.0.0",
+            # "custom_flag": some_function(),
+        }
+
+        # Собираем переменные-флаги
+        flag_vars: Dict[str, Any] = {
+            key: bool(SettingsManager.get(key, False))
+            for key in bool_keys
+        }
+
+        # Объединяем всё в один словарь, приоритет у custom_vars
+        return {**flag_vars, **custom_vars}

@@ -361,85 +361,87 @@ class ChatModel:
             llm_messages_history_limited.append(user_message_for_history)
 
 
-        # 8. Генерация ответа -----------------------------------------------------------
-        try:
-            llm_response_content, success = self._generate_chat_response(combined_messages,stream_callback)
-
-            if not success or not llm_response_content:
-                logger.warning("LLM generation failed or returned empty.")
-                return None
-
-            processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content)
-
-            # --- Встраивание «command replacer» (embeddings) ---------------------------
-            final_response_text = processed_response_text
+        char_provider = self.get_character_provider()
+        with self._temporary_provider(char_provider):
+            # 8. Генерация ответа -----------------------------------------------------------
             try:
-                use_cmd_replacer  = self.controller.settings.get("USE_COMMAND_REPLACER", False)
-                # enable_by_default = os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") == "1"
+                llm_response_content, success = self._generate_chat_response(combined_messages,stream_callback)
 
-                if use_cmd_replacer:
-                    if not hasattr(self, 'model_handler'):
-                        from services.embedding_handler import EmbeddingModelHandler
-                        self.model_handler = EmbeddingModelHandler()
-                    if not hasattr(self, 'parser'):
-                        from utils.command_parser import CommandParser
-                        self.parser = CommandParser(model_handler=self.model_handler)
+                if not success or not llm_response_content:
+                    logger.warning("LLM generation failed or returned empty.")
+                    return None
 
-                    min_sim     = float(self.controller.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
-                    cat_switch  = float(self.controller.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
-                    skip_comma  = bool (self.controller.settings.get("SKIP_COMMA_PARAMETERS", True))
+                processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content)
 
-                    logger.info(f"Attempting command replacement on: {processed_response_text[:100]}...")
-                    final_response_text, _ = self.parser.parse_and_replace(
-                        processed_response_text,
-                        min_similarity_threshold=min_sim,
-                        category_switch_threshold=cat_switch,
-                        skip_comma_params=skip_comma
-                    )
-                    logger.info(f"After command replacement: {final_response_text[:100]}...")
-                else:
-                    logger.info("Command replacer disabled.")
-            except Exception as ex:
-                logger.error(f"Error during command replacement: {ex}", exc_info=True)
-                # остаётся processed_response_text
+                # --- Встраивание «command replacer» (embeddings) ---------------------------
+                final_response_text = processed_response_text
+                try:
+                    use_cmd_replacer  = self.controller.settings.get("USE_COMMAND_REPLACER", False)
+                    # enable_by_default = os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") == "1"
 
-            # 9. Сохраняем историю / TTS --------------------------------------------------
-            assistant_message_content = final_response_text
+                    if use_cmd_replacer:
+                        if not hasattr(self, 'model_handler'):
+                            from services.embedding_handler import EmbeddingModelHandler
+                            self.model_handler = EmbeddingModelHandler()
+                        if not hasattr(self, 'parser'):
+                            from utils.command_parser import CommandParser
+                            self.parser = CommandParser(model_handler=self.model_handler)
 
-            # Проверяем настройку замены изображений заглушками
-            if bool(self.controller.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
-                logger.info("Настройка REPLACE_IMAGES_WITH_PLACEHOLDERS включена. Заменяю изображения заглушками.")
-                # Здесь предполагается, что final_response_text - это строка.
-                # Если модель может возвращать изображения в ответе, нужно будет адаптировать эту логику.
-                # Пока что просто добавляем заглушку, если в ответе есть что-то похожее на изображение (хотя модель не должна их генерировать в текстовом ответе).
-                # В будущем, если модель сможет генерировать изображения, нужно будет обрабатывать мультимодальный контент и здесь.
-                # Для текущей реализации, где модель возвращает только текст, эта заглушка не сработает для изображений,
-                # но она готова к будущим изменениям, если модель начнет возвращать структурированный контент с изображениями.
-                # Пока что, если в ответе есть URL или base64, мы можем это заменить.
-                # Это очень грубая эвристика для текстового ответа.
-                assistant_message_content = re.sub(r'https?://\S+\.(?:png|jpg|jpeg|gif|bmp)|data:image/\S+;base64,\S+', '[Изображение]', assistant_message_content)
+                        min_sim     = float(self.controller.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
+                        cat_switch  = float(self.controller.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
+                        skip_comma  = bool (self.controller.settings.get("SKIP_COMMA_PARAMETERS", True))
+
+                        logger.info(f"Attempting command replacement on: {processed_response_text[:100]}...")
+                        final_response_text, _ = self.parser.parse_and_replace(
+                            processed_response_text,
+                            min_similarity_threshold=min_sim,
+                            category_switch_threshold=cat_switch,
+                            skip_comma_params=skip_comma
+                        )
+                        logger.info(f"After command replacement: {final_response_text[:100]}...")
+                    else:
+                        logger.info("Command replacer disabled.")
+                except Exception as ex:
+                    logger.error(f"Error during command replacement: {ex}", exc_info=True)
+                    # остаётся processed_response_text
+
+                # 9. Сохраняем историю / TTS --------------------------------------------------
+                assistant_message_content = final_response_text
+
+                # Проверяем настройку замены изображений заглушками
+                if bool(self.controller.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
+                    logger.info("Настройка REPLACE_IMAGES_WITH_PLACEHOLDERS включена. Заменяю изображения заглушками.")
+                    # Здесь предполагается, что final_response_text - это строка.
+                    # Если модель может возвращать изображения в ответе, нужно будет адаптировать эту логику.
+                    # Пока что просто добавляем заглушку, если в ответе есть что-то похожее на изображение (хотя модель не должна их генерировать в текстовом ответе).
+                    # В будущем, если модель сможет генерировать изображения, нужно будет обрабатывать мультимодальный контент и здесь.
+                    # Для текущей реализации, где модель возвращает только текст, эта заглушка не сработает для изображений,
+                    # но она готова к будущим изменениям, если модель начнет возвращать структурированный контент с изображениями.
+                    # Пока что, если в ответе есть URL или base64, мы можем это заменить.
+                    # Это очень грубая эвристика для текстового ответа.
+                    assistant_message_content = re.sub(r'https?://\S+\.(?:png|jpg|jpeg|gif|bmp)|data:image/\S+;base64,\S+', '[Изображение]', assistant_message_content)
 
 
-            assistant_message = {"role": "assistant", "content": assistant_message_content}
-            assistant_message["time"] = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                assistant_message = {"role": "assistant", "content": assistant_message_content}
+                assistant_message["time"] = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
 
-            llm_messages_history_limited.append(assistant_message)
+                llm_messages_history_limited.append(assistant_message)
 
-            self.current_character.save_character_state_to_history(llm_messages_history_limited)
+                self.current_character.save_character_state_to_history(llm_messages_history_limited)
 
-            if self.current_character != self.GameMaster or bool(self.controller.settings.get("GM_VOICE")):
-                self.controller.textToTalk           = process_text_to_voice(final_response_text)
-                self.controller.textSpeaker          = self.current_character.silero_command
-                self.controller.textSpeakerMiku      = self.current_character.miku_tts_name
-                self.controller.silero_turn_off_video= self.current_character.silero_turn_off_video
-                logger.info(f"TTS Text: {self.controller.textToTalk}, Speaker: {self.controller.textSpeaker}")
+                if self.current_character != self.GameMaster or bool(self.controller.settings.get("GM_VOICE")):
+                    self.controller.textToTalk           = process_text_to_voice(final_response_text)
+                    self.controller.textSpeaker          = self.current_character.silero_command
+                    self.controller.textSpeakerMiku      = self.current_character.miku_tts_name
+                    self.controller.silero_turn_off_video= self.current_character.silero_turn_off_video
+                    logger.info(f"TTS Text: {self.controller.textToTalk}, Speaker: {self.controller.textSpeaker}")
 
-            self.controller.update_debug_signal.emit()
-            return final_response_text
+                self.controller.update_debug_signal.emit()
+                return final_response_text
 
-        except Exception as e:
-            logger.error(f"Error during LLM response generation or processing: {e}", exc_info=True)
-            return f"Ошибка: {e}"
+            except Exception as e:
+                logger.error(f"Error during LLM response generation or processing: {e}", exc_info=True)
+                return f"Ошибка: {e}"
 
     def process_history_compression(self,llm_messages_history):
         """Сжимает старые воспоминания"""
@@ -1686,3 +1688,9 @@ class ChatModel:
         if changed:
             logger.info(f"apply_config → обновлены: {', '.join(changed)}")
         return changed
+
+    def get_character_provider(self) -> str:
+        if not self.current_character:
+            return "Current"  # По умолчанию, если персонаж не выбран
+        key = f"CHAR_PROVIDER_{self.current_character.char_id}"
+        return self.controller.settings.get(key, "Current")  # 'Current' по умолчанию

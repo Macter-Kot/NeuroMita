@@ -16,9 +16,7 @@ class SpeechController:
         SpeechRecognition.set_recognizer_type(initial_recognizer_type)
         SpeechRecognition.vosk_model = initial_vosk_model
         
-        if self.main.settings.get("MIC_ACTIVE", False):
-            SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
-            self.mic_recognition_active = True
+        # Убрали автоматический запуск здесь — он будет вызван после загрузки настроек в GUI
             
     def update_speech_settings(self, key, value):
         if key == "MIC_ACTIVE":

@@ -219,6 +219,11 @@ class GoogleRecognizer(SpeechRecognizerInterface):
                 except self._sr.RequestError as e:
                     self.logger.error(f"Ошибка Google API: {e}")
                     await asyncio.sleep(2)
+                except RuntimeError as e:
+                    if "after shutdown" in str(e):
+                        self.logger.warning("Попытка run_in_executor после shutdown. Выходим из цикла.")
+                        break
+                    raise
                 except Exception as e:
                     self.logger.error(f"Ошибка распознавания: {e}")
                     await asyncio.sleep(1)

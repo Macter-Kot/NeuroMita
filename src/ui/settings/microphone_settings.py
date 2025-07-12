@@ -6,6 +6,7 @@ from main_logger import logger
 from handlers.asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
 import sounddevice as sd
+import time
 
 def setup_microphone_controls(gui, parent_layout):
     mic_settings = [
@@ -92,8 +93,12 @@ def on_mic_selected(gui):
                         def restart_recognition():
                             try:
                                 SpeechRecognition.speech_recognition_stop()
-                                import time
-                                time.sleep(0.5)
+                                # Ожидаем завершения предыдущей задачи
+                                start_time = time.time()
+                                while SpeechRecognition._is_running and time.time() - start_time < 5:
+                                    time.sleep(0.1)
+                                if SpeechRecognition._is_running:
+                                    logger.warning("Предыдущее распознавание не остановилось вовремя, принудительная остановка.")
                                 SpeechRecognition.speech_recognition_start(device_id, gui.controller.loop)
                                 logger.info("Распознавание перезапущено с новым микрофоном")
                             except Exception as e:
@@ -140,6 +145,10 @@ def load_mic_settings(gui):
             gui.controller.speech_controller.selected_microphone = device_name
             gui.controller.device_id = device_id
             gui.controller.selected_microphone = device_name
+
+        # После загрузки настроек запускаем распознавание, если активно
+        if gui.controller.settings.get("MIC_ACTIVE", False):
+            gui.controller.speech_controller.update_speech_settings("MIC_ACTIVE", True)
 
     except Exception as e:
         logger.error(f"Ошибка загрузки настроек микрофона: {e}")

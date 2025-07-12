@@ -1,4 +1,5 @@
 import threading
+import time  # Добавлено для time.strftime, хотя оно уже используется
 from server import ChatServer
 from main_logger import logger
 from PyQt6.QtCore import QTimer
@@ -20,10 +21,33 @@ class ServerController:
             logger.info("Сервер запущен.")
             
     def stop_server(self):
-        if self.running:
-            self.running = False
+        if not self.running:
+            logger.debug("Сервер уже остановлен.")
+            return
+            
+        logger.info("Начинаем остановку сервера...")
+        self.running = False
+        
+        # Остановка внутреннего сервера с обработкой ошибок
+        try:
             self.server.stop()
-            logger.info("Сервер остановлен.")
+        except OSError as e:
+            if e.winerror == 10038:  # Игнорируем WinError 10038 (сокет уже не является сокетом)
+                logger.debug("Сокет уже закрыт, игнорируем ошибку 10038.")
+            else:
+                logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при остановке сервера: {e}", exc_info=True)
+        
+        # Ожидание завершения потока
+        if self.server_thread and self.server_thread.is_alive():
+            logger.info("Ожидание завершения серверного потока...")
+            self.server_thread.join(timeout=5)
+            if self.server_thread.is_alive():
+                logger.warning("Серверный поток не завершился вовремя (таймаут 5 сек).")
+        
+        self.server_thread = None
+        logger.info("Сервер остановлен.")
             
     def run_server_loop(self):
         while self.running:

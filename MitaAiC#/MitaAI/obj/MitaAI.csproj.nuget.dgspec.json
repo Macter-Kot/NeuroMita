@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\src\\MitaAiC#\\MitaAI\\MitaAI.csproj": {}
+    "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\MitaAiC#\\MitaAI\\MitaAI.csproj": {}
   },
   "projects": {
-    "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\src\\MitaAiC#\\MitaAI\\MitaAI.csproj": {
+    "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\MitaAiC#\\MitaAI\\MitaAI.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\src\\MitaAiC#\\MitaAI\\MitaAI.csproj",
+        "projectUniqueName": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\MitaAiC#\\MitaAI\\MitaAI.csproj",
         "projectName": "MitaAI",
-        "projectPath": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\src\\MitaAiC#\\MitaAI\\MitaAI.csproj",
+        "projectPath": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\MitaAiC#\\MitaAI\\MitaAI.csproj",
         "packagesPath": "C:\\Users\\mrtak\\.nuget\\packages\\",
-        "outputPath": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\src\\MitaAiC#\\MitaAI\\obj\\",
+        "outputPath": "E:\\NeuroMitaTest\\NeuroMitaOrigin\\NeuroMita\\MitaAiC#\\MitaAI\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\mrtak\\AppData\\Roaming\\NuGet\\NuGet.Config",

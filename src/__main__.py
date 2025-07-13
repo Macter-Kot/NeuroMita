@@ -221,7 +221,6 @@ ensure_project_root()
 import threading
 
 from ui.windows.main_view import ChatGUI
-from ui.windows.main_view_logic import MainViewLogic
 from controllers.main_controller import MainController
 from core.events import get_event_bus
 from main_logger import logger
@@ -243,12 +242,7 @@ if __name__ == "__main__":
         logger.info("Создаю MainController...")
         controller = MainController(None)
         logger.info("MainController создан")
-        
-        # Создаем логику View (прослойку между View и Controller)
-        logger.info("Создаю MainViewLogic...")
-        view_logic = MainViewLogic(controller)
-        logger.info("MainViewLogic создан")
-        
+    
         logger.info("Создаю ChatGUI...")
         main_win = ChatGUI(controller.settings)  # Передаем controller  settings
         logger.info("ChatGUI создан")
@@ -260,7 +254,7 @@ if __name__ == "__main__":
         controller.connect_view_signals()
         
         # Запускаем периодические проверки в логике
-        view_logic.start_periodic_checks()
+        controller.start_periodic_checks()
         
         # НЕ передаем больше ссылки на UI элементы контроллеру!
         # Все взаимодействие теперь через события

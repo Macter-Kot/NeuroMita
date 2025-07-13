@@ -142,10 +142,20 @@ class HistoryManager:
         }
 
     def get_messages_for_compression(self, num_messages: int) -> list[dict]:
-        """Возвращает num_messages самых старых сообщений из истории, предназначенных для сжатия, и удаляет их из основной истории."""
-        messages_to_compress = self.load_history()['messages'][:num_messages]
-        self.load_history()['messages'] = self.load_history()['messages'][num_messages:]
-        self.save_history(self.load_history())
+        """
+        Возвращает `num_messages` самых старых сообщений и удаляет их из истории.
+        Работает с данными в памяти, а не читает файл каждый раз.
+        """
+        history_data = self.load_history()
+        messages = history_data.get('messages', [])
+
+        messages_to_compress = messages[:num_messages]
+        remaining_messages = messages[num_messages:]
+
+        history_data['messages'] = remaining_messages
+        self.save_history(history_data)
+
+        logger.info(f"Извлечено {len(messages_to_compress)} сообщений для сжатия.")
         return messages_to_compress
 
     def add_summarized_history_to_messages(self, summary_message: dict):

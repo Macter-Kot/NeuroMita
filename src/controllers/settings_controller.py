@@ -49,7 +49,6 @@ class SettingsController:
                 if self.main.api_model:
                     self.main.model_controller.model.api_model = self.main.api_model
                 self.main.model_controller.model.makeRequest = self.main.makeRequest
-                self.main.model_controller.model.update_openai_client()
 
             logger.info("Настройки загружены из файла")
         except Exception as e:
@@ -89,16 +88,12 @@ class SettingsController:
         # API настройки модели
         elif key == "NM_API_MODEL":
             self.main.model_controller.model.api_model = value.strip()
-            self.main.model_controller.model.update_openai_client()
         elif key == "NM_API_KEY":
             self.main.model_controller.model.api_key = value.strip()
-            self.main.model_controller.model.update_openai_client()
         elif key == "NM_API_URL":
             self.main.model_controller.model.api_url = value.strip()
-            self.main.model_controller.model.update_openai_client()
         elif key == "NM_API_REQ":
             self.main.model_controller.model.makeRequest = bool(value)
-            self.main.model_controller.model.update_openai_client()
         elif key == "gpt4free_model":
             self.main.model_controller.model.gpt4free_model = value.strip()
 

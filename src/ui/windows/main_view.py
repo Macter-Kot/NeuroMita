@@ -843,7 +843,10 @@ class ChatGUI(QMainWindow):
             role = entry["role"]
             content = entry["content"]
             message_time = entry.get("time", "???")
-            self.insert_message(role, content, message_time=message_time)
+            try:
+                self.insert_message(role, content, message_time=message_time)
+            except Exception as ex:
+                logger.error(f"НУ Я ПОНЯЛ: {str(ex)}")
         
         self.update_debug_info()
         

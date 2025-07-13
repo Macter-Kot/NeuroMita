@@ -517,13 +517,22 @@ def setup_api_controls(self, parent):
     def apply_preset(pid: str):
         pre = MIXED_PRESETS.get(pid)
         if not pre:
+            print(f"Preset '{pid}' not found!")  # Отладка
             return
+        
+        print(f"Applying preset '{pid}': {pre}")  # Отладка
+        
         is_g4f = pre.get("is_g4f", False)
+        
+        # Применяем основные настройки
         api_model_entry.setText(pre.get("model", ""))
-        api_key_entry.setText("")
+        api_key_entry.setText("")  # Ключ всегда сбрасываем для безопасности
+        
+        # Применяем настройки чекбоксов (с дефолтными значениями если не указаны)
         nm_api_req_checkbox.setChecked(pre.get("nm_api_req", False))
         gemini_case_checkbox.setChecked(pre.get("gemini_case", False))
 
+        # Сохраняем в settings
         self._save_setting("NM_API_MODEL", pre.get("model", ""))
         self._save_setting("NM_API_KEY", "")
         self._save_setting("NM_API_REQ", pre.get("nm_api_req", False))
@@ -544,6 +553,7 @@ def setup_api_controls(self, parent):
             self._save_setting("gpt4free", False)
 
         update_url(force=True)
+        print(f"Preset '{pid}' applied successfully!")  # Отладка
 
     # ── provider change ───────────────────────────────────
     self._last_provider = combo_current_id()
@@ -625,31 +635,66 @@ def setup_api_controls(self, parent):
         if pid in API_PRESETS:
             QMessageBox.warning(self, _("Конфликт", "Conflict"),
                                 _("ID зарезервирован встроенным пресетом",
-                                  "This ID is reserved for builtin preset"))
+                                "This ID is reserved for builtin preset"))
             return
 
+        # Определяем текущий тип пресета
         is_g4f = MIXED_PRESETS.get(cur_id, {}).get("is_g4f", False) or cur_id == "g4f"
-        custom_presets[pid] = {
-            "url": api_url_entry.text().strip() if not is_g4f else "",
+        
+        # Получаем базовый пресет (если есть) для копирования дополнительных настроек
+        base_preset = MIXED_PRESETS.get(cur_id, {})
+        
+        # Создаем новый пресет с ТЕКУЩИМИ значениями из полей
+        new_preset = {
+            "name": pid,  # Добавляем имя пресета
             "model": api_model_entry.text().strip(),
-            "pricing": "free" if is_g4f else "mixed",
+            "pricing": "free" if is_g4f else base_preset.get("pricing", "mixed"),
             "is_g4f": is_g4f,
+            
+            # Сохраняем настройки чекбоксов с ТЕКУЩИМИ значениями
+            "nm_api_req": nm_api_req_checkbox.isChecked(),
+            "gemini_case": gemini_case_checkbox.isChecked(),
         }
+        
         if is_g4f:
-            custom_presets[pid]["G4F_VERSION"] = g4f_version_entry.text().strip()  # Сохраняем per-пресет
-
+            # Для g4f сохраняем версию и не сохраняем URL
+            new_preset["G4F_VERSION"] = g4f_version_entry.text().strip()
+            # Копируем дополнительные g4f настройки из базового пресета
+            if base_preset:
+                for key in ["provider", "stream", "auth"]:  # Дополнительные g4f параметры
+                    if key in base_preset:
+                        new_preset[key] = base_preset[key]
+        else:
+            # Для обычных API сохраняем URL и копируем дополнительные настройки
+            new_preset["url"] = api_url_entry.text().strip()
+            new_preset["url_tpl"] = base_preset.get("url_tpl", api_url_entry.text().strip())
+            new_preset["add_key"] = base_preset.get("add_key", True)
+            
+            # Копируем дополнительные настройки из базового пресета
+            for key in ["provider", "headers", "auth_type", "stream"]:
+                if key in base_preset:
+                    new_preset[key] = base_preset[key]
+        
+        print(f"Saving preset '{pid}' with settings: {new_preset}")  # Отладка
+        
+        # Сохраняем пресет
+        custom_presets[pid] = new_preset
         self.settings.set("CUSTOM_API_PRESETS", custom_presets)
         self.settings.save_settings()
-        MIXED_PRESETS[pid] = custom_presets[pid]
+        MIXED_PRESETS[pid] = new_preset
 
+        # Добавляем в комбобокс если нового
         if pid not in [p[0] for p in provider_pairs]:
             provider_pairs.append((pid, pid))
-            DISPLAY2ID[pid] = pid;
+            DISPLAY2ID[pid] = pid
             ID2DISPLAY[pid] = pid
             api_provider_combo.addItem(pid)
 
+        # Переключаемся на сохраненный пресет
         api_provider_combo.setCurrentText(ID2DISPLAY[pid])
         save_provider_state(pid)
+        
+        print(f"Preset '{pid}' saved successfully!")  # Отладка
 
     def _btn_delete_preset():
         cur_id = combo_current_id()

@@ -34,7 +34,6 @@ class ChatModel:
         self.g4fClient = None
         self.g4f_available = False
         self.settings = controller.settings
-        self.controller = controller
         self._initialize_g4f()  # Keep g4f initialization
 
         self.api_key = api_key
@@ -1697,6 +1696,7 @@ class ChatModel:
 
         # если трогаем ключ или url – пересоздаём OpenAI-клиент
         if {"api_key", "api_url"} & set(changed):
+            logger.info(f"apply_config → пересоздаём OpenAI-клиент")
             self.update_openai_client()
 
         if changed:

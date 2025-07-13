@@ -216,6 +216,22 @@ class MainController:
         self.event_bus.subscribe(Events.ON_FAILED_RESPONSE_ATTEMPT, self._on_failed_response_attempt, weak=False)
         self.event_bus.subscribe(Events.ON_FAILED_RESPONSE, self._on_failed_response, weak=False)
 
+        # От server.py:
+        self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
+        self.event_bus.subscribe(Events.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change_server, weak=False)
+        self.event_bus.subscribe(Events.SET_GAME_DATA, self._on_set_game_data, weak=False)
+        self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
+        self.event_bus.subscribe(Events.ADD_TEMPORARY_SYSTEM_INFO, self._on_add_temporary_system_info, weak=False)
+        self.event_bus.subscribe(Events.SET_ID_SOUND, self._on_set_id_sound, weak=False)
+        self.event_bus.subscribe(Events.UPDATE_CHAT, self._on_update_chat, weak=False)
+        self.event_bus.subscribe(Events.GET_SERVER_DATA, self._on_get_server_data, weak=False)
+        self.event_bus.subscribe(Events.GET_SETTINGS, self._on_get_settings, weak=False)
+        self.event_bus.subscribe(Events.RESET_SERVER_DATA, self._on_reset_server_data, weak=False)
+        self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input, weak=False)
+        self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
+        self.event_bus.subscribe(Events.GENERATE_RESPONSE, self._on_generate_response, weak=False)
+        self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
+
     def start_asyncio_loop(self):
         try:
             self.loop = asyncio.new_event_loop()
@@ -1002,6 +1018,93 @@ class MainController:
     
     # endregion
 
+    # region Обработчики событий - Server
+
+    def _on_update_game_connection(self, event: Event):
+        """Обновление статуса подключения к игре"""
+        is_connected = event.data.get('is_connected', False)
+        self.update_game_connection(is_connected)
+
+    def _on_set_character_to_change_server(self, event: Event):
+        """Установка персонажа для изменения от сервера"""
+        character = event.data.get('character', '')
+        if self.model and hasattr(self.model, 'current_character_to_change'):
+            self.model.current_character_to_change = character
+
+    def _on_set_game_data(self, event: Event):
+        """Установка игровых данных"""
+        if self.model:
+            self.model.distance = event.data.get('distance', 0.0)
+            self.model.roomPlayer = event.data.get('roomPlayer', -1)
+            self.model.roomMita = event.data.get('roomMita', -1)
+            self.model.nearObjects = event.data.get('nearObjects', '')
+            self.model.actualInfo = event.data.get('actualInfo', '')
+
+    def _on_set_dialog_active(self, event: Event):
+        """Установка статуса активного диалога"""
+        self.dialog_active = event.data.get('active', False)
+
+    def _on_add_temporary_system_info(self, event: Event):
+        """Добавление временной системной информации"""
+        content = event.data.get('content', '')
+        if content and self.model and hasattr(self.model, 'add_temporary_system_info'):
+            self.model.add_temporary_system_info(content)
+
+    def _on_set_id_sound(self, event: Event):
+        """Установка ID звука"""
+        self.id_sound = event.data.get('id', 0)
+
+    def _on_update_chat(self, event: Event):
+        """Обновление чата"""
+        role = event.data.get('role', '')
+        content = event.data.get('content', '')
+        is_initial = event.data.get('is_initial', False)
+        emotion = event.data.get('emotion', '')
+        
+        if self.view:
+            self.view.update_chat_signal.emit(role, content, is_initial, emotion)
+
+    def _on_get_server_data(self, event: Event):
+        """Получение данных сервера"""
+        return {
+            'patch_to_sound_file': self.patch_to_sound_file,
+            'id_sound': self.id_sound,
+            'instant_send': self.instant_send,
+            'silero_connected': self.silero_connected
+        }
+
+    def _on_get_settings(self, event: Event):
+        """Получение всех настроек"""
+        return self.settings.settings  # Возвращаем весь словарь настроек
+
+    def _on_reset_server_data(self, event: Event):
+        """Сброс данных сервера"""
+        self.instant_send = False
+        self.patch_to_sound_file = ""
+
+    def _on_clear_user_input(self, event: Event):
+        """Очистка пользовательского ввода"""
+        self.clear_user_input()
+
+    def _on_set_waiting_answer(self, event: Event):
+        """Установка статуса ожидания ответа"""
+        self.waiting_answer = event.data.get('waiting', False)
+
+    def _on_generate_response(self, event: Event):
+        """Генерация ответа через модель"""
+        user_input = event.data.get('user_input', '')
+        system_input = event.data.get('system_input', '')
+        image_data = event.data.get('image_data', [])
+        
+        if self.model and hasattr(self.model, 'generate_response'):
+            return self.model.generate_response(user_input, system_input, image_data)
+        return None
+
+    def _on_set_connected_to_game(self, event: Event):
+        """Установка статуса подключения к игре"""
+        self.ConnectedToGame = event.data.get('connected', False)
+
+    # endregion
     
     def start_periodic_checks(self):
         """Запуск периодических проверок"""
@@ -1082,7 +1185,7 @@ class MainController:
 
     def update_status_colors(self):
         if self.view:
-            self.view.update_status_colors()
+            self.view.update_status_signal.emit()
 
     # Делегирующие свойства для обратной совместимости
     @property

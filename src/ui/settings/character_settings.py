@@ -11,21 +11,31 @@ from ui.settings.prompt_catalogue_settings import list_prompt_sets
 from managers.prompt_catalogue_manager import copy_prompt_set, get_prompt_catalogue_folder_name
 from main_logger import logger
 from utils import getTranslationVariant as _
+from ui.windows.events import get_event_bus, Events
 
 def setup_mita_controls(gui, parent_layout):
+    event_bus = get_event_bus()
+    
+    # Получаем список персонажей через события
+    all_characters = event_bus.emit_and_wait(Events.GET_ALL_CHARACTERS, timeout=1.0)
+    character_list = all_characters[0] if all_characters else ["Crazy"]
 
     provider_names = list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi'] + list(gui.settings.get("CUSTOM_API_PRESETS", {}).keys())
     provider_names = list(dict.fromkeys(provider_names))  # Убрать дубликаты
     provider_names.insert(0, _("Текущий", "Current"))  # 'Current' как первый вариант
 
+    # Получаем текущего персонажа для начальной настройки
+    current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+    current_char_id = current_char_data[0]['char_id'] if current_char_data and current_char_data[0] else "Crazy"
+
     mita_config = [
-        {'label': 'Персонажи', 'key': 'CHARACTER', 'type': 'combobox', 'options': gui.model.get_all_mitas(), 'default': "Crazy", 'widget_name': "character_combobox", 'command': lambda: change_character_actions(gui)},
-        {'label': 'Набор промтов', 'key': 'PROMPT_SET', 'type': 'combobox', 'options': list_prompt_sets("PromptsCatalogue", gui.model.current_character.char_id), 'default': _("Выберите", "Choose"), 'widget_name': 'prompt_pack_combobox'},
+        {'label': 'Персонажи', 'key': 'CHARACTER', 'type': 'combobox', 'options': character_list, 'default': "Crazy", 'widget_name': "character_combobox", 'command': lambda: change_character_actions(gui)},
+        {'label': 'Набор промтов', 'key': 'PROMPT_SET', 'type': 'combobox', 'options': list_prompt_sets("PromptsCatalogue", current_char_id), 'default': _("Выберите", "Choose"), 'widget_name': 'prompt_pack_combobox'},
         {'label': _('Провайдер для персонажа', 'Provider for character'),
-         'key': 'CHAR_PROVIDER', 'type': 'combobox',  # Ключ базовый, но мы будем использовать с префиксом per-character
+         'key': 'CHAR_PROVIDER', 'type': 'combobox',
          'options': provider_names,
          'default': _("Текущий", "Current"),
-         'widget_name': 'char_provider_combobox'},  # Для доступа к виджету
+         'widget_name': 'char_provider_combobox'},
 
         {'label': 'Управление персонажем', 'type': 'text'},
         {'type': 'button_group', 'buttons': [
@@ -65,6 +75,8 @@ def set_default_prompt_pack(gui, combobox):
     combobox.setCurrentText(folder_name)
     
 def change_character_actions(gui, character=None):
+    event_bus = get_event_bus()
+    
     if character:
         selected_character = character
     elif hasattr(gui, 'character_combobox'):
@@ -72,8 +84,9 @@ def change_character_actions(gui, character=None):
     else:
         return
 
-    gui.model.current_character_to_change = selected_character
-    gui.model.check_change_current_character()
+    # Устанавливаем персонажа для изменения
+    event_bus.emit(Events.SET_CHARACTER_TO_CHANGE, {'character': selected_character})
+    event_bus.emit(Events.CHECK_CHANGE_CHARACTER)
 
     if hasattr(gui, 'char_provider_combobox'):
         provider_key = f"CHAR_PROVIDER_{selected_character}"
@@ -93,9 +106,11 @@ def change_character_actions(gui, character=None):
         gui.prompt_pack_combobox.addItems(new_options)
         set_default_prompt_pack(gui, gui.prompt_pack_combobox)
         gui.prompt_pack_combobox.blockSignals(False)
-        apply_prompt_set(gui, force_apply=False) # Update prompts without confirmation dialog on char change
+        apply_prompt_set(gui, force_apply=False)
 
 def apply_prompt_set(gui, force_apply=True):
+    event_bus = get_event_bus()
+    
     chat_to = gui.prompt_pack_combobox.currentText()
     char_from = gui.character_combobox.currentText()
     if not chat_to:
@@ -119,8 +134,8 @@ def apply_prompt_set(gui, force_apply=True):
         if copy_prompt_set(set_path, character_prompts_path):
             if force_apply:
                 QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен.", "Prompt set applied successfully."))
-            if hasattr(gui.model.current_character, 'reload_character_data'):
-                gui.model.current_character.reload_character_data()
+            # Перезагружаем данные персонажа
+            event_bus.emit(Events.RELOAD_CHARACTER_DATA)
         else:
             if force_apply:
                 QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
@@ -136,35 +151,50 @@ def open_folder(path):
     QDesktopServices.openUrl(url)
 
 def open_character_folder(gui):
-    if gui.model.current_character and gui.model.current_character.char_id:
-        character_name = gui.model.current_character.char_id
-        character_folder_path = os.path.join("Prompts", character_name)
-        if os.path.exists(character_folder_path):
-            open_folder(character_folder_path)
+    event_bus = get_event_bus()
+    current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+    
+    if current_char_data and current_char_data[0]:
+        char_data = current_char_data[0]
+        character_name = char_data.get('char_id')
+        if character_name:
+            character_folder_path = os.path.join("Prompts", character_name)
+            if os.path.exists(character_folder_path):
+                open_folder(character_folder_path)
+            else:
+                QMessageBox.warning(gui, _("Внимание", "Warning"), _("Папка персонажа не найдена: ", "Character folder not found: ") + character_folder_path)
         else:
-            QMessageBox.warning(gui, _("Внимание", "Warning"), _("Папка персонажа не найдена: ", "Character folder not found: ") + character_folder_path)
+            QMessageBox.information(gui, _("Информация", "Information"), _("Персонаж не выбран или его имя недоступно.", "No character selected or its name is not available."))
     else:
         QMessageBox.information(gui, _("Информация", "Information"), _("Персонаж не выбран или его имя недоступно.", "No character selected or its name is not available."))
 
 def open_character_history_folder(gui):
-    if gui.model.current_character and gui.model.current_character.char_id:
-        character_name = gui.model.current_character.char_id
-        history_folder_path = os.path.join("Histories", character_name)
-        if os.path.exists(history_folder_path):
-            open_folder(history_folder_path)
+    event_bus = get_event_bus()
+    current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+    
+    if current_char_data and current_char_data[0]:
+        char_data = current_char_data[0]
+        character_name = char_data.get('char_id')
+        if character_name:
+            history_folder_path = os.path.join("Histories", character_name)
+            if os.path.exists(history_folder_path):
+                open_folder(history_folder_path)
+            else:
+                QMessageBox.warning(gui, _("Внимание", "Warning"), _("Папка истории персонажа не найдена: ", "Character history folder not found: ") + history_folder_path)
         else:
-            QMessageBox.warning(gui, _("Внимание", "Warning"), _("Папка истории персонажа не найдена: ", "Character history folder not found: ") + history_folder_path)
+            QMessageBox.information(gui, _("Информация", "Information"), _("Персонаж не выбран или его имя недоступно.", "No character selected or its name is not available."))
     else:
         QMessageBox.information(gui, _("Информация", "Information"), _("Персонаж не выбран или его имя недоступно.", "No character selected or its name is not available."))
 
 def clear_history(gui):
-    gui.model.current_character.clear_history()
+    event_bus = get_event_bus()
+    event_bus.emit(Events.CLEAR_CHARACTER_HISTORY)
     gui.clear_chat_display()
     gui.update_debug_info()
 
 def clear_history_all(gui):
-    for character in gui.model.characters.values():
-        character.clear_history()
+    event_bus = get_event_bus()
+    event_bus.emit(Events.CLEAR_ALL_HISTORIES)
     gui.clear_chat_display()
     gui.update_debug_info()
 
@@ -174,34 +204,13 @@ def reload_prompts(gui):
                                  QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
     if reply == QMessageBox.StandardButton.Ok:
         gui._show_loading_popup(_("Загрузка промптов...", "Downloading prompts..."))
-        if gui.loop and gui.loop.is_running():
-            asyncio.run_coroutine_threadsafe(async_reload_prompts(gui), gui.loop)
-        else:
-            logger.error("Цикл событий asyncio не запущен. Невозможно выполнить асинхронную загрузку промптов.")
-            QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось запустить асинхронную загрузку промптов.", "Failed to start asynchronous prompt download."))
-
-async def async_reload_prompts(gui):
-    try:
-        from utils.prompt_downloader import PromptDownloader
-        downloader = PromptDownloader()
-        success = await gui.loop.run_in_executor(None, downloader.download_and_replace_prompts)
-        if success:
-            character = gui.model.characters.get(gui.model.current_character_to_change)
-            if character:
-                await gui.loop.run_in_executor(None, character.reload_prompts)
-            else:
-                logger.error("Персонаж для перезагрузки не найден")
-            
-            QMessageBox.information(gui, _("Успешно", "Success"), _("Промпты успешно скачаны и перезагружены.", "Prompts successfully downloaded and reloaded."))
-        else:
-            QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось скачать промпты с GitHub. Проверьте подключение к интернету.", "Failed to download prompts from GitHub. Check your internet connection."))
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении промптов: {e}")
-        QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось обновить промпты.", "Failed to update prompts."))
-    finally:
-        gui._close_loading_popup()
+        
+        event_bus = get_event_bus()
+        event_bus.emit(Events.RELOAD_PROMPTS_ASYNC)
 
 def save_character_provider(gui, provider: str):
+    event_bus = get_event_bus()
+    
     selected_character = gui.character_combobox.currentText() if hasattr(gui, 'character_combobox') else None
     if not selected_character:
         QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран.", "No character selected."))
@@ -209,5 +218,5 @@ def save_character_provider(gui, provider: str):
     provider_key = f"CHAR_PROVIDER_{selected_character}"
     gui.settings.set(provider_key, provider)
     logger.info(f"Saved provider '{provider}' for character '{selected_character}'")
-    # Опционально: обновить модель или GUI
-    gui.model.check_change_current_character()  # Чтобы модель перезагрузилась, если нужно
+    # Обновляем персонажа
+    event_bus.emit(Events.CHECK_CHANGE_CHARACTER)

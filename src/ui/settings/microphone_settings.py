@@ -5,6 +5,7 @@ from ui.gui_templates import create_settings_section
 from main_logger import logger
 from handlers.asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
+from ui.windows.events import get_event_bus, Events
 import sounddevice as sd
 import time
 
@@ -63,7 +64,8 @@ def update_recognizer_specific_widgets(gui, recognizer_type):
 def on_mic_selected(gui):
     if not hasattr(gui, 'mic_combobox'): 
         return
-        
+    
+    event_bus = get_event_bus()
     selection = gui.mic_combobox.currentText()
     
     if selection and '(' in selection:
@@ -74,39 +76,31 @@ def on_mic_selected(gui):
             if device_id_match:
                 device_id = int(device_id_match.group(1))
                 
-                # Безопасно обновляем контроллер
-                if hasattr(gui, 'controller'):
-                    gui.controller.speech_controller.selected_microphone = microphone_name
-                    gui.controller.speech_controller.device_id = device_id
-                    gui.controller.selected_microphone = microphone_name
-                    gui.controller.device_id = device_id
+                # Устанавливаем микрофон через событие
+                event_bus.emit(Events.SET_MICROPHONE, {
+                    'name': microphone_name,
+                    'device_id': device_id
+                })
+                
+                # Перезапускаем распознавание если активно
+                if gui.settings.get("MIC_ACTIVE", False):
+                    def restart_recognition():
+                        try:
+                            event_bus.emit(Events.STOP_SPEECH_RECOGNITION)
+                            # Ожидаем завершения предыдущей задачи
+                            start_time = time.time()
+                            while SpeechRecognition._is_running and time.time() - start_time < 5:
+                                time.sleep(0.1)
+                            if SpeechRecognition._is_running:
+                                logger.warning("Предыдущее распознавание не остановилось вовремя, принудительная остановка.")
+                            event_bus.emit(Events.START_SPEECH_RECOGNITION, {'device_id': device_id})
+                            logger.info("Распознавание перезапущено с новым микрофоном")
+                        except Exception as e:
+                            logger.error(f"Ошибка перезапуска распознавания: {e}")
                     
-                    # Сохраняем настройки
-                    gui.controller.settings.set("NM_MICROPHONE_ID", device_id)
-                    gui.controller.settings.set("NM_MICROPHONE_NAME", microphone_name)
-                    gui.controller.settings.save_settings()
-                    
-                    logger.info(f"Выбран микрофон: {microphone_name} (ID: {device_id})")
-                    
-                    # Перезапускаем распознавание если активно
-                    if gui.controller.speech_controller.mic_recognition_active:
-                        def restart_recognition():
-                            try:
-                                SpeechRecognition.speech_recognition_stop()
-                                # Ожидаем завершения предыдущей задачи
-                                start_time = time.time()
-                                while SpeechRecognition._is_running and time.time() - start_time < 5:
-                                    time.sleep(0.1)
-                                if SpeechRecognition._is_running:
-                                    logger.warning("Предыдущее распознавание не остановилось вовремя, принудительная остановка.")
-                                SpeechRecognition.speech_recognition_start(device_id, gui.controller.loop)
-                                logger.info("Распознавание перезапущено с новым микрофоном")
-                            except Exception as e:
-                                logger.error(f"Ошибка перезапуска распознавания: {e}")
-                        
-                        # Запускаем в отдельном потоке чтобы избежать блокировки UI
-                        import threading
-                        threading.Thread(target=restart_recognition, daemon=True).start()
+                    # Запускаем в отдельном потоке чтобы избежать блокировки UI
+                    import threading
+                    threading.Thread(target=restart_recognition, daemon=True).start()
                         
         except Exception as e:
             logger.error(f"Ошибка выбора микрофона: {e}")
@@ -129,8 +123,10 @@ def update_mic_list(gui):
 
 def load_mic_settings(gui):
     try:
-        device_id = gui.controller.settings.get("NM_MICROPHONE_ID", 0)
-        device_name = gui.controller.settings.get("NM_MICROPHONE_NAME", "")
+        event_bus = get_event_bus()
+        
+        device_id = gui.settings.get("NM_MICROPHONE_ID", 0)
+        device_name = gui.settings.get("NM_MICROPHONE_NAME", "")
         
         all_devices = get_microphone_list()
         full_device_name = f"{device_name} ({device_id})"
@@ -141,14 +137,18 @@ def load_mic_settings(gui):
             elif all_devices:
                 gui.mic_combobox.setCurrentIndex(0)
             
-            gui.controller.speech_controller.device_id = device_id
-            gui.controller.speech_controller.selected_microphone = device_name
-            gui.controller.device_id = device_id
-            gui.controller.selected_microphone = device_name
+            # Устанавливаем микрофон через событие
+            event_bus.emit(Events.SET_MICROPHONE, {
+                'name': device_name,
+                'device_id': device_id
+            })
 
         # После загрузки настроек запускаем распознавание, если активно
-        if gui.controller.settings.get("MIC_ACTIVE", False):
-            gui.controller.speech_controller.update_speech_settings("MIC_ACTIVE", True)
+        if gui.settings.get("MIC_ACTIVE", False):
+            event_bus.emit(Events.UPDATE_SPEECH_SETTINGS, {
+                'key': "MIC_ACTIVE",
+                'value': True
+            })
 
     except Exception as e:
         logger.error(f"Ошибка загрузки настроек микрофона: {e}")

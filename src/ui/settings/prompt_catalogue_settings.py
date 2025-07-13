@@ -12,6 +12,8 @@ from managers.prompt_catalogue_manager import (
 )
 from managers.settings_manager import CollapsibleSection
 
+from ui.windows.events import get_event_bus, Events
+
 def setup_prompt_catalogue_controls(gui, parent_layout):
     catalogue_path = "PromptsCatalogue"
     
@@ -164,20 +166,26 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
              QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран. Не удалось применить набор промптов.", "No character selected. Failed to apply prompt set."))
 
     def create_new_set_action():
-        if gui.model.current_character and gui.model.current_character.char_id:
-            character = gui.model.current_character
-            character_name = "Cartridges" if character.is_cartridge else character.char_id
-            prompts_path = os.path.join("Prompts", character_name)
-            new_set_path = create_new_set(character_name, catalogue_path, prompts_path)
-            if new_set_path:
-                QMessageBox.information(gui, _("Успех", "Success"), _(f"Новый набор создан из текущих промптов персонажа: {os.path.basename(new_set_path)}", f"New set created from current character prompts: {os.path.basename(new_set_path)}"))
-                update_prompt_set_combobox()
-                prompt_set_combobox.setCurrentText(os.path.basename(new_set_path))
+        event_bus = get_event_bus()
+        current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+        
+        if current_char_data and current_char_data[0]:
+            char_data = current_char_data[0]
+            character_name = "Cartridges" if char_data.get('is_cartridge') else char_data.get('char_id')
+            if character_name:
+                prompts_path = os.path.join("Prompts", character_name)
+                new_set_path = create_new_set(character_name, catalogue_path, prompts_path)
+                if new_set_path:
+                    QMessageBox.information(gui, _("Успех", "Success"), _(f"Новый набор создан из текущих промптов персонажа: {os.path.basename(new_set_path)}", f"New set created from current character prompts: {os.path.basename(new_set_path)}"))
+                    update_prompt_set_combobox()
+                    prompt_set_combobox.setCurrentText(os.path.basename(new_set_path))
+                else:
+                    QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось создать новый набор промптов.", "Failed to create new prompt set."))
             else:
-                 QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось создать новый набор промптов.", "Failed to create new prompt set."))
+                QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран. Не удалось создать новый набор промптов.", "No character selected. Failed to create new prompt set."))
         else:
             QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран. Не удалось создать новый набор промптов.", "No character selected. Failed to create new prompt set."))
-
+    
     def open_set_folder_action():
         selected_set_name = prompt_set_combobox.currentText()
         if selected_set_name:

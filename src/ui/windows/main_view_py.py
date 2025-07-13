@@ -29,7 +29,9 @@ from ui.settings import (
     prompt_catalogue_settings
 )
 
+
 from ui.widgets import (status_indicators_widget)
+
 
 from ui.widgets.overlay_widget import OverlayWidget
 from ui.widgets.image_viewer_widget import ImageViewerWidget
@@ -37,9 +39,6 @@ from ui.widgets.image_preview_widget import ImagePreviewBar
 from ui.widgets.mita_status_widget import MitaStatusWidget
 
 from controllers.voice_model_controller import VoiceModelController
-
-from .events import get_event_bus, Events, Event
-
 
 class ChatGUI(QMainWindow):
     update_chat_signal = pyqtSignal(str, str, bool, str)
@@ -50,6 +49,7 @@ class ChatGUI(QMainWindow):
     append_stream_chunk_signal = pyqtSignal(str)
     finish_stream_signal = pyqtSignal()
 
+    
     show_thinking_signal = pyqtSignal(str)
     show_error_signal = pyqtSignal(str)
     hide_status_signal = pyqtSignal()
@@ -57,12 +57,7 @@ class ChatGUI(QMainWindow):
 
     def __init__(self, controller):
         super().__init__()
-        # Сохраняем только настройки из контроллера
-        self.settings = controller.settings
-        
-        # Инициализация системы событий
-        self.event_bus = get_event_bus()
-        self._subscribe_to_events()
+        self.controller = controller
         
         self.voice_language_var = None
         self.local_voice_combobox = None
@@ -78,6 +73,7 @@ class ChatGUI(QMainWindow):
         self.setWindowTitle(_("Чат с NeuroMita", "NeuroMita Chat"))
         self.setWindowIcon(QIcon('Icon.png'))
 
+        
         self.staged_image_data = []
 
         self.ffmpeg_install_popup = None
@@ -90,6 +86,7 @@ class ChatGUI(QMainWindow):
         self.append_stream_chunk_signal.connect(self._append_stream_chunk_slot)
         self.finish_stream_signal.connect(self._finish_stream_slot)
 
+        
         self.show_thinking_signal.connect(self._show_thinking_slot)
         self.show_error_signal.connect(self._show_error_slot)
         self.hide_status_signal.connect(self._hide_status_slot)
@@ -110,43 +107,16 @@ class ChatGUI(QMainWindow):
             logger.info("Не удалось удачно получить настройки микрофона", e)
 
         self.check_timer = QTimer()
-        self.check_timer.timeout.connect(self._check_text_to_talk)
+        self.check_timer.timeout.connect(self.controller.check_text_to_talk_or_send)
         self.check_timer.start(150)
 
         QTimer.singleShot(500, self.initialize_last_local_model_on_startup)
 
+        
         self.prepare_stream_signal.connect(self._on_stream_start)
         self.finish_stream_signal.connect(self._on_stream_finish)
 
         self.update_status_colors()
-
-        # Сохраняем значения для локального использования
-        self.last_voice_model_selected = None
-        self.current_local_voice_id = None
-        self.model_loading_cancelled = False
-
-    def _subscribe_to_events(self):
-        """Подписка на события от логики"""
-        self.event_bus.subscribe("history_loaded", self._on_history_loaded, weak=False)
-        self.event_bus.subscribe("more_history_loaded", self._on_more_history_loaded, weak=False)
-        self.event_bus.subscribe("model_initialized", self._on_model_initialized, weak=False)
-        self.event_bus.subscribe("model_init_cancelled", self._on_model_init_cancelled, weak=False)
-        self.event_bus.subscribe("model_init_failed", self._on_model_init_failed, weak=False)
-        self.event_bus.subscribe("show_tg_code_dialog", self._on_show_tg_code_dialog, weak=False)
-        self.event_bus.subscribe("show_tg_password_dialog", self._on_show_tg_password_dialog, weak=False)
-
-        
-        # Промпты
-        self.event_bus.subscribe("reload_prompts_success", self._on_reload_prompts_success, weak=False)
-        self.event_bus.subscribe("reload_prompts_failed", self._on_reload_prompts_failed, weak=False)
-        
-        # Загрузка
-        self.event_bus.subscribe("display_loading_popup", self._on_display_loading_popup, weak=False)
-        self.event_bus.subscribe("hide_loading_popup", self._on_hide_loading_popup, weak=False)
-
-    def _check_text_to_talk(self):
-        """Проверка текста для озвучки через события"""
-        self.event_bus.emit(Events.CHECK_TEXT_TO_TALK)
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -196,7 +166,7 @@ class ChatGUI(QMainWindow):
         self.chat_window = QTextBrowser()
         self.chat_window.setOpenExternalLinks(False)
         self.chat_window.setReadOnly(True)
-        initial_font_size = int(self._get_setting("CHAT_FONT_SIZE", 12))
+        initial_font_size = int(self.controller.settings.get("CHAT_FONT_SIZE", 12))
         font = QFont("Arial", initial_font_size)
         self.chat_window.setFont(font)
         
@@ -204,6 +174,7 @@ class ChatGUI(QMainWindow):
 
         self._create_scroll_to_bottom_button()
 
+        
         self.mita_status = MitaStatusWidget(self.chat_window)
         self._position_mita_status()
         
@@ -366,6 +337,7 @@ class ChatGUI(QMainWindow):
         layout.addWidget(input_frame)
 
         self._update_send_button_state()
+        
 
     def _adjust_input_height(self):
         """Автоматически подстраивает высоту поля ввода под содержимое"""
@@ -383,19 +355,21 @@ class ChatGUI(QMainWindow):
     def _update_send_button_state(self):
         """Обновляет доступность кнопки отправки в зависимости от наличия контента"""
         has_text = bool(self.user_entry.toPlainText().strip())
-        has_images = bool(self.staged_image_data)
+        has_images = bool(self.staged_image_data) or bool(getattr(self.controller, 'staged_images', []))
         
         # Проверяем также автоматические изображения если они включены
         has_auto_images = False
-        if self._get_setting("ENABLE_SCREEN_ANALYSIS", False):
-            # Проверяем через события есть ли доступные кадры
-            frames = self.event_bus.emit_and_wait(Events.CAPTURE_SCREEN, {'limit': 1}, timeout=0.5)
-            has_auto_images = bool(frames and frames[0])
+        if hasattr(self.controller, 'settings'):
+            if self.controller.settings.get("ENABLE_SCREEN_ANALYSIS", False):
+                if hasattr(self.controller, 'screen_capture_instance'):
+                    frames = self.controller.screen_capture_instance.get_recent_frames(1)
+                    has_auto_images = bool(frames)
             
-        if self._get_setting("ENABLE_CAMERA_CAPTURE", False):
-            # Проверяем через события есть ли кадры с камеры
-            camera_frames = self.event_bus.emit_and_wait(Events.GET_CAMERA_FRAMES, {'limit': 1}, timeout=0.5)
-            has_auto_images = has_auto_images or bool(camera_frames and camera_frames[0])
+            if self.controller.settings.get("ENABLE_CAMERA_CAPTURE", False):
+                if hasattr(self.controller, 'camera_capture') and self.controller.camera_capture is not None:
+                    if self.controller.camera_capture.is_running():
+                        camera_frames = self.controller.camera_capture.get_recent_frames(1)
+                        has_auto_images = has_auto_images or bool(camera_frames)
         
         # Кнопка активна если есть текст ИЛИ изображения
         is_enabled = has_text or has_images or has_auto_images
@@ -607,7 +581,7 @@ class ChatGUI(QMainWindow):
             return
 
         processed_text_parts = []
-        hide_tags = self._get_setting("HIDE_CHAT_TAGS", False)
+        hide_tags = self.controller.settings.get("HIDE_CHAT_TAGS", False)
 
         for part in processed_content_parts:
             if part["type"] == "text":
@@ -647,7 +621,7 @@ class ChatGUI(QMainWindow):
 
         cursor = self.chat_window.textCursor()
 
-        show_timestamps = self._get_setting("SHOW_CHAT_TIMESTAMPS", False)
+        show_timestamps = self.controller.settings.get("SHOW_CHAT_TIMESTAMPS", False)
         timestamp_str = "[???] "
         if show_timestamps:
             if message_time:
@@ -697,9 +671,7 @@ class ChatGUI(QMainWindow):
         if role == "user":
             self._insert_formatted_text(cursor, _("Вы: ", "You: "), QColor("gold"), bold=True)
         elif role == "assistant":
-            # Получаем имя персонажа через события
-            character_name = self._get_character_name()
-            self._insert_formatted_text(cursor, f"{character_name}: ", QColor("hot pink"), bold=True)
+            self._insert_formatted_text(cursor, f"{self.controller.model.current_character.name}: ", QColor("hot pink"), bold=True)
 
     def _insert_formatted_text(self, cursor, text, color=None, bold=False, italic=False):
         char_format = QTextCharFormat()
@@ -710,7 +682,7 @@ class ChatGUI(QMainWindow):
             default_text_color = self.chat_window.palette().color(QPalette.ColorRole.Text)
             char_format.setForeground(default_text_color)
         
-        font = QFont("Arial", int(self._get_setting("CHAT_FONT_SIZE", 12)))
+        font = QFont("Arial", int(self.controller.settings.get("CHAT_FONT_SIZE", 12)))
         if bold:
             font.setBold(True)
         if italic:
@@ -792,59 +764,65 @@ class ChatGUI(QMainWindow):
                                  "UI element for version input not found."))
             return
 
-        # Отправляем событие для планирования обновления
-        success = self.event_bus.emit_and_wait(Events.SCHEDULE_G4F_UPDATE, {'version': target_version}, timeout=1.0)
-        
-        if success and success[0]:
+        try:
+            self.controller.settings.set("G4F_TARGET_VERSION", target_version)
+            self.controller.settings.set("G4F_UPDATE_PENDING", True)
+            self.controller.settings.set("G4F_VERSION", target_version)
+            self.controller.settings.save_settings()
+            logger.info(f"Обновление g4f до версии '{target_version}' запланировано на следующий запуск.")
+
             QMessageBox.information(self, _("Запланировано", "Scheduled"),
                 _("Версия g4f '{version}' будет установлена/обновлена при следующем запуске программы.",
                   "g4f version '{version}' will be installed/updated the next time the program starts.").format(
                     version=target_version))
-        else:
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении настроек для запланированного обновления: {e}", exc_info=True)
             QMessageBox.critical(self, _("Ошибка сохранения", "Save Error"),
                 _("Не удалось сохранить настройки для обновления. Пожалуйста, проверьте логи.",
                   "Failed to save settings for the update. Please check the logs."))
 
     def update_status_colors(self):
-        # Получаем статусы через события
-        game_connected = self.event_bus.emit_and_wait(Events.GET_CONNECTION_STATUS, timeout=0.5)
-        silero_connected = self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS, timeout=0.5)
-        mic_active = self.event_bus.emit_and_wait(Events.GET_MIC_STATUS, timeout=0.5)
-        screen_capture_active = self.event_bus.emit_and_wait(Events.GET_SCREEN_CAPTURE_STATUS, timeout=0.5)
-        camera_capture_active = self.event_bus.emit_and_wait(Events.GET_CAMERA_CAPTURE_STATUS, timeout=0.5)
+        self.game_connected_checkbox_var = self.controller.ConnectedToGame
         
         if hasattr(self, 'game_status_checkbox'):
-            self.game_status_checkbox.setChecked(bool(game_connected and game_connected[0]))
+            self.game_status_checkbox.setChecked(self.controller.ConnectedToGame)
             
         if hasattr(self, 'silero_status_checkbox'):
-            self.silero_status_checkbox.setChecked(bool(silero_connected and silero_connected[0]))
+            self.silero_status_checkbox.setChecked(self.controller.silero_connected)
             
         if hasattr(self, 'mic_status_checkbox'):
-            self.mic_status_checkbox.setChecked(bool(mic_active and mic_active[0]))
+            self.mic_status_checkbox.setChecked(self.controller.mic_recognition_active)
             
         if hasattr(self, 'screen_capture_status_checkbox'):
-            self.screen_capture_status_checkbox.setChecked(bool(screen_capture_active and screen_capture_active[0]))
+            self.screen_capture_status_checkbox.setChecked(self.controller.screen_capture_active)
             
         if hasattr(self, 'camera_capture_status_checkbox'):
-            self.camera_capture_status_checkbox.setChecked(bool(camera_capture_active and camera_capture_active[0]))
+            self.camera_capture_status_checkbox.setChecked(self.controller.camera_capture_active)
 
     def load_chat_history(self):
         self.clear_chat_display()
-        
-        # Запрашиваем загрузку истории через события
-        self.event_bus.emit(Events.LOAD_HISTORY)
+        self.controller.loaded_messages_offset = 0
+        self.controller.total_messages_in_history = 0
+        self.controller.loading_more_history = False
 
-    def _on_history_loaded(self, event: Event):
-        """Обработчик загруженной истории"""
-        data = event.data
-        messages = data.get('messages', [])
-        
-        for entry in messages:
+        chat_history = self.controller.model.current_character.load_history()
+        all_messages = chat_history["messages"]
+        self.controller.total_messages_in_history = len(all_messages)
+        logger.info(f"[{time.strftime('%H:%M:%S')}] Всего сообщений в истории: {self.controller.total_messages_in_history}")
+
+        max_display_messages = int(self.controller.settings.get("MAX_CHAT_HISTORY_DISPLAY", 100))
+        start_index = max(0, self.controller.total_messages_in_history - max_display_messages)
+        messages_to_load = all_messages[start_index:]
+
+        for entry in messages_to_load:
             role = entry["role"]
             content = entry["content"]
             message_time = entry.get("time", "???")
             self.insert_message(role, content, message_time=message_time)
-        
+
+        self.controller.loaded_messages_offset = len(messages_to_load)
+        logger.info(f"[{time.strftime('%H:%M:%S')}] Загружено {self.controller.loaded_messages_offset} последних сообщений.")
+
         self.update_debug_info()
         
         self.chat_window.verticalScrollBar().setValue(
@@ -940,26 +918,24 @@ class ChatGUI(QMainWindow):
     def update_debug_info(self):
         if hasattr(self, 'debug_window') and self.debug_window:
             self.debug_window.clear()
-            # Получаем debug info через события
-            character_name = self._get_character_name()
-            # Здесь вы можете запросить дополнительную информацию через события
-            debug_info = f"Character: {character_name}\n"
-            debug_info += f"Settings loaded: {len(self.settings._settings) if hasattr(self.settings, '_settings') else 'N/A'}"
+            debug_info = self.controller.model.current_character.current_variables_string()
             self.debug_window.insertPlainText(debug_info)
 
     def update_token_count(self, event=None):
-        show_token_info = self._get_setting("SHOW_TOKEN_INFO", True)
+        show_token_info = self.controller.settings.get("SHOW_TOKEN_INFO", True)
 
-        if show_token_info:
-            # Получаем количество токенов через события
-            current_context_tokens = self.event_bus.emit_and_wait(Events.GET_CURRENT_CONTEXT_TOKENS, timeout=0.5)
-            current_context_tokens = current_context_tokens[0] if current_context_tokens else 0
-            
-            max_model_tokens = int(self._get_setting("MAX_MODEL_TOKENS", 32000))
-            
-            # Получаем стоимость через события
-            cost = self.event_bus.emit_and_wait(Events.CALCULATE_COST, timeout=0.5)
-            cost = cost[0] if cost else 0.0
+        if show_token_info and self.controller.model.hasTokenizer:
+            current_context_tokens = self.controller.model.get_current_context_token_count()
+
+            token_cost_input = float(self.controller.settings.get("TOKEN_COST_INPUT", 0.000001))
+            token_cost_output = float(self.controller.settings.get("TOKEN_COST_OUTPUT", 0.000002))
+            max_model_tokens = int(self.controller.settings.get("MAX_MODEL_TOKENS", 32000))
+
+            self.controller.model.token_cost_input = token_cost_input
+            self.controller.model.token_cost_output = token_cost_output
+            self.controller.model.max_model_tokens = max_model_tokens
+
+            cost = self.controller.model.calculate_cost_for_current_context()
 
             self.token_count_label.setText(
                 _("Токены: {}/{} (Макс. токены: {}) | Ориент. стоимость: {:.4f} ₽",
@@ -981,36 +957,49 @@ class ChatGUI(QMainWindow):
 
     def clear_chat_display(self):
         self.chat_window.clear()
-        self.event_bus.emit(Events.CLEAR_CHAT)
 
     def send_message(self, system_input: str = "", image_data: list[bytes] = None):
         user_input = self.user_entry.toPlainText().strip()
         current_image_data = []
-        staged_image_data = self.staged_image_data.copy()  # Используем локальную копию
+        staged_image_data = []
 
-        # Получаем кадры экрана если включен анализ
-        if self._get_setting("ENABLE_SCREEN_ANALYSIS", False):
-            history_limit = int(self._get_setting("SCREEN_CAPTURE_HISTORY_LIMIT", 1))
-            frames = self.event_bus.emit_and_wait(Events.CAPTURE_SCREEN, {'limit': history_limit}, timeout=0.5)
-            if frames and frames[0]:
-                current_image_data.extend(frames[0])
+        if self.controller.staged_images:
+            try:
+                for image_path in self.controller.staged_images:
+                    with open(image_path, "rb") as f:
+                        staged_image_data.append(f.read())
+                logger.info(f"Загружено {len(staged_image_data)} байт-кодов из прикрепленных изображений.")
+            except Exception as e:
+                logger.error(f"Ошибка чтения прикрепленного файла: {e}")
+                QMessageBox.critical(self, _("Ошибка файла", "File Error"),
+                                    _("Не удалось прочитать один из прикрепленных файлов.",
+                                    "Could not read one of the attached files."))
+                return
+
+        if self.controller.settings.get("ENABLE_SCREEN_ANALYSIS", False):
+            history_limit = int(self.controller.settings.get("SCREEN_CAPTURE_HISTORY_LIMIT", 1))
+            frames = self.controller.screen_capture_instance.get_recent_frames(history_limit)
+            if frames:
+                current_image_data.extend(frames)
             else:
                 logger.info("Анализ экрана включен, но кадры не готовы или история пуста.")
 
         all_image_data = (image_data or []) + current_image_data + staged_image_data
 
-        # Получаем кадры с камеры если включен захват
-        if self._get_setting("ENABLE_CAMERA_CAPTURE", False):
-            history_limit = int(self._get_setting("CAMERA_CAPTURE_HISTORY_LIMIT", 1))
-            camera_frames = self.event_bus.emit_and_wait(Events.GET_CAMERA_FRAMES, {'limit': history_limit}, timeout=0.5)
-            if camera_frames and camera_frames[0]:
-                all_image_data.extend(camera_frames[0])
-                logger.info(f"Добавлено {len(camera_frames[0])} кадров с камеры для отправки.")
-            else:
-                logger.info("Захват с камеры включен, но кадры не готовы или история пуста.")
+        if self.controller.settings.get("ENABLE_CAMERA_CAPTURE", False):
+            if hasattr(self.controller, 'camera_capture') and self.controller.camera_capture is not None and self.controller.camera_capture.is_running():
+                history_limit = int(self.controller.settings.get("CAMERA_CAPTURE_HISTORY_LIMIT", 1))
+                camera_frames = self.controller.camera_capture.get_recent_frames(history_limit)
+                if camera_frames:
+                    all_image_data.extend(camera_frames)
+                    logger.info(f"Добавлено {len(camera_frames)} кадров с камеры для отправки.")
+                else:
+                    logger.info("Захват с камеры включен, но кадры не готовы или история пуста.")
 
         if not user_input and not system_input and not all_image_data:
             return
+        
+        self.controller.last_image_request_time = time.time()
 
         if user_input:
             self.insert_message("user", user_input)
@@ -1031,48 +1020,57 @@ class ChatGUI(QMainWindow):
 
             self.insert_message("user", image_content_for_display)
 
-        logger.warning("Отправка сообщения...")
-        # Отправляем сообщение через события
-        self.event_bus.emit(Events.SEND_MESSAGE, {
-            'user_input': user_input,
-            'system_input': system_input,
-            'image_data': all_image_data
-        })
-        logger.warning("Якобы сообщение отправлено...")
+        if self.controller.loop and self.controller.loop.is_running():
+            import asyncio
+            asyncio.run_coroutine_threadsafe(self.controller.async_send_message(user_input, system_input, all_image_data),
+                                            self.controller.loop)
 
-        if staged_image_data:
-            # Очищаем список прикрепленных изображений
-            self.event_bus.emit(Events.CLEAR_STAGED_IMAGES)
+        if self.controller.staged_images:
+            self.controller.staged_images.clear()
+            logger.info("Список прикрепленных изображений очищен.")
+            
+            # Очищаем превью
             self.staged_image_data.clear()
             if self.image_preview_bar:
                 self.image_preview_bar.clear()
                 self._hide_image_preview_bar()
 
-    def load_more_history(self):
-        # Запрашиваем загрузку дополнительной истории через события
-        self.event_bus.emit(Events.LOAD_MORE_HISTORY)
 
-    def _on_more_history_loaded(self, event: Event):
-        """Обработчик загруженной дополнительной истории"""
-        data = event.data
-        messages_to_prepend = data.get('messages', [])
-        
-        if not messages_to_prepend:
+
+    def load_more_history(self):
+        if self.controller.loaded_messages_offset >= self.controller.total_messages_in_history:
             return
-        
-        scrollbar = self.chat_window.verticalScrollBar()
-        old_value = scrollbar.value()
-        old_max = scrollbar.maximum()
-        
-        for entry in reversed(messages_to_prepend):
-            role = entry["role"]
-            content = entry["content"]
-            message_time = entry.get("time", "???")
-            self.insert_message(role, content, insert_at_start=True, message_time=message_time)
-        
-        QTimer.singleShot(0, lambda: scrollbar.setValue(scrollbar.maximum() - old_max + old_value))
-        
-        logger.info(f"Загружено еще {len(messages_to_prepend)} сообщений.")
+
+        self.controller.loading_more_history = True
+        try:
+            chat_history = self.controller.model.current_character.load_history()
+            all_messages = chat_history["messages"]
+
+            end_index = self.controller.total_messages_in_history - self.controller.loaded_messages_offset
+            start_index = max(0, end_index - self.controller.lazy_load_batch_size)
+            messages_to_prepend = all_messages[start_index:end_index]
+
+            if not messages_to_prepend:
+                self.controller.loading_more_history = False
+                return
+
+            scrollbar = self.chat_window.verticalScrollBar()
+            old_value = scrollbar.value()
+            old_max = scrollbar.maximum()
+
+            for entry in reversed(messages_to_prepend):
+                role = entry["role"]
+                content = entry["content"]
+                message_time = entry.get("time", "???")
+                self.insert_message(role, content, insert_at_start=True, message_time=message_time)
+
+            QTimer.singleShot(0, lambda: scrollbar.setValue(scrollbar.maximum() - old_max + old_value))
+
+            self.controller.loaded_messages_offset += len(messages_to_prepend)
+            logger.info(f"Загружено еще {len(messages_to_prepend)} сообщений. Всего загружено: {self.controller.loaded_messages_offset}")
+
+        finally:
+            self.controller.loading_more_history = False
 
     def create_settings_section(self, parent_layout, title, settings_config, icon_name=None):
         return gui_templates.create_settings_section(self, parent_layout, title, settings_config, icon_name=icon_name)
@@ -1085,17 +1083,9 @@ class ChatGUI(QMainWindow):
                                                   width, height, command, hide)
 
     def _save_setting(self, key, value):
-        """Сохранение настройки через события"""
-        self.event_bus.emit(Events.SAVE_SETTING, {'key': key, 'value': value})
-
-    def _get_setting(self, key, default=None):
-        """Получение настройки напрямую из settings"""
-        return self.settings.get(key, default)
-
-    def _get_character_name(self):
-        """Получение имени персонажа через события"""
-        result = self.event_bus.emit_and_wait(Events.GET_CHARACTER_NAME, timeout=0.5)
-        return result[0] if result else "Assistant"
+        self.controller.settings.set(key, value)
+        self.controller.settings.save_settings()
+        self.controller.all_settings_actions(key, value)
 
     def get_news_content(self):
         try:
@@ -1115,11 +1105,10 @@ class ChatGUI(QMainWindow):
         self.create_settings_section(parent_layout, _("Новости", "News"), news_config)
 
     def closeEvent(self, event):
-        # Отправляем события для остановки всех процессов
-        self.event_bus.emit(Events.STOP_SCREEN_CAPTURE)
-        self.event_bus.emit(Events.STOP_CAMERA_CAPTURE)
-        self.event_bus.emit(Events.DELETE_SOUND_FILES)
-        self.event_bus.emit(Events.STOP_SERVER)
+        self.controller.stop_screen_capture_thread()
+        self.controller.stop_camera_capture_thread()
+        self.controller.delete_all_sound_files()
+        self.controller.stop_server()
         logger.info("Закрываемся")
         event.accept()
 
@@ -1150,32 +1139,53 @@ class ChatGUI(QMainWindow):
             self.update_local_model_status_indicator()
             return
 
-        # Проверка на необходимость перезапуска для medium+ моделей
-        if selected_model_id in ["medium+", "medium+low"]:
-            # Здесь нужна дополнительная проверка через события
-            # Для упрощения пока пропустим эту логику
-            pass
+        if selected_model_id in ["medium+", "medium+low"] and self.controller.local_voice.first_compiled == False:
+            reply = QMessageBox.question(self, _("Внимание", "Warning"),
+                _("Невозможно перекомпилировать модель Fish Speech в Fish Speech+ - требуется перезапуск программы. \n\n Перезапустить?",
+                  "Cannot recompile Fish Speech model to Fish Speech+ - program restart required. \n\n Restart?"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                
+            if reply != QMessageBox.StandardButton.Yes:
+                if self.controller.last_voice_model_selected:
+                    self.local_voice_combobox.setCurrentText(self.controller.last_voice_model_selected["name"])
+                else:
+                    self.local_voice_combobox.setCurrentText('')
+                    self.controller.settings.set("NM_CURRENT_VOICEOVER", None)
+                    self.controller.settings.save_settings()
+                self.update_local_model_status_indicator()
+                return
+            else:
+                import sys, subprocess
+                python = sys.executable
+                script = os.path.abspath(sys.argv[0])
+                subprocess.Popen([python, script] + sys.argv[1:])
+                self.close()
+                return
 
-        self._save_setting("NM_CURRENT_VOICEOVER", selected_model_id)
-        self.current_local_voice_id = selected_model_id
+        self.controller.settings.set("NM_CURRENT_VOICEOVER", selected_model_id)
+        self.controller.settings.save_settings()
+        self.controller.current_local_voice_id = selected_model_id
 
         self.update_local_model_status_indicator()
-        
-        # Проверяем инициализирована ли модель
-        is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': selected_model_id}, timeout=0.5)
-        
-        if not (is_initialized and is_initialized[0]):
+        if not self.controller.local_voice.is_model_initialized(selected_model_id):
             self.show_model_loading_window(selected_model)
         else:
-            # Выбираем модель
-            success = self.event_bus.emit_and_wait(Events.SELECT_VOICE_MODEL, {'model_id': selected_model_id}, timeout=1.0)
-            
-            if success and success[0]:
-                self.last_voice_model_selected = selected_model
-                self.update_local_voice_combobox()
-                logger.info(f"Переключился на уже инициализированную модель «{selected_model_id}»")
-            else:
-                QMessageBox.critical(self, 'Ошибка', 'Не удалось активировать модель')
+            try:
+                self.controller.local_voice.select_model(selected_model_id)
+            except Exception as e:
+                logger.error(f'Не удалось активировать модель {selected_model_id}: {e}')
+                QMessageBox.critical(self, 'Ошибка', f'Не удалось активировать модель\n{e}')
+                return
+
+            self.controller.settings.set("NM_CURRENT_VOICEOVER", selected_model_id)
+            self.controller.settings.save_settings()
+
+            self.controller.current_local_voice_id   = selected_model_id
+            self.controller.last_voice_model_selected = selected_model
+            self.update_local_model_status_indicator()
+            self.update_local_voice_combobox()
+            logger.info(f"Переключился на уже инициализированную модель «{selected_model_id}»")
+            return
 
     def show_model_loading_window(self, model):
         model_id = model["id"]
@@ -1218,85 +1228,72 @@ class ChatGUI(QMainWindow):
         cancel_button.clicked.connect(lambda: self.cancel_model_loading(self.loading_dialog))
         layout.addWidget(cancel_button, alignment=Qt.AlignmentFlag.AlignCenter)
         
-        self.model_loading_cancelled = False
+        self.controller.model_loading_cancelled = False
         
-        # Запускаем инициализацию через события
-        def progress_callback(status_type, message):
-            if status_type == "status":
-                QTimer.singleShot(0, lambda: self.loading_status_label.setText(message))
-        
-        self.event_bus.emit(Events.INIT_VOICE_MODEL, {
-            'model_id': model_id,
-            'progress_callback': progress_callback
-        })
+        import threading
+        loading_thread = threading.Thread(
+            target=self.controller.init_model_thread,
+            args=(model_id, self.loading_dialog, self.loading_status_label, self.loading_progress),
+            daemon=True
+        )
+        loading_thread.start()
         
         self.loading_dialog.show()
 
-    def _on_model_initialized(self, event: Event):
-        """Обработчик успешной инициализации модели"""
-        model_id = event.data.get('model_id')
-        
-        if hasattr(self, 'loading_dialog') and self.loading_dialog:
-            self.loading_dialog.close()
-        
-        # Выбираем модель
-        success = self.event_bus.emit_and_wait(Events.SELECT_VOICE_MODEL, {'model_id': model_id}, timeout=1.0)
-        
-        if success and success[0]:
-            # Находим модель по ID
-            for model in LOCAL_VOICE_MODELS:
-                if model["id"] == model_id:
-                    self.last_voice_model_selected = model
-                    break
-            
-            QMessageBox.information(self, _("Успешно", "Success"),
-                _("Модель {} успешно инициализирована!", "Model {} initialized successfully!").format(model_id))
-            
-            self.update_local_voice_combobox()
-        else:
-            QMessageBox.critical(self, "Ошибка", "Не удалось активировать модель после инициализации")
-
-    def _on_model_init_cancelled(self, event: Event):
-        """Обработчик отмены инициализации модели"""
-        if hasattr(self, 'loading_dialog') and self.loading_dialog:
-            self.loading_dialog.close()
-
-    def _on_model_init_failed(self, event: Event):
-        """Обработчик ошибки инициализации модели"""
-        model_id = event.data.get('model_id')
-        error = event.data.get('error', 'Unknown error')
-        
-        if hasattr(self, 'loading_dialog') and self.loading_dialog:
-            self.loading_dialog.close()
-        
-        QMessageBox.critical(self, "Ошибка",
-            f"Не удалось инициализировать модель {model_id}.\n{error}")
-
     def cancel_model_loading(self, loading_window):
         logger.info("Загрузка модели отменена пользователем.")
-        self.model_loading_cancelled = True
+        self.controller.model_loading_cancelled = True
         if loading_window:
             loading_window.close()
 
         restored_model_id = None
-        if self.last_voice_model_selected:
+        if self.controller.last_voice_model_selected:
             if hasattr(self, 'local_voice_combobox'):
-                self.local_voice_combobox.setCurrentText(self.last_voice_model_selected["name"])
-            restored_model_id = self.last_voice_model_selected["id"]
-            self._save_setting("NM_CURRENT_VOICEOVER", restored_model_id)
-            self.current_local_voice_id = restored_model_id
+                self.local_voice_combobox.setCurrentText(self.controller.last_voice_model_selected["name"])
+            restored_model_id = self.controller.last_voice_model_selected["id"]
+            self.controller.settings.set("NM_CURRENT_VOICEOVER", restored_model_id)
+            self.controller.current_local_voice_id = restored_model_id
         else:
             if hasattr(self, 'local_voice_combobox'):
                 self.local_voice_combobox.setCurrentText('')
-            self._save_setting("NM_CURRENT_VOICEOVER", None)
-            self.current_local_voice_id = None
+            self.controller.settings.set("NM_CURRENT_VOICEOVER", None)
+            self.controller.current_local_voice_id = None
 
+        self.controller.settings.save_settings()
         self.update_local_model_status_indicator()
 
+    def finish_model_loading(self, model_id, loading_window):
+        logger.info(f"Модель {model_id} успешно инициализирована.")
+        if loading_window:
+            loading_window.close()
+
+        try:
+            self.controller.local_voice.select_model(model_id)
+        except Exception as e:
+            logger.error(f"Не удалось активировать модель {model_id}: {e}")
+            QMessageBox.critical(self, "Ошибка",
+                                f"Не удалось активировать модель {model_id}.\n{e}")
+            return
+
+        self.controller.last_voice_model_selected = None
+        for model in LOCAL_VOICE_MODELS:
+            if model["id"] == model_id:
+                self.controller.last_voice_model_selected = model
+                break
+
+        self.controller.settings.set("NM_CURRENT_VOICEOVER", model_id)
+        self.controller.settings.save_settings()
+        self.controller.current_local_voice_id = model_id
+
+        QMessageBox.information(self, _("Успешно", "Success"),
+            _("Модель {} успешно инициализирована!", "Model {} initialized successfully!").format(model_id))
+        
+        self.update_local_voice_combobox()
+
     def initialize_last_local_model_on_startup(self):
-        if self._get_setting("LOCAL_VOICE_LOAD_LAST", False):
+        if self.controller.settings.get("LOCAL_VOICE_LOAD_LAST", False):
             logger.info("Проверка автозагрузки последней локальной модели...")
-            last_model_id = self._get_setting("NM_CURRENT_VOICEOVER", None)
+            last_model_id = self.controller.settings.get("NM_CURRENT_VOICEOVER", None)
 
             if last_model_id:
                 logger.info(f"Найдена последняя модель для автозагрузки: {last_model_id}")
@@ -1307,19 +1304,13 @@ class ChatGUI(QMainWindow):
                         break
 
                 if model_to_load:
-                    # Проверяем установлена ли модель
-                    is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': last_model_id}, timeout=0.5)
-                    
-                    if is_installed and is_installed[0]:
-                        # Проверяем инициализирована ли модель
-                        is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': last_model_id}, timeout=0.5)
-                        
-                        if not (is_initialized and is_initialized[0]):
+                    if self.controller.local_voice.is_model_installed(last_model_id):
+                        if not self.controller.local_voice.is_model_initialized(last_model_id):
                             logger.info(f"Модель {last_model_id} установлена, но не инициализирована. Запуск инициализации...")
                             self.show_model_loading_window(model_to_load)
                         else:
                             logger.info(f"Модель {last_model_id} уже инициализирована.")
-                            self.last_voice_model_selected = model_to_load
+                            self.controller.last_voice_model_selected = model_to_load
                             self.update_local_voice_combobox()
                     else:
                         logger.warning(f"Модель {last_model_id} выбрана для автозагрузки, но не установлена.")
@@ -1333,14 +1324,12 @@ class ChatGUI(QMainWindow):
     def update_local_model_status_indicator(self):
         if hasattr(self, 'local_model_status_label') and self.local_model_status_label:
             show_combobox_indicator = False
-            current_model_id_combo = self._get_setting("NM_CURRENT_VOICEOVER", None)
+            current_model_id_combo = self.controller.settings.get("NM_CURRENT_VOICEOVER", None)
 
             if current_model_id_combo:
-                # Проверяем статус модели через события
-                is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': current_model_id_combo}, timeout=0.5)
-                if is_installed and is_installed[0]:
-                    is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': current_model_id_combo}, timeout=0.5)
-                    if not (is_initialized and is_initialized[0]):
+                model_installed_combo = self.controller.local_voice.is_model_installed(current_model_id_combo)
+                if model_installed_combo:
+                    if not self.controller.local_voice.is_model_initialized(current_model_id_combo):
                         show_combobox_indicator = True
                 else:
                     show_combobox_indicator = True
@@ -1353,14 +1342,13 @@ class ChatGUI(QMainWindow):
                 hasattr(self, 'voiceover_section') and 
                 self.voiceover_section):
 
-            voiceover_method = self._get_setting("VOICEOVER_METHOD", "TG")
-            current_model_id_section = self._get_setting("NM_CURRENT_VOICEOVER", None)
+            voiceover_method = self.controller.settings.get("VOICEOVER_METHOD", "TG")
+            current_model_id_section = self.controller.settings.get("NM_CURRENT_VOICEOVER", None)
 
             if voiceover_method == "Local" and current_model_id_section:
-                is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': current_model_id_section}, timeout=0.5)
-                if is_installed and is_installed[0]:
-                    is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': current_model_id_section}, timeout=0.5)
-                    if not (is_initialized and is_initialized[0]):
+                model_installed_section = self.controller.local_voice.is_model_installed(current_model_id_section)
+                if model_installed_section:
+                    if not self.controller.local_voice.is_model_initialized(current_model_id_section):
                         show_section_warning = True
                 else:
                     show_section_warning = True
@@ -1372,8 +1360,8 @@ class ChatGUI(QMainWindow):
         if selected_method is not None:
             self._save_setting("VOICEOVER_METHOD", selected_method)
 
-        use_voice        = bool(self._get_setting("SILERO_USE",  True))
-        current_method   =      self._get_setting("VOICEOVER_METHOD", "TG")
+        use_voice        = bool(self.controller.settings.get("SILERO_USE",  True))
+        current_method   =      self.controller.settings.get("VOICEOVER_METHOD", "TG")
 
         if not hasattr(self, "voiceover_section"):
             logger.error("Отсутствует voiceover_section – переключать нечего.")
@@ -1412,23 +1400,20 @@ class ChatGUI(QMainWindow):
                 self.update_local_voice_combobox()
                 self.update_local_model_status_indicator()
 
+        self.controller.voiceover_method = current_method
         self.check_triton_dependencies()
 
     def update_local_voice_combobox(self):
         if not hasattr(self, 'local_voice_combobox') or self.local_voice_combobox is None:
+            logger.info(self.local_voice_combobox)
             logger.warning("update_local_voice_combobox: виджет local_voice_combobox не найден.")
             return
 
         self.local_voice_combobox.blockSignals(True)
 
         try:
-            # Получаем список установленных моделей
-            installed_models_names = []
-            for model in LOCAL_VOICE_MODELS:
-                is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': model["id"]}, timeout=0.5)
-                if is_installed and is_installed[0]:
-                    installed_models_names.append(model["name"])
-            
+            installed_models_names = [model["name"] for model in LOCAL_VOICE_MODELS if
+                                      self.controller.local_voice.is_model_installed(model["id"])]
             logger.info(f'Доступные модели: {installed_models_names}')
 
             current_items = [self.local_voice_combobox.itemText(i) for i in range(self.local_voice_combobox.count())]
@@ -1438,7 +1423,7 @@ class ChatGUI(QMainWindow):
                 self.local_voice_combobox.addItems(installed_models_names)
                 logger.info(f"Обновлен список локальных моделей: {installed_models_names}")
 
-            current_model_id = self._get_setting("NM_CURRENT_VOICEOVER", None)
+            current_model_id = self.controller.settings.get("NM_CURRENT_VOICEOVER", None)
             current_model_name = ""
             if current_model_id:
                 for model in LOCAL_VOICE_MODELS:
@@ -1454,16 +1439,18 @@ class ChatGUI(QMainWindow):
                     self.local_voice_combobox.setCurrentText(installed_models_names[0])
                     for model in LOCAL_VOICE_MODELS:
                         if model["name"] == installed_models_names[0]:
-                            if self._get_setting("NM_CURRENT_VOICEOVER") != model["id"]:
-                                self._save_setting("NM_CURRENT_VOICEOVER", model["id"])
-                                self.current_local_voice_id = model["id"]
+                            if self.controller.settings.get("NM_CURRENT_VOICEOVER") != model["id"]:
+                                self.controller.settings.set("NM_CURRENT_VOICEOVER", model["id"])
+                                self.controller.settings.save_settings()
+                                self.controller.current_local_voice_id = model["id"]
                             break
             else:
                 if self.local_voice_combobox.currentText() != '':
                     self.local_voice_combobox.setCurrentText('')
-                if self._get_setting("NM_CURRENT_VOICEOVER") is not None:
-                    self._save_setting("NM_CURRENT_VOICEOVER", None)
-                    self.current_local_voice_id = None
+                if self.controller.settings.get("NM_CURRENT_VOICEOVER") is not None:
+                    self.controller.settings.set("NM_CURRENT_VOICEOVER", None)
+                    self.controller.settings.save_settings()
+                    self.controller.current_local_voice_id = None
         finally:
             self.local_voice_combobox.blockSignals(False)
 
@@ -1475,7 +1462,7 @@ class ChatGUI(QMainWindow):
             self.triton_warning_label.deleteLater()
             delattr(self, 'triton_warning_label')
 
-        if self._get_setting("VOICEOVER_METHOD") != "Local":
+        if self.controller.settings.get("VOICEOVER_METHOD") != "Local":
             return
         if not hasattr(self, 'local_settings_frame') or not self.local_settings_frame:
             return
@@ -1501,27 +1488,17 @@ class ChatGUI(QMainWindow):
                 installed_models_ids = settings_data.get("installed_models", [])
                 logger.info(f"Сохранены установленные модели (из окна установки): {installed_models_ids}")
 
-                # Обновляем модули через события
-                self.event_bus.emit(Events.REFRESH_VOICE_MODULES)
+                self.controller.refresh_local_voice_modules()
                 self.update_local_voice_combobox()
 
-                current_model_id = self._get_setting("NM_CURRENT_VOICEOVER", None)
+                current_model_id = self.controller.settings.get("NM_CURRENT_VOICEOVER", None)
                 if current_model_id and current_model_id not in installed_models_ids:
                     logger.warning(f"Текущая модель {current_model_id} была удалена. Сбрасываем выбор.")
                     new_model_id = installed_models_ids[0] if installed_models_ids else None
-                    self._save_setting("NM_CURRENT_VOICEOVER", new_model_id)
-                    self.current_local_voice_id = new_model_id
+                    self.controller.settings.set("NM_CURRENT_VOICEOVER", new_model_id)
+                    self.controller.settings.save_settings()
+                    self.controller.current_local_voice_id = new_model_id
                     self.update_local_voice_combobox()
-
-            # Создаем функции для проверки через события
-            def check_installed_func(model_id):
-                result = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': model_id}, timeout=0.5)
-                return result[0] if result else False
-
-            # Создаем заглушку для local_voice объекта
-            class LocalVoiceStub:
-                def is_model_installed(self, model_id):
-                    return check_installed_func(model_id)
 
             from PyQt6.QtWidgets import QDialog
             install_dialog = QDialog(self)
@@ -1532,15 +1509,16 @@ class ChatGUI(QMainWindow):
             dialog_layout = QVBoxLayout(install_dialog)
             dialog_layout.setContentsMargins(0, 0, 0, 0)
             
-            # Создаем Controller с заглушкой
+            # Создаем Controller, который создаст View внутри
             controller = VoiceModelController(
                 view_parent=install_dialog,
                 config_dir=config_dir,
                 on_save_callback=on_save_callback,
-                local_voice=LocalVoiceStub(),
-                check_installed_func=check_installed_func,
+                local_voice=self.controller.local_voice,
+                check_installed_func=self.controller.check_module_installed,
             )
             
+            # View уже добавлен в layout внутри Controller
             install_dialog.show()
             
         except ImportError:
@@ -1607,14 +1585,15 @@ class ChatGUI(QMainWindow):
 
         self._save_setting("VOICE_LANGUAGE", selected_language)
 
-        # Изменяем язык через события
-        success = self.event_bus.emit_and_wait(Events.CHANGE_VOICE_LANGUAGE, {'language': selected_language}, timeout=1.0)
-        
-        if success and success[0]:
-            logger.info(f"Язык успешно изменен на {selected_language}.")
-            self.update_local_model_status_indicator()
+        if hasattr(self.controller.local_voice, 'change_voice_language'):
+            try:
+                self.controller.local_voice.change_voice_language(selected_language)
+                logger.info(f"Язык в LocalVoice успешно изменен на {selected_language}.")
+                self.update_local_model_status_indicator()
+            except Exception as e:
+                logger.error(f"Ошибка при вызове local_voice.change_voice_language: {e}")
         else:
-            logger.warning("Не удалось изменить язык озвучки")
+            logger.warning("Метод 'change_voice_language' отсутствует в объекте local_voice.")
 
     def paste_from_clipboard(self, event=None):
         try:
@@ -1632,7 +1611,7 @@ class ChatGUI(QMainWindow):
             pass
 
     def insert_dialog(self, input_text="", response="", system_text=""):
-        MitaName = self._get_character_name()
+        MitaName = self.controller.model.current_character.name
         cursor = self.chat_window.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         
@@ -1657,9 +1636,7 @@ class ChatGUI(QMainWindow):
         )
 
         if file_paths:
-            # Сохраняем пути через события
-            for file_path in file_paths:
-                self.event_bus.emit(Events.STAGE_IMAGE, {'image_data': file_path})
+            self.controller.staged_images.extend(file_paths)
             
             # Добавляем превью
             for file_path in file_paths:
@@ -1674,39 +1651,38 @@ class ChatGUI(QMainWindow):
                 except Exception as e:
                     logger.error(f"Ошибка чтения файла {file_path}: {e}")
             
-            logger.info(f"Прикреплены изображения: {file_paths}")
+            logger.info(f"Прикреплены изображения: {self.controller.staged_images}")
             # Обновляем состояние кнопки отправки
             self._update_send_button_state()
+
+
 
     def send_screen_capture(self):
         """Обновленный метод отправки скриншота"""
         logger.info("Запрошена отправка скриншота.")
-        
-        # Получаем кадры через события
-        frames = self.event_bus.emit_and_wait(Events.CAPTURE_SCREEN, {'limit': 1}, timeout=0.5)
-        
-        if not frames or not frames[0]:
+        frames = self.controller.screen_capture_instance.get_recent_frames(1)
+
+        if not frames:
             QMessageBox.warning(self, _("Ошибка", "Error"),
                                 _("Не удалось захватить экран. Убедитесь, что анализ экрана включен в настройках.",
                                 "Failed to capture the screen. Make sure screen analysis is enabled in settings."))
             return
 
         # Добавляем в staged для превью
-        for frame_data in frames[0]:
+        for frame_data in frames:
             self.staged_image_data.append(frame_data)
-            self.event_bus.emit(Events.STAGE_IMAGE, {'image_data': frame_data})
+            self.controller.stage_image_bytes(frame_data)
         
         # Показываем превью
         self._show_image_preview_bar()
-        for frame_data in frames[0]:
+        for frame_data in frames:
             self.image_preview_bar.add_image(frame_data)
         
         # Обновляем состояние кнопки отправки
         self._update_send_button_state()
 
     def _clear_staged_images(self):
-        # Очищаем через события
-        self.event_bus.emit(Events.CLEAR_STAGED_IMAGES)
+        self.controller.clear_staged_images()
         
         # Очищаем превью
         self.staged_image_data.clear()
@@ -1717,6 +1693,7 @@ class ChatGUI(QMainWindow):
         # Обновляем состояние кнопки отправки
         self._update_send_button_state()
 
+    # Обновите метод _clipboard_image_to_controller:
     def _clipboard_image_to_controller(self) -> bool:
         """
         Если в буфере обмена есть изображение – передаёт его байты
@@ -1740,8 +1717,8 @@ class ChatGUI(QMainWindow):
         # Сохраняем данные для превью
         self.staged_image_data.append(img_bytes)
         
-        # Отправляем данные через события
-        self.event_bus.emit(Events.STAGE_IMAGE, {'image_data': img_bytes})
+        # Делегируем бизнес-логику контроллеру
+        self.controller.stage_image_bytes(img_bytes)
 
         # Показываем превью
         self._show_image_preview_bar()
@@ -1752,6 +1729,7 @@ class ChatGUI(QMainWindow):
         
         return True
 
+
     def _init_image_preview(self):
         """Инициализация системы превью изображений"""
         self.staged_image_data = []  # Храним данные изображений
@@ -1760,6 +1738,7 @@ class ChatGUI(QMainWindow):
         """Показать панель превью изображений"""
         if not self.image_preview_bar:
             # Находим input_frame (основной фрейм с токенами и полем ввода)
+            # НЕ input_container, а именно input_frame
             input_frame = None
             
             # Ищем input_frame через иерархию виджетов
@@ -1800,6 +1779,10 @@ class ChatGUI(QMainWindow):
         if 0 <= index < len(self.staged_image_data):
             # Удаляем из данных
             self.staged_image_data.pop(index)
+            
+            # Удаляем из контроллера
+            if 0 <= index < len(self.controller.staged_images):
+                self.controller.staged_images.pop(index)
             
             # Удаляем превью
             self.image_preview_bar.remove_at(index)
@@ -1853,13 +1836,6 @@ class ChatGUI(QMainWindow):
     # endregion
 
     def prompt_for_code(self, code_future):
-        # Отправляем событие для запроса кода
-        self.event_bus.emit(Events.REQUEST_TG_CODE, {'future': code_future})
-
-    def _on_show_tg_code_dialog(self, event: Event):
-        """Показать диалог ввода кода Telegram"""
-        code_future = event.data.get('future')
-        
         dialog = QDialog(self)
         dialog.setWindowTitle("Подтверждение Telegram")
         dialog.setFixedSize(300, 150)
@@ -1878,22 +1854,16 @@ class ChatGUI(QMainWindow):
         def submit_code():
             code = code_entry.text().strip()
             if code:
-                if code_future and not code_future.done():
-                    # Получаем loop через события
-                    loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
-                    if loop and loop[0] and loop[0].is_running():
-                        loop[0].call_soon_threadsafe(code_future.set_result, code)
+                if self.controller.loop and self.controller.loop.is_running():
+                    self.controller.loop.call_soon_threadsafe(code_future.set_result, code)
                 dialog.accept()
             else:
                 QMessageBox.critical(dialog, "Ошибка", "Введите код подтверждения")
         
         def on_reject():
-            if code_future and not code_future.done():
-                # Получаем loop через события
-                loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
-                if loop and loop[0] and loop[0].is_running():
-                    import asyncio
-                    loop[0].call_soon_threadsafe(code_future.set_exception, asyncio.CancelledError("Ввод кода отменен"))
+            if self.controller.loop and self.controller.loop.is_running() and not code_future.done():
+                import asyncio
+                self.controller.loop.call_soon_threadsafe(code_future.set_exception, asyncio.CancelledError("Ввод кода отменен"))
 
         btn = QPushButton("Подтвердить")
         btn.clicked.connect(submit_code)
@@ -1904,13 +1874,6 @@ class ChatGUI(QMainWindow):
         dialog.exec()
 
     def prompt_for_password(self, password_future):
-        # Отправляем событие для запроса пароля
-        self.event_bus.emit(Events.REQUEST_TG_PASSWORD, {'future': password_future})
-
-    def _on_show_tg_password_dialog(self, event: Event):
-        """Показать диалог ввода пароля Telegram"""
-        password_future = event.data.get('future')
-        
         dialog = QDialog(self)
         dialog.setWindowTitle("Двухфакторная аутентификация")
         dialog.setFixedSize(300, 150)
@@ -1929,22 +1892,16 @@ class ChatGUI(QMainWindow):
         def submit_password():
             pwd = password_entry.text().strip()
             if pwd:
-                if password_future and not password_future.done():
-                    # Получаем loop через события
-                    loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
-                    if loop and loop[0] and loop[0].is_running():
-                        loop[0].call_soon_threadsafe(password_future.set_result, pwd)
+                if self.controller.loop and self.controller.loop.is_running():
+                    self.controller.loop.call_soon_threadsafe(password_future.set_result, pwd)
                 dialog.accept()
             else:
                 QMessageBox.critical(dialog, "Ошибка", "Введите пароль")
                 
         def on_reject():
-            if password_future and not password_future.done():
-                # Получаем loop через события
-                loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
-                if loop and loop[0] and loop[0].is_running():
-                    import asyncio
-                    loop[0].call_soon_threadsafe(password_future.set_exception, asyncio.CancelledError("Ввод пароля отменен"))
+            if self.controller.loop and self.controller.loop.is_running() and not password_future.done():
+                import asyncio
+                self.controller.loop.call_soon_threadsafe(password_future.set_exception, asyncio.CancelledError("Ввод пароля отменен"))
 
         btn = QPushButton("Подтвердить")
         btn.clicked.connect(submit_password)
@@ -1954,6 +1911,41 @@ class ChatGUI(QMainWindow):
         dialog.rejected.connect(on_reject)
         dialog.exec()
 
+    # region свойства для делегирования
+
+    @property
+    def settings(self):
+        """Делегирует доступ к настройкам контроллера"""
+        if self.controller:
+            return self.controller.settings
+        # Fallback для случая, когда контроллер еще не создан
+        from managers.settings_manager import SettingsManager
+        return SettingsManager("Settings/settings.json")
+
+    @property
+    def model(self):
+        """Делегирует доступ к модели контроллера"""
+        if self.controller:
+            return self.controller.model
+        return None
+
+    @property
+    def loop(self):
+        """Делегирует доступ к циклу событий контроллера"""
+        if self.controller:
+            return self.controller.loop
+        return None
+
+    
+    # endregion
+
+    def _save_setting(self, key, value):
+        """Делегирует сохранение настроек контроллеру"""
+        if self.controller:
+            self.controller.settings.set(key, value)
+            self.controller.settings.save_settings()
+            self.controller.all_settings_actions(key, value)
+    
     # region митастатус
     def _position_mita_status(self):
         """Позиционировать статус Миты внизу чата"""
@@ -2006,50 +1998,4 @@ class ChatGUI(QMainWindow):
     def _on_stream_finish(self):
         """Вызывается при завершении стрима"""
         print("[DEBUG] Стрим завершен, скрываем статус")
-        # Отправляем событие для скрытия статуса Миты
-        self.event_bus.emit(Events.HIDE_MITA_STATUS)
-
-    def _on_reload_prompts_success(self, event: Event):
-        """Обработчик успешной загрузки промптов"""
-        QMessageBox.information(self, _("Успешно", "Success"), 
-            _("Промпты успешно скачаны и перезагружены.", "Prompts successfully downloaded and reloaded."))
-    
-    def _on_reload_prompts_failed(self, event: Event):
-        """Обработчик ошибки загрузки промптов"""
-        error = event.data.get('error', 'Unknown error')
-        if error == "Event loop not running":
-            QMessageBox.critical(self, _("Ошибка", "Error"), 
-                _("Не удалось запустить асинхронную загрузку промптов.", "Failed to start asynchronous prompt download."))
-        else:
-            QMessageBox.critical(self, _("Ошибка", "Error"), 
-                _("Не удалось скачать промпты с GitHub. Проверьте подключение к интернету.", 
-                  "Failed to download prompts from GitHub. Check your internet connection."))
-    
-    def _show_loading_popup(self, message):
-        """Показать диалог загрузки"""
-        self.event_bus.emit(Events.SHOW_LOADING_POPUP, {"message": message})
-    
-    def _on_display_loading_popup(self, event: Event):
-        """Отобразить попап загрузки"""
-        message = event.data.get('message', 'Loading...')
-        
-        if not hasattr(self, 'loading_popup'):
-            from PyQt6.QtWidgets import QProgressDialog
-            self.loading_popup = QProgressDialog(message, None, 0, 0, self)
-            self.loading_popup.setWindowTitle(_("Загрузка", "Loading"))
-            self.loading_popup.setModal(True)
-            self.loading_popup.setCancelButton(None)
-            self.loading_popup.setMinimumDuration(0)
-        else:
-            self.loading_popup.setLabelText(message)
-        
-        self.loading_popup.show()
-    
-    def _close_loading_popup(self):
-        """Закрыть диалог загрузки"""
-        self.event_bus.emit(Events.CLOSE_LOADING_POPUP)
-    
-    def _on_hide_loading_popup(self, event: Event):
-        """Скрыть попап загрузки"""
-        if hasattr(self, 'loading_popup') and self.loading_popup:
-            self.loading_popup.close()
+        self.controller.hide_mita_status()

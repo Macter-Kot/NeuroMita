@@ -220,10 +220,13 @@ ensure_project_root()
 
 import threading
 
-
-
 from ui.windows.main_view import ChatGUI
+from ui.windows.main_view_logic import MainViewLogic
 from controllers.main_controller import MainController
+from ui.windows.events import get_event_bus
+from main_logger import logger
+from PyQt6.QtWidgets import QApplication
+import sys
 
 if __name__ == "__main__":
     logger.info("Функция main() запущена")
@@ -237,12 +240,17 @@ if __name__ == "__main__":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
         # Создаем пустой объект для контроллера
-        logger.info("Создаю ChatController...")
+        logger.info("Создаю MainController...")
         controller = MainController(None)
-        logger.info("ChatController создан")
+        logger.info("MainController создан")
+        
+        # Создаем логику View (прослойку между View и Controller)
+        logger.info("Создаю MainViewLogic...")
+        view_logic = MainViewLogic(controller)
+        logger.info("MainViewLogic создан")
         
         logger.info("Создаю ChatGUI...")
-        main_win = ChatGUI(controller)
+        main_win = ChatGUI(controller)  # Передаем controller только для settings
         logger.info("ChatGUI создан")
         
         # Обновляем ссылку на реальный view в контроллере
@@ -251,21 +259,19 @@ if __name__ == "__main__":
         # Подключаем сигналы после создания view
         controller.connect_view_signals()
         
-        # Обновляем ссылки на элементы UI
-        controller.voice_language_var = main_win.voice_language_var
-        controller.local_voice_combobox = main_win.local_voice_combobox
-        controller.debug_window = main_win.debug_window
-        controller.mic_combobox = main_win.mic_combobox
-        controller.chat_window = main_win.chat_window
-        controller.token_count_label = main_win.token_count_label
-        controller.user_entry = main_win.user_entry
-        controller.attachment_label = main_win.attachment_label
-        controller.attach_button = main_win.attach_button
-        controller.send_screen_button = main_win.send_screen_button
+        # Запускаем периодические проверки в логике
+        view_logic.start_periodic_checks()
+        
+        # НЕ передаем больше ссылки на UI элементы контроллеру!
+        # Все взаимодействие теперь через события
         
         logger.info("Показываю главное окно...")
         main_win.show()
         logger.info("Запускаю app.exec()...")
+        
+        # При завершении приложения останавливаем систему событий
+        app.aboutToQuit.connect(lambda: get_event_bus().shutdown())
+        
         sys.exit(app.exec())
     except Exception as e:
         logger.error(f"Ошибка в main(): {e}", exc_info=True)

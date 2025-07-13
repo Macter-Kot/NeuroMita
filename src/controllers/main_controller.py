@@ -62,6 +62,11 @@ class MainController:
         self.asyncio_thread = threading.Thread(target=self.start_asyncio_loop, daemon=True)
         self.asyncio_thread.start()
 
+        
+        self.telegram_controller = TelegramController(self)
+        logger.warning("TelegramController успешно инициализирован.")
+        
+
         try:
             target_folder = "Settings"
             os.makedirs(target_folder, exist_ok=True)
@@ -87,13 +92,18 @@ class MainController:
 
         self._check_and_perform_pending_update()
 
+        
         self.audio_controller = AudioController(self)
-        self.telegram_controller = TelegramController(self)
+        logger.warning("AudioController успешно инициализирован.")
         self.model_controller = ModelController(self, self.api_key, self.api_key_res, self.api_url, 
                                                self.api_model, self.makeRequest, self.pip_installer)
+        logger.warning("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self)
+        logger.warning("CaptureController успешно инициализирован.")
         self.speech_controller = SpeechController(self)
+        logger.warning("SpeechController успешно инициализирован.")
         self.server_controller = ServerController(self)
+        logger.warning("ServerController успешно инициализирован.")
 
         QTimer.singleShot(100, self.check_and_install_ffmpeg)
 
@@ -219,16 +229,16 @@ class MainController:
             self.show_mita_error(f"Ошибка: {str(e)[:50]}...")
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
-        self.model_controller.init_model_thread(model_id, loading_window, status_label, progress)
+        self.audio_controller.init_model_thread(model_id, loading_window, status_label, progress)
 
     def refresh_local_voice_modules(self):
-        self.model_controller.refresh_local_voice_modules()
+        self.audio_controller.refresh_local_voice_modules()
 
     def check_module_installed(self, module_name):
-        return self.model_controller.check_module_installed(module_name)
+        return self.audio_controller.check_module_installed(module_name)
 
     def check_available_vram(self):
-        return self.model_controller.check_available_vram()
+        return self.audio_controller.check_available_vram()
 
     def _ffmpeg_install_thread_target(self):
         QTimer.singleShot(0, self.view._show_ffmpeg_installing_popup)

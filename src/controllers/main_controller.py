@@ -232,6 +232,12 @@ class MainController:
         self.event_bus.subscribe(Events.GENERATE_RESPONSE, self._on_generate_response, weak=False)
         self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
 
+        # От telegram_handler.py:
+        self.event_bus.subscribe(Events.SET_SOUND_FILE_DATA, self._on_set_sound_file_data, weak=False)
+        self.event_bus.subscribe(Events.GET_TG_AUTH_DATA, self._on_get_tg_auth_data, weak=False)
+        self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
+
+
     def start_asyncio_loop(self):
         try:
             self.loop = asyncio.new_event_loop()
@@ -1018,7 +1024,7 @@ class MainController:
     
     # endregion
 
-    # region Обработчики событий - Server
+    # region Обработчики событий - От server.py
 
     def _on_update_game_connection(self, event: Event):
         """Обновление статуса подключения к игре"""
@@ -1103,6 +1109,28 @@ class MainController:
     def _on_set_connected_to_game(self, event: Event):
         """Установка статуса подключения к игре"""
         self.ConnectedToGame = event.data.get('connected', False)
+
+    # endregion
+
+    # region Обработчики событий - От telegram_handler.py
+
+    def _on_set_sound_file_data(self, event: Event):
+        """Установка данных звукового файла от Telegram"""
+        self.patch_to_sound_file = event.data.get('patch_to_sound_file', '')
+        self.id_sound = event.data.get('id_sound', 0)
+        logger.info(f"Установлены данные звукового файла: {self.patch_to_sound_file}, ID: {self.id_sound}")
+
+    def _on_get_tg_auth_data(self, event: Event):
+        """Получение данных для авторизации Telegram"""
+        return {
+            'loop': self.loop,
+            'auth_signals': self.view.auth_signals if self.view else None
+        }
+
+    def _on_set_silero_connected(self, event: Event):
+        """Установка статуса подключения Silero"""
+        self.silero_connected = event.data.get('connected', False)
+        logger.info(f"Статус подключения Silero установлен: {self.silero_connected}")
 
     # endregion
     

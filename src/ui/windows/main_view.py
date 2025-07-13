@@ -846,7 +846,7 @@ class ChatGUI(QMainWindow):
             try:
                 self.insert_message(role, content, message_time=message_time)
             except Exception as ex:
-                logger.error(f"НУ Я ПОНЯЛ: {str(ex)}")
+                logger.error(f"_on_history_loaded: НУ Я ПОНЯЛ: {str(ex)}")
         
         self.update_debug_info()
         

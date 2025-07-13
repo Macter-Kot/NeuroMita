@@ -45,7 +45,7 @@ class TelegramController:
 
             logger.info(f"Передаю в тг {SH(self.api_id)},{SH(self.api_hash)},{SH(self.phone)} (Должно быть не пусто)")
 
-            self.bot_handler = TelegramBotHandler(self.main, self.api_id, self.api_hash, self.phone,
+            self.bot_handler = TelegramBotHandler(self.api_id, self.api_hash, self.phone,
                                                   self.main.settings.get("AUDIO_BOT", "@silero_voice_bot"))
 
             try:

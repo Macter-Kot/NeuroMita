@@ -13,46 +13,40 @@ class SettingsController:
     def __init__(self, main_controller, config_path):
         self.main = main_controller
         self.config_path = config_path
-        self.settings = SettingsManager(self.config_path)
+        self.settings = SettingsManager(self.config_path)  # Это уже загружает настройки в self.settings.settings
         
     def load_api_settings(self, update_model):
-        logger.info("Начинаю загрузку настроек")
+        logger.info("Начинаю загрузку настроек (из уже загруженного словаря)")
 
-        if not os.path.exists(self.config_path):
-            logger.info("Не найден файл настроек")
+        settings = self.settings.settings
+
+        if not settings:
+            logger.info("Настройки пустые (файл не найден или повреждён), используем дефолты")
             return
 
-        try:
-            with open(self.config_path, "rb") as f:
-                encoded = f.read()
-            decoded = base64.b64decode(encoded)
-            settings = json.loads(decoded.decode("utf-8"))
+        self.main.api_key = settings.get("NM_API_KEY", "")
+        self.main.api_key_res = settings.get("NM_API_KEY_RES", "")
+        self.main.api_url = settings.get("NM_API_URL", "")
+        self.main.api_model = settings.get("NM_API_MODEL", "")
+        self.main.makeRequest = settings.get("NM_API_REQ", False)
 
-            self.main.api_key = settings.get("NM_API_KEY", "")
-            self.main.api_key_res = settings.get("NM_API_KEY_RES", "")
-            self.main.api_url = settings.get("NM_API_URL", "")
-            self.main.api_model = settings.get("NM_API_MODEL", "")
-            self.main.makeRequest = settings.get("NM_API_REQ", False)
+        self.main.telegram_controller.api_id = settings.get("NM_TELEGRAM_API_ID", "")
+        self.main.telegram_controller.api_hash = settings.get("NM_TELEGRAM_API_HASH", "")
+        self.main.telegram_controller.phone = settings.get("NM_TELEGRAM_PHONE", "")
 
-            self.main.telegram_controller.api_id = settings.get("NM_TELEGRAM_API_ID", "")
-            self.main.telegram_controller.api_hash = settings.get("NM_TELEGRAM_API_HASH", "")
-            self.main.telegram_controller.phone = settings.get("NM_TELEGRAM_PHONE", "")
+        logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
+        logger.info(f"По тг {SH(self.main.telegram_controller.api_id)},{SH(self.main.telegram_controller.api_hash)},{SH(self.main.telegram_controller.phone)} (Должно быть не пусто если тг)")
+        
+        if update_model:
+            if self.main.api_key:
+                self.main.model_controller.model.api_key = self.main.api_key
+            if self.main.api_url:
+                self.main.model_controller.model.api_url = self.main.api_url
+            if self.main.api_model:
+                self.main.model_controller.model.api_model = self.main.api_model
+            self.main.model_controller.model.makeRequest = self.main.makeRequest
 
-            logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
-            logger.info(f"По тг {SH(self.main.telegram_controller.api_id)},{SH(self.main.telegram_controller.api_hash)},{SH(self.main.telegram_controller.phone)} (Должно быть не пусто если тг)")
-            
-            if update_model:
-                if self.main.api_key:
-                    self.main.model_controller.model.api_key = self.main.api_key
-                if self.main.api_url:
-                    self.main.model_controller.model.api_url = self.main.api_url
-                if self.main.api_model:
-                    self.main.model_controller.model.api_model = self.main.api_model
-                self.main.model_controller.model.makeRequest = self.main.makeRequest
-
-            logger.info("Настройки загружены из файла")
-        except Exception as e:
-            logger.info(f"Ошибка загрузки: {e}")
+        logger.info("Настройки применены из загруженного словаря")
 
     def all_settings_actions(self, key, value):
         """

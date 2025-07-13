@@ -401,3 +401,8 @@ class Events:
     SET_WAITING_ANSWER = "set_waiting_answer"
     GENERATE_RESPONSE = "generate_response"
     SET_CONNECTED_TO_GAME = "set_connected_to_game"
+
+    # От telegram_handler.py
+    SET_SOUND_FILE_DATA = "set_sound_file_data"
+    GET_TG_AUTH_DATA = "get_tg_auth_data"
+    SET_SILERO_CONNECTED = "set_silero_connected"

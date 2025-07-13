@@ -86,3 +86,4 @@ google-api-core
 qtawesome
 pyqt6
 pillow
+portalocker

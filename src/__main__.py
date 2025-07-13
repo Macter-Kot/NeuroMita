@@ -21,7 +21,6 @@ import timeit
 import pickletools
 import logging.config
 import fileinput
-# import pywintypes
 from win32 import win32file
 import pyworld
 import cProfile

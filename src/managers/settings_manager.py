@@ -1,6 +1,3 @@
-import base64
-import json
-import os
 
 import qtawesome as qta
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
@@ -8,57 +5,124 @@ from PyQt6.QtCore import Qt
 
 from main_logger import logger
 
+import json, os, threading, queue, time, atexit
+
 class SettingsManager:
     instance = None
+    SAVE_DEBOUNCE_SEC = 0.5          # сколько «выжидать», собирая изменения
+    _SENTINEL = object()             # сигнал завершения потока
 
-    def __init__(self, config_path):
+    def __init__(self, config_path: str):
         self.config_path = config_path
-        self.settings = {}
+        self.settings: dict = {}
+        self._save_queue: "queue.Queue[object]" = queue.Queue()
+        self._writer_thread = threading.Thread(
+            target=self._save_worker, name="SettingsSaver", daemon=True)
+        self._writer_thread.start()
+        atexit.register(self._stop_writer)      # финальное сохранение
+
         self.load_settings()
-        # Set the singleton instance. This should only happen once.
-        if SettingsManager.instance is None:
-            SettingsManager.instance = self
+        SettingsManager.instance = self         # singleton
 
-    def load_settings(self):
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, "rb") as f:
-                    encoded = f.read()
-                decoded = base64.b64decode(encoded)
-                self.settings = json.loads(decoded.decode("utf-8"))
-        except Exception as e:
-            logger.error(f"Error loading settings: {e}")
-            self.settings = {}
-
-    def save_settings(self):
-        try:
-            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-            json_data = json.dumps(self.settings, ensure_ascii=False, indent=4)
-            encoded = base64.b64encode(json_data.encode("utf-8"))
-            with open(self.config_path, "wb") as f:
-                f.write(encoded)
-        except Exception as e:
-            logger.error(f"Error saving settings: {e}")
-
-    # The static methods provide the global access point for the entire application.
-    # They operate on the singleton `instance`.
+    # ---------- публичное API ----------
 
     @staticmethod
     def get(key, default=None):
-        if SettingsManager.instance:
-            # Directly access the 'settings' dictionary of the instance
-            return SettingsManager.instance.settings.get(key, default)
-        
-        logger.warning("SettingsManager.get() called before instance was created.")
-        return default
+        inst = SettingsManager.instance
+        return inst.settings.get(key, default) if inst else default
 
     @staticmethod
     def set(key, value):
-        if SettingsManager.instance:
-            # Directly access the 'settings' dictionary of the instance
-            SettingsManager.instance.settings[key] = value
-        else:
-            logger.error("SettingsManager.set() called before instance was created. Cannot set value.")
+        inst = SettingsManager.instance
+        if not inst:
+            logger.error("SettingsManager.set() called before init")
+            return
+        inst.settings[key] = value
+        inst._schedule_save()
+
+    # ---------- загрузка / сохранение ----------
+
+    def load_settings(self):
+        try:
+            if not os.path.exists(self.config_path):
+                logger.info("Файл настроек не найден – используем дефолты")
+                return
+
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                self.settings = json.load(f)
+            logger.info("Настройки загружены")
+
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error(f"Не удалось загрузить настройки: {e}")
+            self.settings = {}
+
+    # Вызывается из фонового потока
+    def _write_file(self):
+        tmp_path = self.config_path + ".tmp"
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(self.settings, f, ensure_ascii=False, indent=4)
+            f.flush()
+            os.fsync(f.fileno())          # на случай краха ОС
+
+        os.replace(tmp_path, self.config_path)  # атомарно
+        logger.debug("Настройки сохранены")
+
+    # ---------- очередь сохранений ----------
+
+    def _schedule_save(self):
+        # просто кладём маркер (неважно, какой). Если очередь уже полна – ничего.
+        try:
+            self._save_queue.put_nowait(1)
+        except queue.Full:
+            pass
+
+    def save_settings(self):
+        """
+        Совместимость со старым кодом.
+        Фактически просто планируем сохранение через очередь.
+        """
+        self._schedule_save()
+
+    @staticmethod
+    def save():
+        """Статический аналог, если где-то вызывают SettingsManager.save()."""
+        inst = SettingsManager.instance
+        if inst:
+            inst._schedule_save()
+
+    def _save_worker(self):
+        """
+        Берём из очереди, ждём SAVE_DEBOUNCE_SEC,
+        если в очереди добавились ещё элементы – игнорируем (они уже учтены),
+        затем вызываем _write_file().
+        """
+        while True:
+            item = self._save_queue.get()
+            if item is SettingsManager._SENTINEL:
+                break            # завершение
+
+            # ждём, пока не иссякнет поток событий
+            try:
+                while True:
+                    self._save_queue.get(timeout=self.SAVE_DEBOUNCE_SEC)
+            except queue.Empty:
+                pass
+
+            try:
+                self._write_file()
+            except Exception as e:
+                logger.error(f"Ошибка сохранения настроек: {e}")
+
+    def _stop_writer(self):
+        # посылаем сигнал, ждём поток и финально сохраняем
+        self._save_queue.put(SettingsManager._SENTINEL)
+        self._writer_thread.join(timeout=1)
+        try:
+            self._write_file()
+        except Exception as e:
+            logger.error(f"Ошибка финального сохранения настроек: {e}")
 
 
 # ────────────────────────────────────────────────────

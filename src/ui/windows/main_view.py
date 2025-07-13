@@ -1032,14 +1032,12 @@ class ChatGUI(QMainWindow):
 
             self.insert_message("user", image_content_for_display)
 
-        logger.warning("Отправка сообщения...")
         # Отправляем сообщение через события
         self.event_bus.emit(Events.SEND_MESSAGE, {
             'user_input': user_input,
             'system_input': system_input,
             'image_data': all_image_data
         })
-        logger.warning("Якобы сообщение отправлено...")
 
         if staged_image_data:
             # Очищаем список прикрепленных изображений

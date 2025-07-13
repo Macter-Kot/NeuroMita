@@ -375,3 +375,13 @@ class Events:
 
     # Отладка
     GET_DEBUG_INFO = "get_debug_info"
+
+    # От chat_handler.py
+    SET_TTS_DATA = "set_tts_data"
+    GET_USER_INPUT = "get_user_input"
+
+    # События chat_handler.py
+    ON_STARTED_RESPONSE_GENERATION = "on_started_response_generation"
+    ON_SUCCESSFUL_RESPONSE = "on_successful_response"
+    ON_FAILED_RESPONSE = "on_failed_response"
+    ON_FAILED_RESPONSE_ATTEMPT = "on_failed_attempt_for_response"

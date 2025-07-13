@@ -25,15 +25,16 @@ from utils.pip_installer import PipInstaller
 
 from utils import SH, save_combined_messages, calculate_cost_for_combined_messages, process_text_to_voice # Keep utils
 
+from core.events import get_event_bus, Events
 
 class ChatModel:
     def __init__(self, controller, api_key, api_key_res, api_url, api_model, api_make_request, pip_installer: PipInstaller):
         self.last_key = 0
-        self.controller = controller
         self.pip_installer = pip_installer
         self.g4fClient = None
         self.g4f_available = False
         self.settings = controller.settings
+        self.controller = controller
         self._initialize_g4f()  # Keep g4f initialization
 
         self.api_key = api_key
@@ -44,6 +45,7 @@ class ChatModel:
         self.makeRequest = api_make_request  # This seems to be a boolean flag
 
         self.tool_manager = ToolManager()
+        self.event_bus = get_event_bus()
 
         try:
             self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
@@ -231,7 +233,7 @@ class ChatModel:
         return list(self.characters.keys())
 
     def update_openai_client(self, reserve_key_token=None):
-        logger.info("Attempting to update OpenAI client.")
+        logger.debug("Attempting to update OpenAI client.")
         key_to_use = reserve_key_token if reserve_key_token else self.api_key
 
         if not key_to_use:
@@ -241,12 +243,12 @@ class ChatModel:
 
         try:
             if self.api_url:
-                logger.info(f"Using API key (masked): {SH(key_to_use)} and base URL: {self.api_url}")
+                logger.debug(f"Using API key (masked): {SH(key_to_use)} and base URL: {self.api_url}")
                 self.client = OpenAI(api_key=key_to_use, base_url=self.api_url)
             else:
-                logger.info(f"Using API key (masked): {SH(key_to_use)} (no custom base URL)")
+                logger.debug(f"Using API key (masked): {SH(key_to_use)} (no custom base URL)")
                 self.client = OpenAI(api_key=key_to_use)
-            logger.info("OpenAI client updated successfully.")
+            logger.debug("OpenAI client updated successfully.")
         except Exception as e:
             logger.error(f"Failed to update OpenAI client: {e}")
             self.client = None
@@ -370,6 +372,7 @@ class ChatModel:
 
                 if not success or not llm_response_content:
                     logger.warning("LLM generation failed or returned empty.")
+                    self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': "LLM generation failed or returned empty."})
                     return None
 
                 processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
@@ -432,17 +435,21 @@ class ChatModel:
                 self.current_character.save_character_state_to_history(llm_messages_history_limited)
 
                 if self.current_character != self.GameMaster or bool(self.settings.get("GM_VOICE")):
-                    self.controller.textToTalk           = process_text_to_voice(final_response_text)
-                    self.controller.textSpeaker          = self.current_character.silero_command
-                    self.controller.textSpeakerMiku      = self.current_character.miku_tts_name
-                    self.controller.silero_turn_off_video= self.current_character.silero_turn_off_video
-                    logger.info(f"TTS Text: {self.controller.textToTalk}, Speaker: {self.controller.textSpeaker}")
-
-                self.controller.update_debug_signal.emit()
+                    processed_responce = process_text_to_voice(final_response_text)
+                    self.event_bus.emit(Events.SET_TTS_DATA, {
+                        'text': processed_responce,
+                        'speaker': self.current_character.silero_command,
+                        'speaker_miku': self.current_character.miku_tts_name,
+                        'turn_off_video': self.current_character.silero_turn_off_video
+                    })
+                    logger.info(f"TTS Text: {processed_responce}, Speaker: {self.current_character.silero_command}")
+                
+                self.event_bus.emit(Events.ON_SUCCESSFUL_RESPONSE)
                 return final_response_text
 
             except Exception as e:
                 logger.error(f"Error during LLM response generation or processing: {e}", exc_info=True)
+                self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': str(e)})
                 return f"Ошибка: {e}"
 
     def process_history_compression(self,llm_messages_history):
@@ -541,7 +548,7 @@ class ChatModel:
         self._log_generation_start()
 
         
-        self.controller.show_mita_thinking()
+        self.event_bus.emit(Events.ON_STARTED_RESPONSE_GENERATION)
 
         # Region Tools
 
@@ -568,6 +575,7 @@ class ChatModel:
             save_combined_messages(combined_messages, "SavedMessages/last_attempt_log")
 
             try:
+                logger.info("Generating response...")
                 if bool(self.settings.get("NM_API_REQ", False)):
                     if attempt > 1 and self.api_key_res:
                         new_key = self.GetOtherKey()
@@ -623,11 +631,11 @@ class ChatModel:
 
             if attempt < max_attempts:
                 logger.info(f"Waiting {retry_delay}s before next attempt...")
-                self.controller.show_mita_error_pulse()
+                self.event_bus.emit(Events.ON_FAILED_RESPONSE_ATTEMPT)
                 time.sleep(retry_delay)
 
         logger.error("All generation attempts failed.")
-        self.controller.show_mita_error("Не удалось получить ответ.")
+        self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': "Не удалось получить ответ."})
         return None, False
 
     def _execute_with_timeout(self, func, args=(), kwargs={}, timeout=30):
@@ -691,6 +699,7 @@ class ChatModel:
         Запрос к Gemini / Gemma REST-API c поддержкой tools.
         При вызове инструмента делает follow-up запрос (до 3 раз).
         """
+        logger.info(f"Gemini request: Using URL={self.api_url}, model={self.settings.get('NM_API_MODEL')}, GEMINI_CASE={bool(self.settings.get('GEMINI_CASE'))}")
 
         # ─── 0.   Защита от бесконечной рекурсии ──────────────────────────
         if _depth > 3:
@@ -1333,7 +1342,9 @@ class ChatModel:
             combined_messages.extend(event_system_infos)
 
         # 4. Текущий ввод пользователя (если есть)
-        user_input_from_gui = self.controller.user_entry.toPlainText().strip()
+        user_input = self.event_bus.emit_and_wait(Events.GET_USER_INPUT)
+        user_input_from_gui = user_input[0] if user_input else ""
+
         if user_input_from_gui:
             combined_messages.append({"role": "user", "content": user_input_from_gui})
 
@@ -1544,15 +1555,11 @@ class ChatModel:
                     ...
                     #add_temporary_system_message(messages, "Игрок был не распилен, произошла ошибка")
 
-                    #if self.controller:
-                    #   self.controller.close_app()
 
                 elif command == "Выключить игрока":
                     ...
                     #add_temporary_system_message(messages, "Игрок был отпавлен в главное меню, но скоро он вернется...")
 
-                    #if self.controller:
-                    #   self.controller.close_app()
 
                 else:
                     # Обработка неизвестных команд
@@ -1614,6 +1621,7 @@ class ChatModel:
             любой другой — конкретное имя провайдера,
             если данных нет – просто работаем как есть.
         """
+
         # 1) какую «секцию» берём из хранилища
         if not provider_name:
             yield
@@ -1640,6 +1648,8 @@ class ChatModel:
             "GEMINI_CASE": self.settings.get("GEMINI_CASE"),
         }
 
+        
+
         # 3) применяем конфигурацию провайдера (даже если совпадает)
         self.apply_config({
             "api_key": cfg.get("NM_API_KEY"),
@@ -1658,6 +1668,8 @@ class ChatModel:
             self.apply_config(original)
             self.settings.set("NM_API_REQ", original["NM_API_REQ"])
             self.settings.set("GEMINI_CASE", original["GEMINI_CASE"])
+
+        
 
     def apply_config(self, cfg: dict) -> list[str]:
         """

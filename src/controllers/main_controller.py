@@ -206,6 +206,16 @@ class MainController:
         # Отладка
         self.event_bus.subscribe(Events.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
 
+        # От chat_handler.py
+        self.event_bus.subscribe(Events.SET_TTS_DATA, self._on_set_tts_data, weak=False)
+        self.event_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
+
+        # События от chat_handler.py
+        self.event_bus.subscribe(Events.ON_STARTED_RESPONSE_GENERATION, self._on_started_response, weak=False)
+        self.event_bus.subscribe(Events.ON_SUCCESSFUL_RESPONSE, self._on_succesful_response, weak=False)
+        self.event_bus.subscribe(Events.ON_FAILED_RESPONSE_ATTEMPT, self._on_failed_response_attempt, weak=False)
+        self.event_bus.subscribe(Events.ON_FAILED_RESPONSE, self._on_failed_response, weak=False)
+
     def start_asyncio_loop(self):
         try:
             self.loop = asyncio.new_event_loop()
@@ -269,7 +279,7 @@ class MainController:
     ):
         try:
             print("[DEBUG] Начинаем async_send_message, показываем статус")
-            self.show_mita_thinking()
+            # self.show_mita_thinking()
             
             is_streaming = bool(self.settings.get("ENABLE_STREAMING", False))
 
@@ -289,12 +299,12 @@ class MainController:
                         stream_callback=stream_callback_handler if is_streaming else None
                     )
                 ),
-                timeout=120.0
+                timeout=600.0
             )
 
-            if response is not None:
-                print("[DEBUG] Получили ответ, скрываем статус")
-                self.hide_mita_status()
+            # if response is not None:
+            #     print("[DEBUG] Получили ответ, скрываем статус")
+            #     self.hide_mita_status()
 
             if is_streaming:
                 self.view.finish_stream_signal.emit()
@@ -315,10 +325,10 @@ class MainController:
                     
         except asyncio.TimeoutError:
             logger.warning("Тайм-аут: генерация ответа заняла слишком много времени.")
-            self.show_mita_error("Превышено время ожидания ответа")
+            self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': "Превышено время ожидания ответа"})
         except Exception as e:
             logger.error(f"Ошибка в async_send_message: {e}", exc_info=True)
-            self.show_mita_error(f"Ошибка: {str(e)[:50]}...")
+            self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': f"Ошибка: {str(e)[:50]}..."})
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
         self.audio_controller.init_model_thread(model_id, loading_window, status_label, progress)
@@ -442,7 +452,6 @@ class MainController:
     # region Обработчики событий - Сообщения
     
     def _on_send_message(self, event: Event):
-        logger.warning("Обработчик события _on_send_message получил сообщение.")
         """Обработка отправки сообщения"""
         data = event.data
         user_input = data.get('user_input', '')
@@ -455,10 +464,7 @@ class MainController:
         
         # Отправляем сообщение асинхронно
         
-        logger.warning("Проверка на loop")
         if self.loop and self.loop.is_running():
-            
-            logger.warning("Отправка сообщения асинхронно.")
             asyncio.run_coroutine_threadsafe(
                 self.async_send_message(user_input, system_input, image_data),
                 self.loop
@@ -965,6 +971,37 @@ class MainController:
         return "Debug info not available"
 
     # endregion
+
+    # region Обработчики событий - От chat_handler.py
+
+    def _on_set_tts_data(self, event: Event):
+        """Установка данных для TTS"""
+        data = event.data
+        self.textToTalk = data.get('text', '')
+        self.textSpeaker = data.get('speaker', '')
+        self.textSpeakerMiku = data.get('speaker_miku', '')
+        self.silero_turn_off_video = data.get('turn_off_video', True)
+        
+        logger.info(f"TTS Text: {self.textToTalk}, Speaker: {self.textSpeaker}")
+
+    def _on_get_user_input(self, event: Event):
+        """Получение текста из user_entry"""
+        if self.view and hasattr(self.view, 'user_entry'):
+            return self.view.user_entry.toPlainText().strip()
+        return ""
+    
+    def _on_succesful_response(self, event: Event):
+        self.hide_mita_status()
+    def _on_failed_response(self, event: Event):
+        logger.warning(f"Ошибка в ответе: {event.data}")
+        self.show_mita_error(event.data.get('error', 'Неизвестная ошибка'))
+    def _on_failed_response_attempt(self, event: Event):
+        self.show_mita_error_pulse()
+    def _on_started_response(self, event: Event):
+        self.show_mita_thinking()
+    
+    # endregion
+
     
     def start_periodic_checks(self):
         """Запуск периодических проверок"""
@@ -1227,3 +1264,27 @@ class MainController:
     @camera_capture.setter
     def camera_capture(self, value):
         self.capture_controller.camera_capture = value
+
+    @property  
+    def textSpeaker(self):
+        return self.audio_controller.textSpeaker
+
+    @textSpeaker.setter
+    def textSpeaker(self, value):
+        self.audio_controller.textSpeaker = value
+
+    @property
+    def textSpeakerMiku(self):
+        return self.audio_controller.textSpeakerMiku
+
+    @textSpeakerMiku.setter
+    def textSpeakerMiku(self, value):
+        self.audio_controller.textSpeakerMiku = value
+
+    @property
+    def silero_turn_off_video(self):
+        return self.audio_controller.silero_turn_off_video
+
+    @silero_turn_off_video.setter
+    def silero_turn_off_video(self, value):
+        self.audio_controller.silero_turn_off_video = value

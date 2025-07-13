@@ -4,10 +4,11 @@ from presets.api_presets import API_PRESETS
 from PyQt6.QtCore import QTimer, Qt, QSize
 from PyQt6.QtGui import (QPainter, QPixmap, QColor, QFont,
                          QIcon, QPalette, QFontMetrics)
-from PyQt6.QtWidgets import (QComboBox, QMessageBox,
-                             QStyledItemDelegate, QStyle)
+from PyQt6.QtWidgets import (QComboBox, QMessageBox, QLabel,
+                             QStyledItemDelegate, QStyle, QHBoxLayout)
 import qtawesome as qta
 
+from main_logger import logger
 
 # ──────────────────────────────────────────────────────────
 #                  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -137,13 +138,172 @@ class _ProviderDelegate(QStyledItemDelegate):
 
 
 # ──────────────────────────────────────────────────────────
+#               КЛАСС ДЛЯ ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ
+# ──────────────────────────────────────────────────────────
+class UnsavedChangesTracker:
+    def __init__(self):
+        self.field_states = {}
+        self.save_icon = qta.icon('fa5s.check-circle', color='#27ae60', scale_factor=0.9)
+        self.warning_icon = qta.icon('fa5s.exclamation-circle', color='#f39c12', scale_factor=0.9)
+        self.updating = False  # Флаг для предотвращения рекурсивных обновлений
+        
+    def register_field(self, field_name: str, widget, layout):
+        """Регистрирует поле для отслеживания изменений"""
+        
+        # Создаем иконку-индикатор
+        icon_label = QLabel()
+        icon_label.setFixedSize(16, 16)
+        icon_label.setToolTip(_("Есть несохранённые изменения", "There are unsaved changes"))
+        icon_label.hide()  # Изначально скрыта
+        
+        # Добавляем иконку в layout
+        if hasattr(layout, 'addWidget'):
+            layout.addWidget(icon_label)
+        elif hasattr(layout, 'insertWidget'):
+            layout.insertWidget(layout.count() - 1, icon_label)
+        
+        # НЕ получаем начальное значение здесь - подождем пока поля заполнятся
+        self.field_states[field_name] = {
+            'original_value': None,  # Будет установлено позже
+            'current_value': None,
+            'icon_label': icon_label,
+            'widget': widget,
+            'initialized': False
+        }
+        
+        # Подключаем сигналы изменения
+        self._connect_change_signals(widget, field_name)
+    
+    def _get_widget_value(self, widget):
+        """Получает значение виджета"""
+        if hasattr(widget, 'text'):
+            return widget.text()
+        elif hasattr(widget, 'isChecked'):
+            return widget.isChecked()
+        elif hasattr(widget, 'currentText'):
+            return widget.currentText()
+        return None
+    
+    def _connect_change_signals(self, widget, field_name):
+        """Подключает сигналы изменения виджета"""
+        
+        if hasattr(widget, 'textChanged'):
+            widget.textChanged.connect(lambda: self._on_field_changed(field_name))
+        elif hasattr(widget, 'stateChanged'):  # Для чекбоксов
+            widget.stateChanged.connect(lambda state: self._on_field_changed(field_name))
+        elif hasattr(widget, 'toggled'):  # Альтернативный сигнал для чекбоксов
+            widget.toggled.connect(lambda checked: self._on_field_changed(field_name))
+        elif hasattr(widget, 'currentTextChanged'):
+            widget.currentTextChanged.connect(lambda: self._on_field_changed(field_name))
+    
+    def _on_field_changed(self, field_name):
+        """Обработчик изменения поля"""
+        if self.updating or field_name not in self.field_states:
+            return
+            
+        state = self.field_states[field_name]
+        widget = state['widget']
+        current_value = self._get_widget_value(widget)
+        state['current_value'] = current_value
+        
+        # Если поле еще не инициализировано, не показываем изменения
+        if not state['initialized']:
+            logger.info(f"Field {field_name} not initialized yet")
+            return
+        
+        # Проверяем, изменилось ли значение
+        if current_value != state['original_value']:
+            # Показываем иконку несохранённых изменений
+            state['icon_label'].setPixmap(self.warning_icon.pixmap(16, 16))
+            state['icon_label'].setToolTip(_("Есть несохранённые изменения", "There are unsaved changes"))
+            state['icon_label'].show()
+        else:
+            # Скрываем иконку, если значение вернулось к исходному
+            state['icon_label'].hide()
+    
+    def initialize_field_values(self):
+        """Инициализирует начальные значения всех полей"""
+        self.updating = True
+        
+        for field_name, state in self.field_states.items():
+            widget = state['widget']
+            current_value = self._get_widget_value(widget)
+            state['original_value'] = current_value
+            state['current_value'] = current_value
+            state['initialized'] = True
+            state['icon_label'].hide()
+        
+        self.updating = False
+    
+    def mark_field_saved(self, field_name):
+        """Отмечает поле как сохранённое"""
+        if field_name not in self.field_states:
+            return
+            
+        state = self.field_states[field_name]
+        current_value = self._get_widget_value(state['widget'])
+        state['original_value'] = current_value
+        state['current_value'] = current_value
+        
+        # Показываем иконку сохранения на короткое время, затем скрываем
+        state['icon_label'].setPixmap(self.save_icon.pixmap(16, 16))
+        state['icon_label'].setToolTip(_("Изменения сохранены", "Changes saved"))
+        state['icon_label'].show()
+        
+        # Скрываем через 1.5 секунды
+        QTimer.singleShot(1500, state['icon_label'].hide)
+    
+    def mark_all_saved(self):
+        """Отмечает все поля как сохранённые"""
+        self.updating = True
+        
+        for field_name, state in self.field_states.items():
+            current_value = self._get_widget_value(state['widget'])
+            state['original_value'] = current_value
+            state['current_value'] = current_value
+            state['initialized'] = True
+            
+            # Показываем иконку сохранения на короткое время
+            state['icon_label'].setPixmap(self.save_icon.pixmap(16, 16))
+            state['icon_label'].setToolTip(_("Изменения сохранены", "Changes saved"))
+            state['icon_label'].show()
+        
+        # Скрываем все иконки через 1.5 секунды
+        QTimer.singleShot(1500, self._hide_all_icons)
+        self.updating = False
+    
+    def _hide_all_icons(self):
+        """Скрывает все иконки"""
+        for state in self.field_states.values():
+            state['icon_label'].hide()
+    
+    def has_unsaved_changes(self) -> bool:
+        """Проверяет, есть ли несохранённые изменения"""
+        for state in self.field_states.values():
+            if state['initialized'] and state['current_value'] != state['original_value']:
+                return True
+        return False
+    
+    def get_unsaved_fields(self) -> list:
+        """Возвращает список полей с несохранёнными изменениями"""
+        unsaved = []
+        for field_name, state in self.field_states.items():
+            if state['initialized'] and state['current_value'] != state['original_value']:
+                unsaved.append(field_name)
+        return unsaved
+
+
+# ──────────────────────────────────────────────────────────
 #               ГЛАВНАЯ ФУНКЦИЯ  ДЛЯ  UI
 # ──────────────────────────────────────────────────────────
 def setup_api_controls(self, parent):
     """
     Создаёт секцию «API settings»; всё, что было у вас – сохранено,
-    добавляется только делегат для красивых бейджей.
+    добавляется только делегат для красивых бейджей и трекер изменений.
     """
+    # Создаем трекер изменений
+    self.unsaved_tracker = UnsavedChangesTracker()
+    
     # ── данные из settings ─────────────────────────────────
     provider_data = self.settings.get("API_PROVIDER_DATA", {})
     custom_presets = self.settings.get("CUSTOM_API_PRESETS", {})
@@ -162,7 +322,6 @@ def setup_api_controls(self, parent):
         return url
 
     # ── state helpers ─────────────────────────────────────
-    # ── state helpers (модифицировано для g4f) ────────────
     def save_provider_state(pid: str):
         if not pid:
             return
@@ -182,7 +341,9 @@ def setup_api_controls(self, parent):
         provider_data[pid] = state
         self.settings.set("API_PROVIDER_DATA", provider_data)
         self.settings.save_settings()
-
+        
+        # Отмечаем все поля как сохранённые
+        self.unsaved_tracker.mark_all_saved()
 
     # Вспомогательная функция для получения актуальной версии
     def _get_actual_g4f_version():
@@ -226,6 +387,9 @@ def setup_api_controls(self, parent):
             api_key_entry.setText("")
             self._save_setting("NM_API_KEY", "")
             apply_preset(pid)
+        
+        # ВАЖНО: Инициализируем значения трекера ПОСЛЕ загрузки данных
+        QTimer.singleShot(300, self.unsaved_tracker.initialize_field_values)
 
     # ── Combo helpers ─────────────────────────────────────
     DISPLAY2ID = {}
@@ -255,9 +419,11 @@ def setup_api_controls(self, parent):
         {'type': 'button_group',
          'buttons': [
              {'label': _('Сохранить / обновить пресет', 'Save / update preset'),
-              'command': lambda: _btn_save_preset()},
+              'command': lambda: _btn_save_preset(),
+              'icon': qta.icon('fa5s.save', color='#27ae60')},
              {'label': _('Удалить пресет', 'Delete preset'),
-              'command': lambda: _btn_delete_preset()},
+              'command': lambda: _btn_delete_preset(),
+              'icon': qta.icon('fa5s.trash', color='#e74c3c')},
          ]},
         {'label': _('Ссылка', 'URL'),
          'key': 'NM_API_URL', 'type': 'entry', 'widget_name': 'api_url_entry'},
@@ -285,9 +451,6 @@ def setup_api_controls(self, parent):
          'widget_name': 'nm_api_key_res_label'},
 
         # НОВЫЕ ПОЛЯ ДЛЯ G4F
-        #{'type': 'text', 'label': _("Текущая версия","Current version")+f": {_get_actual_g4f_version()}",
-        #'key': 'G4F_VERSION',
-        # 'widget_name': 'g4f_installed_label'},  # Label будет динамически обновляться
         {'label': _('Сменить версию на ', 'Change version on'),
          'key': 'G4F_VERSION', 'type': 'entry', 'default': '0.4.7.7',
          'widget_name': 'g4f_version_entry',
@@ -297,6 +460,7 @@ def setup_api_controls(self, parent):
         {'label': _('Запланировать обновление g4f', 'Schedule g4f Update'),
          'type': 'button', 'command': self.trigger_g4f_reinstall_schedule,
          'widget_name': 'g4f_update_button',
+         'icon': qta.icon('fa5s.download', color='#3498db'),
          'hide_when_disabled': True},
     ]
     self.create_settings_section(parent, _("Настройки API", "API settings"), config)
@@ -309,6 +473,25 @@ def setup_api_controls(self, parent):
     gemini_case_checkbox = getattr(self, 'gemini_case_checkbox')
     nm_api_req_checkbox = getattr(self, 'nm_api_req_checkbox')
     g4f_version_entry = getattr(self, 'g4f_version_entry')
+
+    # ── регистрируем поля в трекере изменений ──────────────
+    def register_tracked_fields():
+        # Получаем layout'ы для каждого поля
+        fields_to_track = [
+            ('api_url_entry', api_url_entry),
+            ('api_model_entry', api_model_entry),
+            ('api_key_entry', api_key_entry),
+            ('nm_api_req_checkbox', nm_api_req_checkbox),
+            ('gemini_case_checkbox', gemini_case_checkbox),
+            ('g4f_version_entry', g4f_version_entry),
+        ]
+        
+        for field_name, widget in fields_to_track:
+            frame = getattr(self, f"{field_name}_frame", None)
+            if frame and hasattr(frame, 'layout') and frame.layout():
+                self.unsaved_tracker.register_field(field_name, widget, frame.layout())
+
+    QTimer.singleShot(100, register_tracked_fields)
 
     # ── разделитель ───────────────────────────────────────
     api_provider_combo.insertSeparator(separator_index)
@@ -365,8 +548,6 @@ def setup_api_controls(self, parent):
     # ── provider change ───────────────────────────────────
     self._last_provider = combo_current_id()
 
-    self._last_provider = combo_current_id()
-
     def on_provider_changed():
         save_provider_state(self._last_provider)
         new_id = combo_current_id()
@@ -407,6 +588,17 @@ def setup_api_controls(self, parent):
     # ── live URL updates ──────────────────────────────────
     api_model_entry.textChanged.connect(lambda _: update_url())
     api_key_entry.textChanged.connect(lambda _: update_url())
+
+    # ── АВТОСОХРАНЕНИЕ ДЛЯ ЧЕКБОКСОВ ──────────────────────
+    def on_checkbox_changed():
+        """Автосохранение при изменении чекбоксов"""
+        self._save_setting("NM_API_REQ", nm_api_req_checkbox.isChecked())
+        self._save_setting("GEMINI_CASE", gemini_case_checkbox.isChecked())
+        save_provider_state(combo_current_id())
+
+    # Подключаем автосохранение к чекбоксам
+    nm_api_req_checkbox.stateChanged.connect(lambda: on_checkbox_changed())
+    gemini_case_checkbox.stateChanged.connect(lambda: on_checkbox_changed())
 
     # ── начальное восстановление ──────────────────────────
     QTimer.singleShot(0, lambda: load_provider_state(combo_current_id(), fallback=False))
@@ -483,6 +675,5 @@ def setup_api_controls(self, parent):
 
     def save_g4f_version():
         current_pid = combo_current_id()
-        self._save_setting("G4F_VERSION", g4f_version_entry.text().strip())  # Глобально, но при смене пресета перезагружается
-        save_provider_state(current_pid)  # Сохраняем в state пресета
-
+        self._save_setting("G4F_VERSION", g4f_version_entry.text().strip())
+        save_provider_state(current_pid)

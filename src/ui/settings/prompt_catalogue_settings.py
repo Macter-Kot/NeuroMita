@@ -12,7 +12,7 @@ from managers.prompt_catalogue_manager import (
 )
 from managers.settings_manager import CollapsibleSection
 
-from ui.windows.events import get_event_bus, Events
+from core.events import get_event_bus, Events
 
 def setup_prompt_catalogue_controls(gui, parent_layout):
     catalogue_path = "PromptsCatalogue"

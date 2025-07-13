@@ -372,3 +372,6 @@ class Events:
     # Загрузка
     SHOW_LOADING_POPUP = "show_loading_popup"
     CLOSE_LOADING_POPUP = "close_loading_popup"
+
+    # Отладка
+    GET_DEBUG_INFO = "get_debug_info"

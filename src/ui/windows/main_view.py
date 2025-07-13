@@ -38,7 +38,7 @@ from ui.widgets.mita_status_widget import MitaStatusWidget
 
 from controllers.voice_model_controller import VoiceModelController
 
-from .events import get_event_bus, Events, Event
+from core.events import get_event_bus, Events, Event
 
 
 class ChatGUI(QMainWindow):
@@ -55,10 +55,10 @@ class ChatGUI(QMainWindow):
     hide_status_signal = pyqtSignal()
     pulse_error_signal = pyqtSignal()
 
-    def __init__(self, controller):
+    def __init__(self, settings):
         super().__init__()
         # Сохраняем только настройки из контроллера
-        self.settings = controller.settings
+        self.settings = settings
         
         # Инициализация системы событий
         self.event_bus = get_event_bus()
@@ -940,12 +940,13 @@ class ChatGUI(QMainWindow):
     def update_debug_info(self):
         if hasattr(self, 'debug_window') and self.debug_window:
             self.debug_window.clear()
+            
             # Получаем debug info через события
-            character_name = self._get_character_name()
-            # Здесь вы можете запросить дополнительную информацию через события
-            debug_info = f"Character: {character_name}\n"
-            debug_info += f"Settings loaded: {len(self.settings._settings) if hasattr(self.settings, '_settings') else 'N/A'}"
+            debug_info_result = self.event_bus.emit_and_wait(Events.GET_DEBUG_INFO, timeout=0.5)
+            debug_info = debug_info_result[0] if debug_info_result else "Debug info not available"
+            
             self.debug_window.insertPlainText(debug_info)
+
 
     def update_token_count(self, event=None):
         show_token_info = self._get_setting("SHOW_TOKEN_INFO", True)

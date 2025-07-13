@@ -11,7 +11,7 @@ from ui.settings.prompt_catalogue_settings import list_prompt_sets
 from managers.prompt_catalogue_manager import copy_prompt_set, get_prompt_catalogue_folder_name
 from main_logger import logger
 from utils import getTranslationVariant as _
-from ui.windows.events import get_event_bus, Events
+from core.events import get_event_bus, Events
 
 def setup_mita_controls(gui, parent_layout):
     event_bus = get_event_bus()

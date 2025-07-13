@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 import base64
 
 from main_logger import logger
-from .events import get_event_bus, Events, Event
+from core.events import get_event_bus, Events, Event
 
 
 class MainViewLogic:
@@ -102,6 +102,9 @@ class MainViewLogic:
         # Загрузка
         self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
         self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
+
+        # Отладка
+        self.event_bus.subscribe(Events.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
     
     # region Обработчики событий - Сообщения
     
@@ -633,4 +636,16 @@ class MainViewLogic:
         """Закрыть попап загрузки"""
         self.event_bus.emit("hide_loading_popup")
     
+    # endregion
+
+    # region Обработчики событий - Отладка
+
+    def _on_get_debug_info(self, event: Event):
+        """Получение отладочной информации"""
+        if hasattr(self.controller.model, 'current_character'):
+            char = self.controller.model.current_character
+            if hasattr(char, 'current_variables_string'):
+                return char.current_variables_string()
+        return "Debug info not available"
+
     # endregion

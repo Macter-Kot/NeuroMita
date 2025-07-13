@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from core.event_bus import EventBus, Event, EventType
 from core.lifecycle_manager import LifecycleManager
 from main_logger import logger

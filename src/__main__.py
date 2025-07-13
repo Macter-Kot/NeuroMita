@@ -223,7 +223,7 @@ import threading
 from ui.windows.main_view import ChatGUI
 from ui.windows.main_view_logic import MainViewLogic
 from controllers.main_controller import MainController
-from ui.windows.events import get_event_bus
+from core.events import get_event_bus
 from main_logger import logger
 from PyQt6.QtWidgets import QApplication
 import sys
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         logger.info("MainViewLogic создан")
         
         logger.info("Создаю ChatGUI...")
-        main_win = ChatGUI(controller)  # Передаем controller только для settings
+        main_win = ChatGUI(controller.settings)  # Передаем controller  settings
         logger.info("ChatGUI создан")
         
         # Обновляем ссылку на реальный view в контроллере

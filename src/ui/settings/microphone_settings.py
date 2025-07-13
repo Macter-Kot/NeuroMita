@@ -5,7 +5,7 @@ from ui.gui_templates import create_settings_section
 from main_logger import logger
 from handlers.asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
-from ui.windows.events import get_event_bus, Events
+from core.events import get_event_bus, Events
 import sounddevice as sd
 import time
 

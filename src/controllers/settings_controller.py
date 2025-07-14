@@ -15,7 +15,7 @@ class SettingsController:
         self.main = main_controller
         self.config_path = config_path
         self.event_bus = get_event_bus()
-        self.settings = SettingsManager(self.config_path)  # Создаем свой экземпляр SettingsManager
+        self.settings = SettingsManager(self.config_path)
         
     def load_api_settings(self, update_model):
         logger.info("Начинаю загрузку настроек (из уже загруженного словаря)")
@@ -32,12 +32,16 @@ class SettingsController:
         self.main.api_model = settings_dict.get("NM_API_MODEL", "")
         self.main.makeRequest = settings_dict.get("NM_API_REQ", False)
 
-        self.main.telegram_controller.api_id = settings_dict.get("NM_TELEGRAM_API_ID", "")
-        self.main.telegram_controller.api_hash = settings_dict.get("NM_TELEGRAM_API_HASH", "")
-        self.main.telegram_controller.phone = settings_dict.get("NM_TELEGRAM_PHONE", "")
+        telegram_settings = {
+            "api_id": settings_dict.get("NM_TELEGRAM_API_ID", ""),
+            "api_hash": settings_dict.get("NM_TELEGRAM_API_HASH", ""),
+            "phone": settings_dict.get("NM_TELEGRAM_PHONE", ""),
+            "settings": self.settings
+        }
+        self.event_bus.emit("telegram_settings_loaded", telegram_settings)
 
         logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
-        logger.info(f"По тг {SH(self.main.telegram_controller.api_id)},{SH(self.main.telegram_controller.api_hash)},{SH(self.main.telegram_controller.phone)} (Должно быть не пусто если тг)")
+        logger.info(f"По тг {SH(telegram_settings['api_id'])},{SH(telegram_settings['api_hash'])},{SH(telegram_settings['phone'])} (Должно быть не пусто если тг)")
         
         if update_model:
             if self.main.api_key:
@@ -51,20 +55,14 @@ class SettingsController:
         logger.info("Настройки применены из загруженного словаря")
 
     def all_settings_actions(self, key, value):
-        """
-        Обновленная функция обработки изменений настроек с учетом новой архитектуры контроллеров
-        """
-        # Сохраняем настройку
         self.settings.set(key, value)
         self.settings.save_settings()
         
-        # Аудио и озвучка
         if key in ["SILERO_USE", "VOICEOVER_METHOD", "AUDIO_BOT"]:
             self.event_bus.emit(Events.SWITCH_VOICEOVER_SETTINGS)
 
-        if key == "SILERO_TIME":
-            if self.main.telegram_controller.bot_handler:
-                self.main.telegram_controller.bot_handler.silero_time_limit = int(value)
+        if key in ["SILERO_TIME", "AUDIO_BOT"]:
+            self.event_bus.emit("telegram_settings_changed", {"key": key, "value": value})
 
         if key == "AUDIO_BOT":
             if value.startswith("@CrazyMitaAIbot"):
@@ -73,15 +71,10 @@ class SettingsController:
                     "message": "VinerX: наши товарищи из CrazyMitaAIbot предоставляет озвучку бесплатно буквально со своих пк, будет время - загляните к ним в тг, скажите спасибо)"
                 })
 
-            if self.main.telegram_controller.bot_handler:
-                self.main.telegram_controller.bot_handler.tg_bot = value
-
-        # Персонажи
         elif key == "CHARACTER":
             self.main.model_controller.model.current_character_to_change = value
             self.main.model_controller.model.check_change_current_character()
 
-        # API настройки модели
         elif key == "NM_API_MODEL":
             self.main.model_controller.model.api_model = value.strip()
         elif key == "NM_API_KEY":
@@ -93,7 +86,6 @@ class SettingsController:
         elif key == "gpt4free_model":
             self.main.model_controller.model.gpt4free_model = value.strip()
 
-        # Параметры модели
         elif key == "MODEL_MAX_RESPONSE_TOKENS":
             self.main.model_controller.model.max_response_tokens = int(value)
         elif key == "MODEL_TEMPERATURE":
@@ -111,7 +103,6 @@ class SettingsController:
         elif key == "MODEL_THOUGHT_PROCESS":
             self.main.model_controller.model.thinking_budget = float(value)
 
-        # Память и попытки
         elif key == "MODEL_MESSAGE_LIMIT":
             self.main.model_controller.model.memory_limit = int(value)
         elif key == "MODEL_MESSAGE_ATTEMPTS_COUNT":
@@ -119,13 +110,11 @@ class SettingsController:
         elif key == "MODEL_MESSAGE_ATTEMPTS_TIME":
             self.main.model_controller.model.request_delay = float(value)
 
-        # Микрофон и распознавание речи
         elif key == "MIC_ACTIVE":
             self.main.speech_controller.update_speech_settings(key, value)
         elif key in ["RECOGNIZER_TYPE", "VOSK_MODEL", "SILENCE_THRESHOLD", "SILENCE_DURATION", "VOSK_PROCESS_INTERVAL"]:
             self.main.speech_controller.update_speech_settings(key, value)
 
-        # Захват экрана
         elif key == "ENABLE_SCREEN_ANALYSIS":
             if bool(value):
                 self.main.capture_controller.start_screen_capture_thread()
@@ -141,14 +130,12 @@ class SettingsController:
                 self.main.capture_controller.stop_screen_capture_thread()
                 self.main.capture_controller.start_screen_capture_thread()
 
-        # Захват камеры
         elif key == "ENABLE_CAMERA_CAPTURE":
             if bool(value):
                 self.main.capture_controller.start_camera_capture_thread()
             else:
                 self.main.capture_controller.stop_camera_capture_thread()
 
-        # Исключения окон при захвате
         elif key in ["EXCLUDE_GUI_WINDOW", "EXCLUDE_WINDOW_TITLE"]:
             exclude_gui = self.settings.get("EXCLUDE_GUI_WINDOW", False)
             exclude_title = self.settings.get("EXCLUDE_WINDOW_TITLE", "")
@@ -177,7 +164,6 @@ class SettingsController:
                     self.main.capture_controller.stop_screen_capture_thread()
                     self.main.capture_controller.start_screen_capture_thread()
 
-        # Периодические запросы изображений
         elif key == "SEND_IMAGE_REQUESTS":
             if bool(value):
                 self.main.capture_controller.start_image_request_timer()
@@ -188,7 +174,6 @@ class SettingsController:
                 self.main.capture_controller.stop_image_request_timer()
                 self.main.capture_controller.start_image_request_timer()
 
-        # Сжатие изображений
         elif key == "IMAGE_QUALITY_REDUCTION_ENABLED":
             self.main.model_controller.model.image_quality_reduction_enabled = bool(value)
         elif key == "IMAGE_QUALITY_REDUCTION_START_INDEX":
@@ -200,7 +185,6 @@ class SettingsController:
         elif key == "IMAGE_QUALITY_REDUCTION_DECREASE_RATE":
             self.main.model_controller.model.image_quality_reduction_decrease_rate = int(value)
 
-        # Сжатие истории
         elif key == "ENABLE_HISTORY_COMPRESSION_ON_LIMIT":
             self.main.model_controller.model.enable_history_compression_on_limit = bool(value)
         elif key == "ENABLE_HISTORY_COMPRESSION_PERIODIC":
@@ -212,7 +196,6 @@ class SettingsController:
         elif key == "HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS":
             self.main.model_controller.model.history_compression_min_messages_to_compress = float(value)
 
-        # Настройки интерфейса
         elif key == "CHAT_FONT_SIZE":
             try:
                 font_size = int(value)
@@ -228,7 +211,6 @@ class SettingsController:
             self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
             logger.info(f"Настройка '{key}' изменена на: {value}. История чата перезагружена.")
 
-        # Информация о токенах
         elif key == "SHOW_TOKEN_INFO":
             self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
         elif key in ["TOKEN_COST_INPUT", "TOKEN_COST_OUTPUT"]:
@@ -241,7 +223,6 @@ class SettingsController:
             self.main.model_controller.model.max_model_tokens = int(value)
             self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
 
-        # Обновляем цвета статуса если нужно
         if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:
             self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
 
@@ -249,34 +230,19 @@ class SettingsController:
 
     @staticmethod
     def get_app_vars() -> Dict[str, Any]:
-        """
-        Возвращает публичные переменные программы для использования в DSL-скриптах.
-
-        Поддерживаются два способа добавления переменных:
-        1. Через список ключей (берётся значение из SettingsManager и преобразуется в bool)
-        2. Через кастомный словарь {имя_переменной: значение}
-
-        Возвращаемый словарь можно спокойно расширять.
-        """
-        # Простые флаги: автоматическое получение из SettingsManager с преобразованием в bool
         bool_keys = [
             "ENABLE_CAMERA_CAPTURE",
             "ENABLE_SCREEN_ANALYSIS",
             "MIC_ACTIVE",
-            # Добавь сюда другие ключи, если нужно
         ]
 
-        # Кастомные переменные: имя переменной => конкретное значение
         custom_vars: Dict[str, Any] = {
             "app_version": "1.0.0",
-            # "custom_flag": some_function(),
         }
 
-        # Собираем переменные-флаги
         flag_vars: Dict[str, Any] = {
             key: bool(SettingsManager.get(key, False))
             for key in bool_keys
         }
 
-        # Объединяем всё в один словарь, приоритет у custom_vars
         return {**flag_vars, **custom_vars}

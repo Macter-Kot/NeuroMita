@@ -11,16 +11,17 @@ from main_logger import logger
 from utils import process_text_to_voice
 from handlers.local_voice_handler import LocalVoice
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QMessageBox
 from utils import _
+from core.events import get_event_bus, Events
 
 class AudioController:
     def __init__(self, main_controller):
         self.main = main_controller
+        self.settings = main_controller.settings
+        self.event_bus = get_event_bus()
         self.local_voice = LocalVoice(self.main)
-        self.voiceover_method = self.main.settings.get("VOICEOVER_METHOD", "TG")
-        self.current_local_voice_id = self.main.settings.get("NM_CURRENT_VOICEOVER", None)
+        self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
+        self.current_local_voice_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
         self.last_voice_model_selected = None
         if self.current_local_voice_id:
             for model_info in LOCAL_VOICE_MODELS:
@@ -38,7 +39,7 @@ class AudioController:
         self.waiting_answer = False
         
     def get_speaker_text(self):
-        if self.main.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
+        if self.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
             return self.textSpeakerMiku
         else:
             return self.textSpeaker
@@ -54,7 +55,7 @@ class AudioController:
         logger.info(f"Есть текст для отправки: {self.textToTalk} id {self.id_sound}")
         if self.main.loop and self.main.loop.is_running():
             try:
-                self.voiceover_method = self.main.settings.get("VOICEOVER_METHOD", "TG")
+                self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
 
                 if self.voiceover_method == "TG":
                     logger.info("Используем Telegram (Silero/Miku) для озвучки")
@@ -65,7 +66,7 @@ class AudioController:
                     self.textToTalk = ""
 
                 elif self.voiceover_method == "Local":
-                    selected_local_model_id = self.main.settings.get("NM_CURRENT_VOICEOVER", None)
+                    selected_local_model_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
                     if selected_local_model_id:
                         logger.info(f"Используем {selected_local_model_id} для локальной озвучки")
                         if self.local_voice.is_model_initialized(selected_local_model_id):
@@ -107,8 +108,8 @@ class AudioController:
 
             if result_path:
                 logger.info(f"Локальная озвучка сохранена в: {result_path}")
-                if not self.main.ConnectedToGame and self.main.settings.get("VOICEOVER_LOCAL_CHAT"):
-                    await AudioHandler.handle_voice_file(result_path, self.main.settings.get("LOCAL_VOICE_DELETE_AUDIO",
+                if not self.main.ConnectedToGame and self.settings.get("VOICEOVER_LOCAL_CHAT"):
+                    await AudioHandler.handle_voice_file(result_path, self.settings.get("LOCAL_VOICE_DELETE_AUDIO",
                                                                                         True) if os.environ.get(
                         "ENABLE_VOICE_DELETE_CHECKBOX", "0") == "1" else True)
                 elif self.main.ConnectedToGame:
@@ -162,39 +163,50 @@ class AudioController:
             except Exception as e:
                 logger.error(f"Ошибка при обработке модуля {module_name}: {e}", exc_info=True)
 
-        self.main.view.check_triton_dependencies()
+        # Вызываем проверку зависимостей через событие
+        self.event_bus.emit(Events.CHECK_TRITON_DEPENDENCIES)
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
         try:
-            QTimer.singleShot(0, lambda: status_label.setText(_("Загрузка настроек...", "Loading settings...")))
+            self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                'status': _("Загрузка настроек...", "Loading settings...")
+            })
 
             success = False
             if not self.model_loading_cancelled:
-                QTimer.singleShot(0, lambda: status_label.setText(_("Инициализация модели...", "Initializing model...")))
+                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                    'status': _("Инициализация модели...", "Initializing model...")
+                })
                 success = self.local_voice.initialize_model(model_id, init=True)
 
             if success and not self.model_loading_cancelled:
-                QTimer.singleShot(0, functools.partial(self.main.view.finish_model_loading, model_id, loading_window))
+                self.event_bus.emit(Events.FINISH_MODEL_LOADING, {
+                    'model_id': model_id
+                })
             elif not self.model_loading_cancelled:
                 error_message = _("Не удалось инициализировать модель. Проверьте логи.",
                                   "Failed to initialize model. Check logs.")
-                QTimer.singleShot(0, lambda: [
-                    status_label.setText(_("Ошибка инициализации!", "Initialization Error!")),
-                    progress.setRange(0, 1),
-                    QMessageBox.critical(loading_window, _("Ошибка инициализации", "Initialization Error"), error_message),
-                    self.main.view.cancel_model_loading(loading_window)
-                ])
+                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                    'status': _("Ошибка инициализации!", "Initialization Error!")
+                })
+                self.event_bus.emit(Events.SHOW_ERROR_MESSAGE, {
+                    'title': _("Ошибка инициализации", "Initialization Error"),
+                    'message': error_message
+                })
+                self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
         except Exception as e:
             logger.error(f"Критическая ошибка в потоке инициализации модели {model_id}: {e}", exc_info=True)
             if not self.model_loading_cancelled:
                 error_message = _("Критическая ошибка при инициализации модели: ",
                                   "Critical error during model initialization: ") + str(e)
-                QTimer.singleShot(0, lambda: [
-                    status_label.setText(_("Ошибка!", "Error!")),
-                    progress.setRange(0, 1),
-                    QMessageBox.critical(loading_window, _("Ошибка", "Error"), error_message),
-                    self.main.view.cancel_model_loading(loading_window)
-                ])
+                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                    'status': _("Ошибка!", "Error!")
+                })
+                self.event_bus.emit(Events.SHOW_ERROR_MESSAGE, {
+                    'title': _("Ошибка", "Error"),
+                    'message': error_message
+                })
+                self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
 
     def check_module_installed(self, module_name):
         logger.info(f"Проверка установки модуля: {module_name}")

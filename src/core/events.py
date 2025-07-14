@@ -433,3 +433,14 @@ class Events:
     RELOAD_CHAT_HISTORY = "reload_chat_history"
     UPDATE_TOKEN_COUNT_UI = "update_token_count_ui"
     GET_GUI_WINDOW_ID = "get_gui_window_id"
+
+    # От audio_controller.py
+    CHECK_TRITON_DEPENDENCIES = "check_triton_dependencies"
+    UPDATE_MODEL_LOADING_STATUS = "update_model_loading_status"
+    FINISH_MODEL_LOADING = "finish_model_loading"
+    SHOW_ERROR_MESSAGE = "show_error_message"
+    CANCEL_MODEL_LOADING = "cancel_model_loading"
+
+    # От telegram_controller.py
+    PROMPT_FOR_TG_CODE = "prompt_for_tg_code"
+    PROMPT_FOR_TG_PASSWORD = "prompt_for_tg_password"

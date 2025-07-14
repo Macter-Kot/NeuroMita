@@ -446,3 +446,14 @@ class Events:
     PROMPT_FOR_TG_PASSWORD = "prompt_for_tg_password"
     TELEGRAM_SEND_VOICE_REQUEST = "telegram_send_voice_request"
 
+    # От capture_controller.py
+    START_SCREEN_CAPTURE = "start_screen_capture"
+    STOP_SCREEN_CAPTURE = "stop_screen_capture"
+    START_CAMERA_CAPTURE = "start_camera_capture"
+    STOP_CAMERA_CAPTURE = "stop_camera_capture"
+    START_IMAGE_REQUEST_TIMER = "start_image_request_timer"
+    STOP_IMAGE_REQUEST_TIMER = "stop_image_request_timer"
+    UPDATE_SCREEN_CAPTURE_EXCLUSION = "update_screen_capture_exclusion"
+    CAPTURE_SETTINGS_LOADED = "capture_settings_loaded"
+    SEND_PERIODIC_IMAGE_REQUEST = "send_periodic_image_request"
+

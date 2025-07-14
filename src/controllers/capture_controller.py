@@ -3,13 +3,13 @@ import threading
 from win32 import win32gui
 from handlers.screen_handler import ScreenCapture
 from main_logger import logger
-from core.events import get_event_bus, Events
+from core.events import get_event_bus, Events, Event
 from PyQt6.QtCore import QTimer
 
 class CaptureController:
     def __init__(self, main_controller):
-
-        self.settings = main_controller.settings
+        logger.info("CaptureController инициализируется")
+        self.main = main_controller
         self.event_bus = get_event_bus()
         self.screen_capture_instance = ScreenCapture()
         self.screen_capture_thread = None
@@ -24,23 +24,80 @@ class CaptureController:
         self.last_image_request_time = time.time()
         self.image_request_timer_running = False
         
-        if self.settings.get("ENABLE_SCREEN_ANALYSIS", False):
-            logger.info("Настройка 'ENABLE_SCREEN_ANALYSIS' включена. Автоматический запуск захвата экрана.")
-            self.start_screen_capture_thread()
+        self._subscribe_to_events()
+        
+        # Запускаем периодическую проверку отправки изображений
+        self._start_periodic_check()
+        
+    def _subscribe_to_events(self):
+        self.event_bus.subscribe("capture_settings_loaded", self._on_capture_settings_loaded, weak=False)
+        self.event_bus.subscribe("start_screen_capture", self._on_start_screen_capture, weak=False)
+        self.event_bus.subscribe("stop_screen_capture", self._on_stop_screen_capture, weak=False)
+        self.event_bus.subscribe("start_camera_capture", self._on_start_camera_capture, weak=False)
+        self.event_bus.subscribe("stop_camera_capture", self._on_stop_camera_capture, weak=False)
+        self.event_bus.subscribe("start_image_request_timer", self._on_start_image_request_timer, weak=False)
+        self.event_bus.subscribe("stop_image_request_timer", self._on_stop_image_request_timer, weak=False)
+        self.event_bus.subscribe("update_screen_capture_exclusion", self._on_update_screen_capture_exclusion, weak=False)
+        logger.info("CaptureController завершил подписку на события")
 
-        if self.settings.get("ENABLE_CAMERA_CAPTURE", False):
-            logger.info("Настройка 'ENABLE_CAMERA_CAPTURE' включена. Автоматический запуск захвата с камеры.")
-            self.start_camera_capture_thread()
+    def _on_capture_settings_loaded(self, event: Event):
+        if self.main.settings:
+            if self.main.settings.get("ENABLE_SCREEN_ANALYSIS", False):
+                logger.info("Настройка 'ENABLE_SCREEN_ANALYSIS' включена. Автоматический запуск захвата экрана.")
+                self.start_screen_capture_thread()
+
+            if self.main.settings.get("ENABLE_CAMERA_CAPTURE", False):
+                logger.info("Настройка 'ENABLE_CAMERA_CAPTURE' включена. Автоматический запуск захвата с камеры.")
+                self.start_camera_capture_thread()
+                
+    def _on_start_screen_capture(self, event: Event):
+        logger.info("Получено событие start_screen_capture")
+        self.start_screen_capture_thread()
+        
+    def _on_stop_screen_capture(self, event: Event):
+        logger.info("Получено событие stop_screen_capture")
+        self.stop_screen_capture_thread()
+        
+    def _on_start_camera_capture(self, event: Event):
+        self.start_camera_capture_thread()
+        
+    def _on_stop_camera_capture(self, event: Event):
+        self.stop_camera_capture_thread()
+        
+    def _on_start_image_request_timer(self, event: Event):
+        self.start_image_request_timer()
+        
+    def _on_stop_image_request_timer(self, event: Event):
+        self.stop_image_request_timer()
+        
+    def _on_update_screen_capture_exclusion(self, event: Event):
+        hwnd_to_pass = event.data.get('hwnd')
+        exclude_title = event.data.get('exclude_title', '')
+        exclude_enabled = event.data.get('exclude_enabled', False)
+        
+        if self.screen_capture_instance:
+            self.screen_capture_instance.set_exclusion_parameters(hwnd_to_pass, exclude_title, exclude_enabled)
+            
+            if self.screen_capture_instance.is_running():
+                self.stop_screen_capture_thread()
+                self.start_screen_capture_thread()
             
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:
-            interval = float(self.settings.get("SCREEN_CAPTURE_INTERVAL", 5.0))
-            quality = int(self.settings.get("SCREEN_CAPTURE_QUALITY", 25))
-            fps = int(self.settings.get("SCREEN_CAPTURE_FPS", 1))
-            max_history_frames = int(self.settings.get("SCREEN_CAPTURE_HISTORY_LIMIT", 3))
-            max_frames_per_request = int(self.settings.get("SCREEN_CAPTURE_TRANSFER_LIMIT", 1))
-            capture_width = int(self.settings.get("SCREEN_CAPTURE_WIDTH", 1024))
-            capture_height = int(self.settings.get("SCREEN_CAPTURE_HEIGHT", 768))
+            if not self.main.settings:
+                logger.error("Settings не доступны в CaptureController")
+                return
+                
+            interval = float(self.main.settings.get("SCREEN_CAPTURE_INTERVAL", 5.0))
+            quality = int(self.main.settings.get("SCREEN_CAPTURE_QUALITY", 25))
+            fps = int(self.main.settings.get("SCREEN_CAPTURE_FPS", 1))
+            max_history_frames = int(self.main.settings.get("SCREEN_CAPTURE_HISTORY_LIMIT", 3))
+            max_frames_per_request = int(self.main.settings.get("SCREEN_CAPTURE_TRANSFER_LIMIT", 1))
+            capture_width = int(self.main.settings.get("SCREEN_CAPTURE_WIDTH", 1024))
+            capture_height = int(self.main.settings.get("SCREEN_CAPTURE_HEIGHT", 768))
+            
+            logger.info(f"Запуск захвата экрана с параметрами: interval={interval}, quality={quality}, fps={fps}")
+            
             self.screen_capture_instance.start_capture(interval, quality, fps, max_history_frames,
                                                        max_frames_per_request, capture_width,
                                                        capture_height)
@@ -48,7 +105,7 @@ class CaptureController:
             logger.info(f"Поток захвата экрана запущен")
             
             self.screen_capture_active = True
-            if self.settings.get("SEND_IMAGE_REQUESTS", 1):
+            if self.main.settings.get("SEND_IMAGE_REQUESTS", 1):
                 self.start_image_request_timer()
             self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
             
@@ -61,19 +118,23 @@ class CaptureController:
         self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
         
     def start_camera_capture_thread(self):
+        if not self.main.settings:
+            logger.error("Settings не доступны в CaptureController")
+            return
+            
         if not hasattr(self, 'camera_capture') or self.camera_capture is None:
             from handlers.camera_handler import CameraCapture
             self.camera_capture = CameraCapture()
 
-        if not self.camera_capture.is_running():
-            camera_index = int(self.settings.get("CAMERA_INDEX", 0))
-            interval = float(self.settings.get("CAMERA_CAPTURE_INTERVAL", 5.0))
-            quality = int(self.settings.get("CAMERA_CAPTURE_QUALITY", 25))
-            fps = int(self.settings.get("CAMERA_CAPTURE_FPS", 1))
-            max_history_frames = int(self.settings.get("CAMERA_CAPTURE_HISTORY_LIMIT", 3))
-            max_frames_per_request = int(self.settings.get("CAMERA_CAPTURE_TRANSFER_LIMIT", 1))
-            capture_width = int(self.settings.get("CAMERA_CAPTURE_WIDTH", 640))
-            capture_height = int(self.settings.get("CAMERA_CAPTURE_HEIGHT", 480))
+        if self.camera_capture and not self.camera_capture.is_running():
+            camera_index = int(self.main.settings.get("CAMERA_INDEX", 0))
+            interval = float(self.main.settings.get("CAMERA_CAPTURE_INTERVAL", 5.0))
+            quality = int(self.main.settings.get("CAMERA_CAPTURE_QUALITY", 25))
+            fps = int(self.main.settings.get("CAMERA_CAPTURE_FPS", 1))
+            max_history_frames = int(self.main.settings.get("CAMERA_CAPTURE_HISTORY_LIMIT", 3))
+            max_frames_per_request = int(self.main.settings.get("CAMERA_CAPTURE_TRANSFER_LIMIT", 1))
+            capture_width = int(self.main.settings.get("CAMERA_CAPTURE_WIDTH", 640))
+            capture_height = int(self.main.settings.get("CAMERA_CAPTURE_HEIGHT", 480))
             self.camera_capture.start_capture(camera_index, quality, fps, max_history_frames,
                                               max_frames_per_request, capture_width,
                                               capture_height)
@@ -99,16 +160,35 @@ class CaptureController:
             self.image_request_timer_running = False
             logger.info("Таймер периодической отправки изображений остановлен.")
             
+    def _start_periodic_check(self):
+        """Запускает поток для периодической проверки отправки изображений"""
+        def check_loop():
+            while True:
+                try:
+                    if self.image_request_timer_running:
+                        self.send_interval_image()
+                    time.sleep(1)
+                except Exception as e:
+                    logger.error(f"Ошибка в периодической проверке отправки изображений: {e}")
+                    time.sleep(5)
+        
+        thread = threading.Thread(target=check_loop, daemon=True)
+        thread.start()
+        logger.info("Поток периодической проверки отправки изображений запущен")
+            
     def send_interval_image(self):
+        if not self.main.settings:
+            return
+            
         current_time = time.time()
-        interval = float(self.settings.get("IMAGE_REQUEST_INTERVAL", 20.0))
+        interval = float(self.main.settings.get("IMAGE_REQUEST_INTERVAL", 20.0))
         delta = current_time - self.last_image_request_time
         
         if delta >= interval:
             image_data = []
-            if self.settings.get("ENABLE_SCREEN_ANALYSIS", False):
+            if self.main.settings.get("ENABLE_SCREEN_ANALYSIS", False):
                 logger.info(f"Отправка периодического запроса с изображением ({current_time - self.last_image_request_time:.2f}/{interval:.2f} сек).")
-                history_limit = int(self.settings.get("SCREEN_CAPTURE_HISTORY_LIMIT", 1))
+                history_limit = int(self.main.settings.get("SCREEN_CAPTURE_HISTORY_LIMIT", 1))
                 frames = self.screen_capture_instance.get_recent_frames(history_limit)
                 if frames:
                     image_data.extend(frames)
@@ -117,13 +197,11 @@ class CaptureController:
                     logger.info("Анализ экрана включен, но кадры не готовы или история пуста для периодической отправки.")
 
                 if image_data:
-                    if self.main.loop and self.main.loop.is_running():
-                        import asyncio
-                        asyncio.run_coroutine_threadsafe(
-                            self.main.async_send_message(user_input="", system_input="", image_data=image_data),
-                            self.main.loop)
-                        self.last_image_request_time = current_time
-                    else:
-                        logger.error("Ошибка: Цикл событий не готов для периодической отправки изображений.")
+                    self.event_bus.emit("send_periodic_image_request", {
+                        'user_input': "",
+                        'system_input': "",
+                        'image_data': image_data
+                    })
+                    self.last_image_request_time = current_time
                 else:
                     logger.warning("Нет изображений для периодической отправки.")

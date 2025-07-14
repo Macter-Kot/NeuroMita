@@ -64,7 +64,6 @@ class MainController:
 
             self.settings_controller = SettingsController(self, self.config_path)
             self.settings = self.settings_controller.settings
-            self.settings_controller.load_api_settings(False)
         except Exception as e:
             logger.info("Не удалось удачно получить из системных переменных все данные", e)
             self.settings = SettingsController(self, "Settings/settings.json").settings
@@ -116,6 +115,7 @@ class MainController:
             self.view = view
             self.gui_controller = GuiController(self, view)
             logger.warning("GuiController успешно инициализирован.")
+            self.settings_controller.load_api_settings(False)
 
     def connect_view_signals(self):
         self.gui_controller.connect_view_signals()
@@ -222,6 +222,9 @@ class MainController:
         # От telegram_handler.py:
         self.event_bus.subscribe(Events.SET_SOUND_FILE_DATA, self._on_set_sound_file_data, weak=False)
         self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
+
+        # От capture_controller.py:
+        self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
 
 
     def start_asyncio_loop(self):
@@ -1105,6 +1108,22 @@ class MainController:
         
         thread = threading.Thread(target=check_loop, daemon=True)
         thread.start()
+
+    def _on_send_periodic_image_request(self, event: Event):
+        """Обработка периодической отправки изображений"""
+        if self.loop and self.loop.is_running():
+            import asyncio
+            data = event.data
+            asyncio.run_coroutine_threadsafe(
+                self.async_send_message(
+                    user_input=data.get('user_input', ''),
+                    system_input=data.get('system_input', ''), 
+                    image_data=data.get('image_data', [])
+                ),
+                self.loop
+            )
+        else:
+            logger.error("Ошибка: Цикл событий не готов для периодической отправки изображений.")
 
     # Делегирующие свойства для обратной совместимости
     @property

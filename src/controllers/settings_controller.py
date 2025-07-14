@@ -39,18 +39,23 @@ class SettingsController:
             "settings": self.settings
         }
         self.event_bus.emit("telegram_settings_loaded", telegram_settings)
+        
+        capture_settings = {
+            "settings": self.settings
+        }
+        self.event_bus.emit("capture_settings_loaded", capture_settings)
 
         logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
         logger.info(f"По тг {SH(telegram_settings['api_id'])},{SH(telegram_settings['api_hash'])},{SH(telegram_settings['phone'])} (Должно быть не пусто если тг)")
         
         if update_model:
-            if self.main.api_key:
-                self.main.model_controller.model.api_key = self.main.api_key
-            if self.main.api_url:
-                self.main.model_controller.model.api_url = self.main.api_url
-            if self.main.api_model:
-                self.main.model_controller.model.api_model = self.main.api_model
-            self.main.model_controller.model.makeRequest = self.main.makeRequest
+            model_settings = {
+                'api_key': self.main.api_key,
+                'api_url': self.main.api_url,
+                'api_model': self.main.api_model,
+                'makeRequest': self.main.makeRequest
+            }
+            self.event_bus.emit("model_settings_loaded", model_settings)
 
         logger.info("Настройки применены из загруженного словаря")
 
@@ -72,43 +77,20 @@ class SettingsController:
                 })
 
         elif key == "CHARACTER":
-            self.main.model_controller.model.current_character_to_change = value
-            self.main.model_controller.model.check_change_current_character()
+            self.event_bus.emit("model_character_change", {"character": value})
 
-        elif key == "NM_API_MODEL":
-            self.main.model_controller.model.api_model = value.strip()
-        elif key == "NM_API_KEY":
-            self.main.model_controller.model.api_key = value.strip()
-        elif key == "NM_API_URL":
-            self.main.model_controller.model.api_url = value.strip()
-        elif key == "NM_API_REQ":
-            self.main.model_controller.model.makeRequest = bool(value)
-        elif key == "gpt4free_model":
-            self.main.model_controller.model.gpt4free_model = value.strip()
-
-        elif key == "MODEL_MAX_RESPONSE_TOKENS":
-            self.main.model_controller.model.max_response_tokens = int(value)
-        elif key == "MODEL_TEMPERATURE":
-            self.main.model_controller.model.temperature = float(value)
-        elif key == "MODEL_PRESENCE_PENALTY":
-            self.main.model_controller.model.presence_penalty = float(value)
-        elif key == "MODEL_FREQUENCY_PENALTY":
-            self.main.model_controller.model.frequency_penalty = float(value)
-        elif key == "MODEL_LOG_PROBABILITY":
-            self.main.model_controller.model.log_probability = float(value)
-        elif key == "MODEL_TOP_K":
-            self.main.model_controller.model.top_k = int(value)
-        elif key == "MODEL_TOP_P":
-            self.main.model_controller.model.top_p = float(value)
-        elif key == "MODEL_THOUGHT_PROCESS":
-            self.main.model_controller.model.thinking_budget = float(value)
-
-        elif key == "MODEL_MESSAGE_LIMIT":
-            self.main.model_controller.model.memory_limit = int(value)
-        elif key == "MODEL_MESSAGE_ATTEMPTS_COUNT":
-            self.main.model_controller.model.max_request_attempts = int(value)
-        elif key == "MODEL_MESSAGE_ATTEMPTS_TIME":
-            self.main.model_controller.model.request_delay = float(value)
+        elif key in ["NM_API_MODEL", "NM_API_KEY", "NM_API_URL", "NM_API_REQ", "gpt4free_model",
+                    "MODEL_MAX_RESPONSE_TOKENS", "MODEL_TEMPERATURE", "MODEL_PRESENCE_PENALTY",
+                    "MODEL_FREQUENCY_PENALTY", "MODEL_LOG_PROBABILITY", "MODEL_TOP_K", "MODEL_TOP_P",
+                    "MODEL_THOUGHT_PROCESS", "MODEL_MESSAGE_LIMIT", "MODEL_MESSAGE_ATTEMPTS_COUNT",
+                    "MODEL_MESSAGE_ATTEMPTS_TIME", "IMAGE_QUALITY_REDUCTION_ENABLED",
+                    "IMAGE_QUALITY_REDUCTION_START_INDEX", "IMAGE_QUALITY_REDUCTION_USE_PERCENTAGE",
+                    "IMAGE_QUALITY_REDUCTION_MIN_QUALITY", "IMAGE_QUALITY_REDUCTION_DECREASE_RATE",
+                    "ENABLE_HISTORY_COMPRESSION_ON_LIMIT", "ENABLE_HISTORY_COMPRESSION_PERIODIC",
+                    "HISTORY_COMPRESSION_OUTPUT_TARGET", "HISTORY_COMPRESSION_PERIODIC_INTERVAL",
+                    "HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS", "TOKEN_COST_INPUT", "TOKEN_COST_OUTPUT",
+                    "MAX_MODEL_TOKENS"]:
+            self.event_bus.emit("model_setting_changed", {"key": key, "value": value})
 
         elif key == "MIC_ACTIVE":
             self.main.speech_controller.update_speech_settings(key, value)
@@ -117,24 +99,21 @@ class SettingsController:
 
         elif key == "ENABLE_SCREEN_ANALYSIS":
             if bool(value):
-                self.main.capture_controller.start_screen_capture_thread()
+                self.event_bus.emit(Events.START_SCREEN_CAPTURE)
             else:
-                self.main.capture_controller.stop_screen_capture_thread()
+                self.event_bus.emit(Events.STOP_SCREEN_CAPTURE)
         elif key in ["SCREEN_CAPTURE_INTERVAL", "SCREEN_CAPTURE_QUALITY", "SCREEN_CAPTURE_FPS",
                     "SCREEN_CAPTURE_HISTORY_LIMIT", "SCREEN_CAPTURE_TRANSFER_LIMIT", 
                     "SCREEN_CAPTURE_WIDTH", "SCREEN_CAPTURE_HEIGHT"]:
-            if (hasattr(self.main.capture_controller, 'screen_capture_instance') and 
-                self.main.capture_controller.screen_capture_instance and 
-                self.main.capture_controller.screen_capture_instance.is_running()):
-                logger.info(f"Настройка захвата экрана '{key}' изменена на '{value}'. Перезапускаю поток захвата.")
-                self.main.capture_controller.stop_screen_capture_thread()
-                self.main.capture_controller.start_screen_capture_thread()
+            logger.info(f"Настройка захвата экрана '{key}' изменена на '{value}'. Перезапускаю поток захвата.")
+            self.event_bus.emit("stop_screen_capture")
+            self.event_bus.emit("start_screen_capture")
 
         elif key == "ENABLE_CAMERA_CAPTURE":
             if bool(value):
-                self.main.capture_controller.start_camera_capture_thread()
+                self.event_bus.emit("start_camera_capture")
             else:
-                self.main.capture_controller.stop_camera_capture_thread()
+                self.event_bus.emit("stop_camera_capture")
 
         elif key in ["EXCLUDE_GUI_WINDOW", "EXCLUDE_WINDOW_TITLE"]:
             exclude_gui = self.settings.get("EXCLUDE_GUI_WINDOW", False)
@@ -156,45 +135,20 @@ class SettingsController:
                 except Exception as e:
                     logger.error(f"Ошибка при поиске окна по заголовку '{exclude_title}': {e}")
 
-            if hasattr(self.main.capture_controller, 'screen_capture_instance') and self.main.capture_controller.screen_capture_instance:
-                self.main.capture_controller.screen_capture_instance.set_exclusion_parameters(
-                    hwnd_to_pass, exclude_title, exclude_gui or bool(exclude_title))
-                
-                if self.main.capture_controller.screen_capture_instance.is_running():
-                    self.main.capture_controller.stop_screen_capture_thread()
-                    self.main.capture_controller.start_screen_capture_thread()
+            self.event_bus.emit("update_screen_capture_exclusion", {
+                'hwnd': hwnd_to_pass,
+                'exclude_title': exclude_title,
+                'exclude_enabled': exclude_gui or bool(exclude_title)
+            })
 
         elif key == "SEND_IMAGE_REQUESTS":
             if bool(value):
-                self.main.capture_controller.start_image_request_timer()
+                self.event_bus.emit("start_image_request_timer")
             else:
-                self.main.capture_controller.stop_image_request_timer()
+                self.event_bus.emit("stop_image_request_timer")
         elif key == "IMAGE_REQUEST_INTERVAL":
-            if self.main.capture_controller.image_request_timer_running:
-                self.main.capture_controller.stop_image_request_timer()
-                self.main.capture_controller.start_image_request_timer()
-
-        elif key == "IMAGE_QUALITY_REDUCTION_ENABLED":
-            self.main.model_controller.model.image_quality_reduction_enabled = bool(value)
-        elif key == "IMAGE_QUALITY_REDUCTION_START_INDEX":
-            self.main.model_controller.model.image_quality_reduction_start_index = int(value)
-        elif key == "IMAGE_QUALITY_REDUCTION_USE_PERCENTAGE":
-            self.main.model_controller.model.image_quality_reduction_use_percentage = bool(value)
-        elif key == "IMAGE_QUALITY_REDUCTION_MIN_QUALITY":
-            self.main.model_controller.model.image_quality_reduction_min_quality = int(value)
-        elif key == "IMAGE_QUALITY_REDUCTION_DECREASE_RATE":
-            self.main.model_controller.model.image_quality_reduction_decrease_rate = int(value)
-
-        elif key == "ENABLE_HISTORY_COMPRESSION_ON_LIMIT":
-            self.main.model_controller.model.enable_history_compression_on_limit = bool(value)
-        elif key == "ENABLE_HISTORY_COMPRESSION_PERIODIC":
-            self.main.model_controller.model.enable_history_compression_periodic = bool(value)
-        elif key == "HISTORY_COMPRESSION_OUTPUT_TARGET":
-            self.main.model_controller.model.history_compression_output_target = str(value)
-        elif key == "HISTORY_COMPRESSION_PERIODIC_INTERVAL":
-            self.main.model_controller.model.history_compression_periodic_interval = int(value)
-        elif key == "HISTORY_COMPRESSION_MIN_PERCENT_TO_COMPRESS":
-            self.main.model_controller.model.history_compression_min_messages_to_compress = float(value)
+            self.event_bus.emit("stop_image_request_timer")
+            self.event_bus.emit("start_image_request_timer")
 
         elif key == "CHAT_FONT_SIZE":
             try:
@@ -212,15 +166,6 @@ class SettingsController:
             logger.info(f"Настройка '{key}' изменена на: {value}. История чата перезагружена.")
 
         elif key == "SHOW_TOKEN_INFO":
-            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
-        elif key in ["TOKEN_COST_INPUT", "TOKEN_COST_OUTPUT"]:
-            if key == "TOKEN_COST_INPUT":
-                self.main.model_controller.model.token_cost_input = float(value)
-            else:
-                self.main.model_controller.model.token_cost_output = float(value)
-            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
-        elif key == "MAX_MODEL_TOKENS":
-            self.main.model_controller.model.max_model_tokens = int(value)
             self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
 
         if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:

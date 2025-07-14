@@ -44,6 +44,11 @@ class SettingsController:
             "settings": self.settings
         }
         self.event_bus.emit("capture_settings_loaded", capture_settings)
+        
+        speech_settings = {
+            "settings": self.settings
+        }
+        self.event_bus.emit("speech_settings_loaded", speech_settings)
 
         logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
         logger.info(f"По тг {SH(telegram_settings['api_id'])},{SH(telegram_settings['api_hash'])},{SH(telegram_settings['phone'])} (Должно быть не пусто если тг)")
@@ -92,16 +97,14 @@ class SettingsController:
                     "MAX_MODEL_TOKENS"]:
             self.event_bus.emit("model_setting_changed", {"key": key, "value": value})
 
-        elif key == "MIC_ACTIVE":
-            self.main.speech_controller.update_speech_settings(key, value)
-        elif key in ["RECOGNIZER_TYPE", "VOSK_MODEL", "SILENCE_THRESHOLD", "SILENCE_DURATION", "VOSK_PROCESS_INTERVAL"]:
-            self.main.speech_controller.update_speech_settings(key, value)
+        elif key in ["MIC_ACTIVE", "RECOGNIZER_TYPE", "VOSK_MODEL", "SILENCE_THRESHOLD", "SILENCE_DURATION", "VOSK_PROCESS_INTERVAL"]:
+            self.event_bus.emit("speech_setting_changed", {"key": key, "value": value})
 
         elif key == "ENABLE_SCREEN_ANALYSIS":
             if bool(value):
-                self.event_bus.emit(Events.START_SCREEN_CAPTURE)
+                self.event_bus.emit("start_screen_capture")
             else:
-                self.event_bus.emit(Events.STOP_SCREEN_CAPTURE)
+                self.event_bus.emit("stop_screen_capture")
         elif key in ["SCREEN_CAPTURE_INTERVAL", "SCREEN_CAPTURE_QUALITY", "SCREEN_CAPTURE_FPS",
                     "SCREEN_CAPTURE_HISTORY_LIMIT", "SCREEN_CAPTURE_TRANSFER_LIMIT", 
                     "SCREEN_CAPTURE_WIDTH", "SCREEN_CAPTURE_HEIGHT"]:

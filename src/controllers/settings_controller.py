@@ -8,31 +8,33 @@ from main_logger import logger
 from utils import SH
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import QTimer
+from core.events import get_event_bus, Events
 
 class SettingsController:
     def __init__(self, main_controller, config_path):
         self.main = main_controller
         self.config_path = config_path
-        self.settings = SettingsManager(self.config_path)  # Это уже загружает настройки в self.settings.settings
+        self.event_bus = get_event_bus()
+        self.settings = SettingsManager(self.config_path)  # Создаем свой экземпляр SettingsManager
         
     def load_api_settings(self, update_model):
         logger.info("Начинаю загрузку настроек (из уже загруженного словаря)")
 
-        settings = self.settings.settings
+        settings_dict = self.settings.settings
 
-        if not settings:
+        if not settings_dict:
             logger.info("Настройки пустые (файл не найден или повреждён), используем дефолты")
             return
 
-        self.main.api_key = settings.get("NM_API_KEY", "")
-        self.main.api_key_res = settings.get("NM_API_KEY_RES", "")
-        self.main.api_url = settings.get("NM_API_URL", "")
-        self.main.api_model = settings.get("NM_API_MODEL", "")
-        self.main.makeRequest = settings.get("NM_API_REQ", False)
+        self.main.api_key = settings_dict.get("NM_API_KEY", "")
+        self.main.api_key_res = settings_dict.get("NM_API_KEY_RES", "")
+        self.main.api_url = settings_dict.get("NM_API_URL", "")
+        self.main.api_model = settings_dict.get("NM_API_MODEL", "")
+        self.main.makeRequest = settings_dict.get("NM_API_REQ", False)
 
-        self.main.telegram_controller.api_id = settings.get("NM_TELEGRAM_API_ID", "")
-        self.main.telegram_controller.api_hash = settings.get("NM_TELEGRAM_API_HASH", "")
-        self.main.telegram_controller.phone = settings.get("NM_TELEGRAM_PHONE", "")
+        self.main.telegram_controller.api_id = settings_dict.get("NM_TELEGRAM_API_ID", "")
+        self.main.telegram_controller.api_hash = settings_dict.get("NM_TELEGRAM_API_HASH", "")
+        self.main.telegram_controller.phone = settings_dict.get("NM_TELEGRAM_PHONE", "")
 
         logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
         logger.info(f"По тг {SH(self.main.telegram_controller.api_id)},{SH(self.main.telegram_controller.api_hash)},{SH(self.main.telegram_controller.phone)} (Должно быть не пусто если тг)")
@@ -53,13 +55,12 @@ class SettingsController:
         Обновленная функция обработки изменений настроек с учетом новой архитектуры контроллеров
         """
         # Сохраняем настройку
-        self.main.settings.set(key, value)
-        self.main.settings.save_settings()
+        self.settings.set(key, value)
+        self.settings.save_settings()
         
         # Аудио и озвучка
         if key in ["SILERO_USE", "VOICEOVER_METHOD", "AUDIO_BOT"]:
-            if hasattr(self.main.view, 'switch_voiceover_settings'):
-                self.main.view.switch_voiceover_settings()
+            self.event_bus.emit(Events.SWITCH_VOICEOVER_SETTINGS)
 
         if key == "SILERO_TIME":
             if self.main.telegram_controller.bot_handler:
@@ -67,9 +68,10 @@ class SettingsController:
 
         if key == "AUDIO_BOT":
             if value.startswith("@CrazyMitaAIbot"):
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.information(self.main.view, "Информация",
-                    "VinerX: наши товарищи из CrazyMitaAIbot предоставляет озвучку бесплатно буквально со своих пк, будет время - загляните к ним в тг, скажите спасибо)")
+                self.event_bus.emit(Events.SHOW_INFO_MESSAGE, {
+                    "title": "Информация",
+                    "message": "VinerX: наши товарищи из CrazyMitaAIbot предоставляет озвучку бесплатно буквально со своих пк, будет время - загляните к ним в тг, скажите спасибо)"
+                })
 
             if self.main.telegram_controller.bot_handler:
                 self.main.telegram_controller.bot_handler.tg_bot = value
@@ -148,12 +150,13 @@ class SettingsController:
 
         # Исключения окон при захвате
         elif key in ["EXCLUDE_GUI_WINDOW", "EXCLUDE_WINDOW_TITLE"]:
-            exclude_gui = self.main.settings.get("EXCLUDE_GUI_WINDOW", False)
-            exclude_title = self.main.settings.get("EXCLUDE_WINDOW_TITLE", "")
+            exclude_gui = self.settings.get("EXCLUDE_GUI_WINDOW", False)
+            exclude_title = self.settings.get("EXCLUDE_WINDOW_TITLE", "")
 
             hwnd_to_pass = None
             if exclude_gui:
-                hwnd_to_pass = self.main.view.winfo_id() if hasattr(self.main.view, 'winfo_id') else None
+                hwnd_to_pass = self.event_bus.emit_and_wait(Events.GET_GUI_WINDOW_ID, timeout=0.5)
+                hwnd_to_pass = hwnd_to_pass[0] if hwnd_to_pass else None
                 logger.info(f"Получен HWND окна GUI для исключения: {hwnd_to_pass}")
             elif exclude_title:
                 try:
@@ -213,10 +216,8 @@ class SettingsController:
         elif key == "CHAT_FONT_SIZE":
             try:
                 font_size = int(value)
-                if hasattr(self.main.view, 'update_chat_font_size'):
-                    self.main.view.update_chat_font_size(font_size)
-                if hasattr(self.main.view, 'load_chat_history'):
-                    self.main.view.load_chat_history()
+                self.event_bus.emit(Events.UPDATE_CHAT_FONT_SIZE, {"font_size": font_size})
+                self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
                 logger.info(f"Размер шрифта чата изменен на: {font_size}")
             except ValueError:
                 logger.warning(f"Неверное значение для размера шрифта: {value}")
@@ -224,29 +225,25 @@ class SettingsController:
                 logger.error(f"Ошибка при изменении размера шрифта: {e}")
                 
         elif key in ["SHOW_CHAT_TIMESTAMPS", "MAX_CHAT_HISTORY_DISPLAY", "HIDE_CHAT_TAGS"]:
-            if hasattr(self.main.view, 'load_chat_history'):
-                self.main.view.load_chat_history()
-                logger.info(f"Настройка '{key}' изменена на: {value}. История чата перезагружена.")
+            self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+            logger.info(f"Настройка '{key}' изменена на: {value}. История чата перезагружена.")
 
         # Информация о токенах
         elif key == "SHOW_TOKEN_INFO":
-            if hasattr(self.main.view, 'update_token_count'):
-                self.main.view.update_token_count()
+            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
         elif key in ["TOKEN_COST_INPUT", "TOKEN_COST_OUTPUT"]:
             if key == "TOKEN_COST_INPUT":
                 self.main.model_controller.model.token_cost_input = float(value)
             else:
                 self.main.model_controller.model.token_cost_output = float(value)
-            if hasattr(self.main.view, 'update_token_count'):
-                self.main.view.update_token_count()
+            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
         elif key == "MAX_MODEL_TOKENS":
             self.main.model_controller.model.max_model_tokens = int(value)
-            if hasattr(self.main.view, 'update_token_count'):
-                self.main.view.update_token_count()
+            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
 
         # Обновляем цвета статуса если нужно
         if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:
-            self.main.update_status_colors()
+            self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
 
         logger.debug(f"Настройка '{key}' успешно применена со значением: {value}")
 

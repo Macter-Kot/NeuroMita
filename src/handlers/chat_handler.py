@@ -24,6 +24,7 @@ from characters.character import Character  # Character base
 from utils.pip_installer import PipInstaller
 
 from utils import SH, save_combined_messages, calculate_cost_for_combined_messages, process_text_to_voice # Keep utils
+from utils import _ as translate
 
 from core.events import get_event_bus, Events
 
@@ -371,7 +372,7 @@ class ChatModel:
 
                 if not success or not llm_response_content:
                     logger.warning("LLM generation failed or returned empty.")
-                    self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': "LLM generation failed or returned empty."})
+                    self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': translate("Не удалось получить ответ.", "Text generation failed.")})
                     return None
 
                 processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
@@ -634,7 +635,6 @@ class ChatModel:
                 time.sleep(retry_delay)
 
         logger.error("All generation attempts failed.")
-        self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': "Не удалось получить ответ."})
         return None, False
 
     def _execute_with_timeout(self, func, args=(), kwargs={}, timeout=30):

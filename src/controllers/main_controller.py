@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from PyQt6.QtCore import QTimer
 
+from controllers.gui_controller import GuiController
 from controllers.audio_controller import AudioController
 from controllers.telegram_controller import TelegramController
 from controllers.capture_controller import CaptureController
@@ -24,17 +25,9 @@ class MainController:
         self.view = view
         self.event_bus = get_event_bus()
         
-        self.voice_language_var = None
-        self.local_voice_combobox = None
-        self.debug_window = None
-        self.mic_combobox = None
 
         self.ConnectedToGame = False
-        self.chat_window = None
-        self.token_count_label = None
 
-        self.user_entry = None
-        self.user_input = ""
 
         self.api_key = ""
         self.api_key_res = ""
@@ -51,20 +44,15 @@ class MainController:
         self.loading_more_history = False
 
         self.staged_images = []
-        self.attachment_label = None
-        self.attach_button = None
-        self.send_screen_button = None
 
-        self.ffmpeg_install_popup = None
-        
-        self.game_connected_checkbox_var = False
-        
         self.loop_ready_event = threading.Event()
         self.loop = None
+        self.llm_processing = False
         self.asyncio_thread = threading.Thread(target=self.start_asyncio_loop, daemon=True)
         self.asyncio_thread.start()
 
-        
+        self.gui_controller = None
+
         self.telegram_controller = TelegramController(self)
         logger.warning("TelegramController успешно инициализирован.")
         
@@ -107,7 +95,7 @@ class MainController:
         self.server_controller = ServerController(self)
         logger.warning("ServerController успешно инициализирован.")
 
-        QTimer.singleShot(100, self.check_and_install_ffmpeg)
+        
 
         self.audio_controller.delete_all_sound_files()
 
@@ -123,8 +111,14 @@ class MainController:
         # Запускаем периодические проверки
         self.start_periodic_checks()
 
+    def update_view(self, view):
+        if not self.gui_controller:
+            self.view = view
+            self.gui_controller = GuiController(self, view)
+            logger.warning("GuiController успешно инициализирован.")
+
     def connect_view_signals(self):
-        self.telegram_controller.connect_view_signals()
+        self.gui_controller.connect_view_signals()
     
     def _subscribe_to_events(self):
         """Подписка на все необходимые события"""
@@ -208,13 +202,6 @@ class MainController:
 
         # От chat_handler.py
         self.event_bus.subscribe(Events.SET_TTS_DATA, self._on_set_tts_data, weak=False)
-        self.event_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
-
-        # События от chat_handler.py
-        self.event_bus.subscribe(Events.ON_STARTED_RESPONSE_GENERATION, self._on_started_response, weak=False)
-        self.event_bus.subscribe(Events.ON_SUCCESSFUL_RESPONSE, self._on_succesful_response, weak=False)
-        self.event_bus.subscribe(Events.ON_FAILED_RESPONSE_ATTEMPT, self._on_failed_response_attempt, weak=False)
-        self.event_bus.subscribe(Events.ON_FAILED_RESPONSE, self._on_failed_response, weak=False)
 
         # От server.py:
         self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
@@ -234,7 +221,6 @@ class MainController:
 
         # От telegram_handler.py:
         self.event_bus.subscribe(Events.SET_SOUND_FILE_DATA, self._on_set_sound_file_data, weak=False)
-        self.event_bus.subscribe(Events.GET_TG_AUTH_DATA, self._on_get_tg_auth_data, weak=False)
         self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
 
 
@@ -271,14 +257,14 @@ class MainController:
 
     def update_game_connection(self, is_connected):
         self.ConnectedToGame = is_connected
-        QTimer.singleShot(0, self.update_status_colors)
+        self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
 
     def load_api_settings(self, update_model):
         self.settings_controller.load_api_settings(update_model)
 
     def clear_user_input(self):
         self.user_input = ""
-        self.view.user_entry.clear()
+        self.event_bus.emit(Events.CLEAR_USER_INPUT_UI)
 
     def stage_image_bytes(self, img_bytes: bytes) -> int:
         fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="nm_clip_")
@@ -301,15 +287,15 @@ class MainController:
     ):
         try:
             print("[DEBUG] Начинаем async_send_message, показываем статус")
-            # self.show_mita_thinking()
+            self.llm_processing = True  # Устанавливаем флаг
             
             is_streaming = bool(self.settings.get("ENABLE_STREAMING", False))
 
             def stream_callback_handler(chunk: str):
-                self.view.append_stream_chunk_signal.emit(chunk)
+                self.event_bus.emit(Events.APPEND_STREAM_CHUNK_UI, {'chunk': chunk})
 
             if is_streaming:
-                self.view.prepare_stream_signal.emit()
+                self.event_bus.emit(Events.PREPARE_STREAM_UI)
 
             response = await asyncio.wait_for(
                 self.loop.run_in_executor(
@@ -324,18 +310,19 @@ class MainController:
                 timeout=600.0
             )
 
-            # if response is not None:
-            #     print("[DEBUG] Получили ответ, скрываем статус")
-            #     self.hide_mita_status()
-
             if is_streaming:
-                self.view.finish_stream_signal.emit()
+                self.event_bus.emit(Events.FINISH_STREAM_UI)
             else:
-                self.view.update_chat_signal.emit("assistant", response if response is not None else "...", False, "")
+                self.event_bus.emit(Events.UPDATE_CHAT_UI, {
+                    'role': 'assistant',
+                    'response': response if response is not None else "...",
+                    'is_initial': False,
+                    'emotion': ''
+                })
 
-            self.view.update_status_signal.emit()
-            self.view.update_debug_signal.emit()
-            QTimer.singleShot(0, self.view.update_token_count)
+            self.event_bus.emit(Events.UPDATE_STATUS)
+            self.event_bus.emit(Events.UPDATE_DEBUG_INFO)
+            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
 
             if self.server_controller.server and self.server_controller.server.client_socket:
                 final_response_text = response if response else "..."
@@ -344,12 +331,16 @@ class MainController:
                     logger.info("Ответ отправлен в игру.")
                 except Exception as e:
                     logger.error(f"Не удалось отправить ответ в игру: {e}")
+            
+            self.llm_processing = False  # Сбрасываем флаг после успешной обработки
                     
         except asyncio.TimeoutError:
             logger.warning("Тайм-аут: генерация ответа заняла слишком много времени.")
+            self.llm_processing = False  # Сбрасываем флаг при таймауте
             self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': "Превышено время ожидания ответа"})
         except Exception as e:
             logger.error(f"Ошибка в async_send_message: {e}", exc_info=True)
+            self.llm_processing = False  # Сбрасываем флаг при ошибке
             self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': f"Ошибка: {str(e)[:50]}..."})
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
@@ -364,28 +355,6 @@ class MainController:
     def check_available_vram(self):
         return self.audio_controller.check_available_vram()
 
-    def _ffmpeg_install_thread_target(self):
-        QTimer.singleShot(0, self.view._show_ffmpeg_installing_popup)
-
-        logger.info("Starting FFmpeg installation attempt...")
-        success = install_ffmpeg()
-        logger.info(f"FFmpeg installation attempt finished. Success: {success}")
-
-        QTimer.singleShot(0, self.view._close_ffmpeg_installing_popup)
-
-        if not success:
-            QTimer.singleShot(0, self.view._show_ffmpeg_error_popup)
-
-    def check_and_install_ffmpeg(self):
-        ffmpeg_path = Path(".") / "ffmpeg.exe"
-        logger.info(f"Checking for FFmpeg at: {ffmpeg_path}")
-
-        if not ffmpeg_path.exists():
-            logger.info("FFmpeg not found. Starting installation process in a separate thread.")
-            install_thread = threading.Thread(target=self._ffmpeg_install_thread_target, daemon=True)
-            install_thread.start()
-        else:
-            logger.info("FFmpeg found. No installation needed.")
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")
@@ -1008,19 +977,7 @@ class MainController:
 
     def _on_get_user_input(self, event: Event):
         """Получение текста из user_entry"""
-        if self.view and hasattr(self.view, 'user_entry'):
-            return self.view.user_entry.toPlainText().strip()
-        return ""
-    
-    def _on_succesful_response(self, event: Event):
-        self.hide_mita_status()
-    def _on_failed_response(self, event: Event):
-        logger.warning(f"Ошибка в ответе: {event.data}")
-        self.show_mita_error(event.data.get('error', 'Неизвестная ошибка'))
-    def _on_failed_response_attempt(self, event: Event):
-        self.show_mita_error_pulse()
-    def _on_started_response(self, event: Event):
-        self.show_mita_thinking()
+        return self.gui_controller.get_user_input()
     
     # endregion
 
@@ -1067,8 +1024,12 @@ class MainController:
         is_initial = event.data.get('is_initial', False)
         emotion = event.data.get('emotion', '')
         
-        if self.view:
-            self.view.update_chat_signal.emit(role, content, is_initial, emotion)
+        self.event_bus.emit(Events.UPDATE_CHAT_UI, {
+            'role': role,
+            'response': content,
+            'is_initial': is_initial,
+            'emotion': emotion
+        })
 
     def _on_get_server_data(self, event: Event):
         """Получение данных сервера"""
@@ -1120,12 +1081,6 @@ class MainController:
         self.id_sound = event.data.get('id_sound', 0)
         logger.info(f"Установлены данные звукового файла: {self.patch_to_sound_file}, ID: {self.id_sound}")
 
-    def _on_get_tg_auth_data(self, event: Event):
-        """Получение данных для авторизации Telegram"""
-        return {
-            'loop': self.loop,
-            'auth_signals': self.view.auth_signals if self.view else None
-        }
 
     def _on_set_silero_connected(self, event: Event):
         """Установка статуса подключения Silero"""
@@ -1150,70 +1105,6 @@ class MainController:
         
         thread = threading.Thread(target=check_loop, daemon=True)
         thread.start()
-
-    @property
-    def update_debug_signal(self):
-        if self.view:
-            return self.view.update_debug_signal
-        return None
-
-    @property
-    def update_chat_signal(self):
-        if self.view:
-            return self.view.update_chat_signal
-        return None
-
-    @property
-    def update_status_signal(self):
-        if self.view:
-            return self.view.update_status_signal
-        return None
-
-    @property
-    def prepare_stream_signal(self):
-        if self.view:
-            return self.view.prepare_stream_signal
-        return None
-
-    @property
-    def append_stream_chunk_signal(self):
-        if self.view:
-            return self.view.append_stream_chunk_signal
-        return None
-
-    @property
-    def finish_stream_signal(self):
-        if self.view:
-            return self.view.finish_stream_signal
-        return None
-    
-    def show_mita_thinking(self):
-        print("[DEBUG] Controller: запрос на показ статуса 'думает'")
-        if self.view and hasattr(self.view, 'show_thinking_signal'):
-            character_name = self.model_controller.model.current_character.name if self.model_controller.model.current_character else "Мита"
-            self.view.show_thinking_signal.emit(character_name)
-        else:
-            print("[DEBUG] view или show_thinking_signal не найден!")
-            
-    def show_mita_error(self, error_message):
-        print(f"[DEBUG] Controller: запрос на показ ошибки: {error_message}")
-        if self.view and hasattr(self.view, 'show_error_signal'):
-            self.view.show_error_signal.emit(error_message)
-            
-    def hide_mita_status(self):
-        print("[DEBUG] Controller: запрос на скрытие статуса")
-        if self.view and hasattr(self.view, 'hide_status_signal'):
-            self.view.hide_status_signal.emit()
-        else:
-            print("[DEBUG] view или hide_status_signal не найден при попытке скрыть!")
-
-    def show_mita_error_pulse(self):
-        if self.view and hasattr(self.view, 'pulse_error_signal'):
-            self.view.pulse_error_signal.emit()
-
-    def update_status_colors(self):
-        if self.view:
-            self.view.update_status_signal.emit()
 
     # Делегирующие свойства для обратной совместимости
     @property

@@ -406,3 +406,30 @@ class Events:
     SET_SOUND_FILE_DATA = "set_sound_file_data"
     GET_TG_AUTH_DATA = "get_tg_auth_data"
     SET_SILERO_CONNECTED = "set_silero_connected"
+
+    # GUI события
+    
+    # От main_controller.py
+    CLEAR_USER_INPUT_UI = "clear_user_input_ui"
+    PREPARE_STREAM_UI = "prepare_stream_ui"
+    APPEND_STREAM_CHUNK_UI = "append_stream_chunk_ui"
+    FINISH_STREAM_UI = "finish_stream_ui"
+    CHECK_AND_INSTALL_FFMPEG = "check_and_install_ffmpeg"
+    UPDATE_STATUS_COLORS = "update_status_colors"
+    UPDATE_CHAT_UI = "update_chat_ui"
+    PREPARE_STREAM_UI = "prepare_stream_ui"
+    APPEND_STREAM_CHUNK_UI = "append_stream_chunk_ui"
+    FINISH_STREAM_UI = "finish_stream_ui"
+    CHECK_AND_INSTALL_FFMPEG = "check_and_install_ffmpeg"
+
+    # От speech_controller.py
+    INSERT_TEXT_TO_INPUT = "insert_text_to_input"
+    CHECK_USER_ENTRY_EXISTS = "check_user_entry_exists"
+
+    # От settings_controller.py
+    SWITCH_VOICEOVER_SETTINGS = "switch_voiceover_settings"
+    SHOW_INFO_MESSAGE = "show_info_message" 
+    UPDATE_CHAT_FONT_SIZE = "update_chat_font_size"
+    RELOAD_CHAT_HISTORY = "reload_chat_history"
+    UPDATE_TOKEN_COUNT_UI = "update_token_count_ui"
+    GET_GUI_WINDOW_ID = "get_gui_window_id"

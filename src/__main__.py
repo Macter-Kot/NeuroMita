@@ -247,7 +247,7 @@ if __name__ == "__main__":
         logger.info("ChatGUI создан")
         
         # Обновляем ссылку на реальный view в контроллере
-        controller.view = main_win
+        controller.update_view(main_win)
         
         # Подключаем сигналы после создания view
         controller.connect_view_signals()

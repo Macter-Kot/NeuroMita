@@ -47,7 +47,24 @@ class AudioController:
     async def run_send_and_receive(self, response, speaker_command, id=0):
         logger.info("Попытка получить фразу")
         self.waiting_answer = True
-        await self.main.telegram_controller.bot_handler.send_and_receive(response, speaker_command, id)
+        
+        # Создаем Future для ожидания результата
+        future = asyncio.Future()
+        
+        # Отправляем событие вместо прямого вызова
+        self.event_bus.emit("telegram_send_voice_request", {
+            'text': response,
+            'speaker_command': speaker_command,
+            'id': id,
+            'future': future
+        })
+        
+        # Ждем завершения
+        try:
+            await future
+        except Exception as e:
+            logger.error(f"Ошибка при получении озвучки через Telegram: {e}")
+        
         self.waiting_answer = False
         logger.info("Завершение получения фразы")
         

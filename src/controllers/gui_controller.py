@@ -28,6 +28,7 @@ class GuiController:
         
         logger.info(f"GuiController инициализирован с view типа: {type(self.view)}")
         self._subscribe_to_events()
+        self._connect_view_signals()
         logger.info("GuiController подписался на события")
 
         QTimer.singleShot(100, self.check_and_install_ffmpeg)
@@ -51,7 +52,6 @@ class GuiController:
         self.event_bus.subscribe(Events.ON_SUCCESSFUL_RESPONSE, self._on_successful_response, weak=False)
         self.event_bus.subscribe(Events.ON_FAILED_RESPONSE_ATTEMPT, self._on_failed_response_attempt, weak=False)
         self.event_bus.subscribe(Events.ON_FAILED_RESPONSE, self._on_failed_response, weak=False)
-
         
         self.event_bus.subscribe(Events.INSERT_TEXT_TO_INPUT, self._on_insert_text_to_input, weak=False)
         self.event_bus.subscribe(Events.CHECK_USER_ENTRY_EXISTS, self._on_check_user_entry_exists, weak=False)
@@ -63,17 +63,38 @@ class GuiController:
         self.event_bus.subscribe(Events.UPDATE_TOKEN_COUNT_UI, self._on_update_token_count_ui, weak=False)
         self.event_bus.subscribe(Events.GET_GUI_WINDOW_ID, self._on_get_gui_window_id, weak=False)
 
-        # От audio_controller.py
         self.event_bus.subscribe(Events.CHECK_TRITON_DEPENDENCIES, self._on_check_triton_dependencies, weak=False)
         self.event_bus.subscribe(Events.UPDATE_MODEL_LOADING_STATUS, self._on_update_model_loading_status, weak=False)
         self.event_bus.subscribe(Events.FINISH_MODEL_LOADING, self._on_finish_model_loading, weak=False)
         self.event_bus.subscribe(Events.SHOW_ERROR_MESSAGE, self._on_show_error_message, weak=False)
         self.event_bus.subscribe(Events.CANCEL_MODEL_LOADING, self._on_cancel_model_loading, weak=False)
 
-        # От telegram_controller.py
         self.event_bus.subscribe(Events.PROMPT_FOR_TG_CODE, self._on_prompt_for_tg_code, weak=False)
         self.event_bus.subscribe(Events.PROMPT_FOR_TG_PASSWORD, self._on_prompt_for_tg_password, weak=False)
+        
+        self.event_bus.subscribe("history_loaded", self._on_history_loaded_event, weak=False)
+        self.event_bus.subscribe("more_history_loaded", self._on_more_history_loaded_event, weak=False)
+        self.event_bus.subscribe("model_initialized", self._on_model_initialized_event, weak=False)
+        self.event_bus.subscribe("model_init_cancelled", self._on_model_init_cancelled_event, weak=False)
+        self.event_bus.subscribe("model_init_failed", self._on_model_init_failed_event, weak=False)
+        self.event_bus.subscribe("reload_prompts_success", self._on_reload_prompts_success_event, weak=False)
+        self.event_bus.subscribe("reload_prompts_failed", self._on_reload_prompts_failed_event, weak=False)
+        self.event_bus.subscribe("display_loading_popup", self._on_display_loading_popup_event, weak=False)
+        self.event_bus.subscribe("hide_loading_popup", self._on_hide_loading_popup_event, weak=False)
                 
+    def _connect_view_signals(self):
+        if self.view:
+            self.view.clear_user_input_signal = getattr(self.view, 'clear_user_input_signal', None)
+            self.view.update_chat_font_size_signal = getattr(self.view, 'update_chat_font_size_signal', None)
+            self.view.switch_voiceover_settings_signal = getattr(self.view, 'switch_voiceover_settings_signal', None)
+            self.view.load_chat_history_signal = getattr(self.view, 'load_chat_history_signal', None)
+            self.view.check_triton_dependencies_signal = getattr(self.view, 'check_triton_dependencies_signal', None)
+            self.view.show_info_message_signal = getattr(self.view, 'show_info_message_signal', None)
+            self.view.show_error_message_signal = getattr(self.view, 'show_error_message_signal', None)
+            self.view.update_model_loading_status_signal = getattr(self.view, 'update_model_loading_status_signal', None)
+            self.view.finish_model_loading_signal = getattr(self.view, 'finish_model_loading_signal', None)
+            self.view.cancel_model_loading_signal = getattr(self.view, 'cancel_model_loading_signal', None)
+        
     def connect_view_signals(self):
         self.main_controller.telegram_controller.connect_view_signals()
         
@@ -325,23 +346,30 @@ class GuiController:
         return bool(self.view and self.view.user_entry)
     
     def _on_switch_voiceover_settings(self, event: Event):
-        if self.view and hasattr(self.view, 'switch_voiceover_settings'):
+        if self.view and hasattr(self.view, 'switch_voiceover_settings_signal') and self.view.switch_voiceover_settings_signal:
+            self.view.switch_voiceover_settings_signal.emit()
+        elif self.view and hasattr(self.view, 'switch_voiceover_settings'):
             self.view.switch_voiceover_settings()
 
     def _on_show_info_message(self, event: Event):
         title = event.data.get('title', 'Информация')
         message = event.data.get('message', '')
-        if self.view:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(self.view, title, message)
+        if self.view and hasattr(self.view, 'show_info_message_signal') and self.view.show_info_message_signal:
+            self.view.show_info_message_signal.emit({'title': title, 'message': message})
+        elif self.view:
+            QTimer.singleShot(0, lambda: QMessageBox.information(self.view, title, message))
 
     def _on_update_chat_font_size(self, event: Event):
         font_size = event.data.get('font_size', 12)
-        if self.view and hasattr(self.view, 'update_chat_font_size'):
+        if self.view and hasattr(self.view, 'update_chat_font_size_signal') and self.view.update_chat_font_size_signal:
+            self.view.update_chat_font_size_signal.emit(font_size)
+        elif self.view and hasattr(self.view, 'update_chat_font_size'):
             self.view.update_chat_font_size(font_size)
 
     def _on_reload_chat_history(self, event: Event):
-        if self.view and hasattr(self.view, 'load_chat_history'):
+        if self.view and hasattr(self.view, 'load_chat_history_signal') and self.view.load_chat_history_signal:
+            self.view.load_chat_history_signal.emit()
+        elif self.view and hasattr(self.view, 'load_chat_history'):
             self.view.load_chat_history()
 
     def _on_update_token_count_ui(self, event: Event):
@@ -353,71 +381,94 @@ class GuiController:
         return None
     
     def _on_check_triton_dependencies(self, event: Event):
-        if self.view and hasattr(self.view, 'check_triton_dependencies'):
+        if self.view and hasattr(self.view, 'check_triton_dependencies_signal') and self.view.check_triton_dependencies_signal:
+            self.view.check_triton_dependencies_signal.emit()
+        elif self.view and hasattr(self.view, 'check_triton_dependencies'):
             self.view.check_triton_dependencies()
 
     def _on_update_model_loading_status(self, event: Event):
         status = event.data.get('status', '')
-        if self.view and hasattr(self.view, 'loading_status_label'):
+        if self.view and hasattr(self.view, 'update_model_loading_status_signal') and self.view.update_model_loading_status_signal:
+            self.view.update_model_loading_status_signal.emit(status)
+        elif self.view and hasattr(self.view, 'loading_status_label'):
             QTimer.singleShot(0, lambda: self.view.loading_status_label.setText(status))
 
     def _on_finish_model_loading(self, event: Event):
         model_id = event.data.get('model_id')
-        if self.view and hasattr(self.view, 'finish_model_loading') and hasattr(self.view, 'loading_dialog'):
+        if self.view and hasattr(self.view, 'finish_model_loading_signal') and self.view.finish_model_loading_signal:
+            self.view.finish_model_loading_signal.emit({'model_id': model_id})
+        elif self.view and hasattr(self.view, 'finish_model_loading') and hasattr(self.view, 'loading_dialog'):
             QTimer.singleShot(0, lambda: self.view.finish_model_loading(model_id, self.view.loading_dialog))
 
     def _on_show_error_message(self, event: Event):
         title = event.data.get('title', 'Ошибка')
         message = event.data.get('message', '')
-        if self.view:
+        if self.view and hasattr(self.view, 'show_error_message_signal') and self.view.show_error_message_signal:
+            self.view.show_error_message_signal.emit({'title': title, 'message': message})
+        elif self.view:
             QTimer.singleShot(0, lambda: QMessageBox.critical(self.view, title, message))
 
     def _on_cancel_model_loading(self, event: Event):
-        if self.view and hasattr(self.view, 'cancel_model_loading') and hasattr(self.view, 'loading_dialog'):
+        if self.view and hasattr(self.view, 'cancel_model_loading_signal') and self.view.cancel_model_loading_signal:
+            self.view.cancel_model_loading_signal.emit()
+        elif self.view and hasattr(self.view, 'cancel_model_loading') and hasattr(self.view, 'loading_dialog'):
             QTimer.singleShot(0, lambda: self.view.cancel_model_loading(self.view.loading_dialog))
     
     def _on_prompt_for_tg_code(self, event: Event):
         code_future = event.data.get('future')
-        if self.view and hasattr(self.view, 'prompt_for_code'):
+        if self.view and hasattr(self.view, 'show_tg_code_dialog_signal'):
+            self.view.show_tg_code_dialog_signal.emit({'future': code_future})
+        elif self.view and hasattr(self.view, 'prompt_for_code'):
             self.view.prompt_for_code(code_future)
 
     def _on_prompt_for_tg_password(self, event: Event):
         password_future = event.data.get('future')
-        if self.view and hasattr(self.view, 'prompt_for_password'):
+        if self.view and hasattr(self.view, 'show_tg_password_dialog_signal'):
+            self.view.show_tg_password_dialog_signal.emit({'future': password_future})
+        elif self.view and hasattr(self.view, 'prompt_for_password'):
             self.view.prompt_for_password(password_future)
 
-    # @property
-    # def update_debug_signal(self):
-    #     if self.view:
-    #         return self.view.update_debug_signal
-    #     return None
-
-    # @property
-    # def update_chat_signal(self):
-    #     if self.view:
-    #         return self.view.update_chat_signal
-    #     return None
-
-    # @property
-    # def update_status_signal(self):
-    #     if self.view:
-    #         return self.view.update_status_signal
-    #     return None
-
-    # @property
-    # def prepare_stream_signal(self):
-    #     if self.view:
-    #         return self.view.prepare_stream_signal
-    #     return None
-
-    # @property
-    # def append_stream_chunk_signal(self):
-    #     if self.view:
-    #         return self.view.append_stream_chunk_signal
-    #     return None
-
-    # @property
-    # def finish_stream_signal(self):
-    #     if self.view:
-    #         return self.view.finish_stream_signal
-    #     return None
+    def _on_history_loaded_event(self, event: Event):
+        logger.debug("GuiController: получено ghost событие history_loaded, транслируем в view")
+        if self.view:
+            self.view.history_loaded_signal.emit(event.data)
+    
+    def _on_more_history_loaded_event(self, event: Event):
+        logger.debug("GuiController: получено ghost событие more_history_loaded, транслируем в view")
+        if self.view:
+            self.view.more_history_loaded_signal.emit(event.data)
+    
+    def _on_model_initialized_event(self, event: Event):
+        logger.debug("GuiController: получено событие model_initialized, транслируем в view")
+        if self.view:
+            self.view.model_initialized_signal.emit(event.data)
+    
+    def _on_model_init_cancelled_event(self, event: Event):
+        logger.debug("GuiController: получено событие model_init_cancelled, транслируем в view")
+        if self.view:
+            self.view.model_init_cancelled_signal.emit(event.data)
+    
+    def _on_model_init_failed_event(self, event: Event):
+        logger.debug("GuiController: получено событие model_init_failed, транслируем в view")
+        if self.view:
+            self.view.model_init_failed_signal.emit(event.data)
+    
+    def _on_reload_prompts_success_event(self, event: Event):
+        logger.debug("GuiController: получено событие reload_prompts_success, транслируем в view")
+        if self.view:
+            self.view.reload_prompts_success_signal.emit()
+    
+    def _on_reload_prompts_failed_event(self, event: Event):
+        logger.debug("GuiController: получено событие reload_prompts_failed, транслируем в view")
+        if self.view:
+            self.view.reload_prompts_failed_signal.emit(event.data)
+    
+    def _on_display_loading_popup_event(self, event: Event):
+        logger.debug("GuiController: получено событие display_loading_popup, транслируем в view")
+        if self.view:
+            self.view.display_loading_popup_signal.emit(event.data)
+    
+    def _on_hide_loading_popup_event(self, event: Event):
+        logger.debug("GuiController: получено событие hide_loading_popup, транслируем в view")
+        if self.view:
+            self.view.hide_loading_popup_signal.emit()

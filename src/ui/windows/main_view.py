@@ -55,6 +55,29 @@ class ChatGUI(QMainWindow):
     hide_status_signal = pyqtSignal()
     pulse_error_signal = pyqtSignal()
 
+    history_loaded_signal = pyqtSignal(dict)          # data: {'messages': [...], ...}
+    more_history_loaded_signal = pyqtSignal(dict)     # data: {'messages': [...], ...}
+    model_initialized_signal = pyqtSignal(dict)       # data: {'model_id': str}
+    model_init_cancelled_signal = pyqtSignal(dict)    # data: {'model_id': str}
+    model_init_failed_signal = pyqtSignal(dict)       # data: {'model_id': str, 'error': str}
+    show_tg_code_dialog_signal = pyqtSignal(dict)     # data: {'future': future}
+    show_tg_password_dialog_signal = pyqtSignal(dict) # data: {'future': future}
+    reload_prompts_success_signal = pyqtSignal()      # без data
+    reload_prompts_failed_signal = pyqtSignal(dict)   # data: {'error': str}
+    display_loading_popup_signal = pyqtSignal(dict)   # data: {'message': str}
+    hide_loading_popup_signal = pyqtSignal()          # без data
+
+    clear_user_input_signal = pyqtSignal()
+    update_chat_font_size_signal = pyqtSignal(int)
+    switch_voiceover_settings_signal = pyqtSignal()
+    load_chat_history_signal = pyqtSignal()
+    check_triton_dependencies_signal = pyqtSignal()
+    show_info_message_signal = pyqtSignal(dict)
+    show_error_message_signal = pyqtSignal(dict)
+    update_model_loading_status_signal = pyqtSignal(str)
+    finish_model_loading_signal = pyqtSignal(dict)
+    cancel_model_loading_signal = pyqtSignal()
+
     def __init__(self, settings):
         super().__init__()
         # Сохраняем только настройки из контроллера
@@ -62,7 +85,7 @@ class ChatGUI(QMainWindow):
         
         # Инициализация системы событий
         self.event_bus = get_event_bus()
-        self._subscribe_to_events()
+        self._connect_signals()
         
         self.voice_language_var = None
         self.local_voice_combobox = None
@@ -102,8 +125,6 @@ class ChatGUI(QMainWindow):
         self.image_preview_bar = None
         self._init_image_preview()
 
-        self.load_chat_history()
-
         try:
             microphone_settings.load_mic_settings(self)
         except Exception as e:
@@ -125,24 +146,30 @@ class ChatGUI(QMainWindow):
         self.current_local_voice_id = None
         self.model_loading_cancelled = False
 
-    def _subscribe_to_events(self):
-        """Подписка на события от логики"""
-        self.event_bus.subscribe("history_loaded", self._on_history_loaded, weak=False)
-        self.event_bus.subscribe("more_history_loaded", self._on_more_history_loaded, weak=False)
-        self.event_bus.subscribe("model_initialized", self._on_model_initialized, weak=False)
-        self.event_bus.subscribe("model_init_cancelled", self._on_model_init_cancelled, weak=False)
-        self.event_bus.subscribe("model_init_failed", self._on_model_init_failed, weak=False)
-        self.event_bus.subscribe("show_tg_code_dialog", self._on_show_tg_code_dialog, weak=False)
-        self.event_bus.subscribe("show_tg_password_dialog", self._on_show_tg_password_dialog, weak=False)
+    def _connect_signals(self):
+        """Подключение сигналов к слотам (вместо subscribe)"""
+        self.history_loaded_signal.connect(self._on_history_loaded)
+        self.more_history_loaded_signal.connect(self._on_more_history_loaded)
+        self.model_initialized_signal.connect(self._on_model_initialized)
+        self.model_init_cancelled_signal.connect(self._on_model_init_cancelled)
+        self.model_init_failed_signal.connect(self._on_model_init_failed)
+        self.show_tg_code_dialog_signal.connect(self._on_show_tg_code_dialog)
+        self.show_tg_password_dialog_signal.connect(self._on_show_tg_password_dialog)
+        self.reload_prompts_success_signal.connect(self._on_reload_prompts_success)
+        self.reload_prompts_failed_signal.connect(self._on_reload_prompts_failed)
+        self.display_loading_popup_signal.connect(self._on_display_loading_popup)
+        self.hide_loading_popup_signal.connect(self._on_hide_loading_popup)
+        self.update_chat_font_size_signal.connect(self.update_chat_font_size)
+        self.switch_voiceover_settings_signal.connect(self.switch_voiceover_settings)
+        self.load_chat_history_signal.connect(self.load_chat_history)
+        self.check_triton_dependencies_signal.connect(self.check_triton_dependencies)
+        self.clear_user_input_signal.connect(self._on_clear_user_input)
+        self.show_info_message_signal.connect(self._on_show_info_message)
+        self.show_error_message_signal.connect(self._on_show_error_message)
+        self.update_model_loading_status_signal.connect(self._on_update_model_loading_status)
+        self.finish_model_loading_signal.connect(self._on_finish_model_loading)
+        self.cancel_model_loading_signal.connect(self._on_cancel_model_loading)
 
-        
-        # Промпты
-        self.event_bus.subscribe("reload_prompts_success", self._on_reload_prompts_success, weak=False)
-        self.event_bus.subscribe("reload_prompts_failed", self._on_reload_prompts_failed, weak=False)
-        
-        # Загрузка
-        self.event_bus.subscribe("display_loading_popup", self._on_display_loading_popup, weak=False)
-        self.event_bus.subscribe("hide_loading_popup", self._on_hide_loading_popup, weak=False)
 
     def _check_text_to_talk(self):
         """Проверка текста для озвучки через события"""
@@ -834,9 +861,8 @@ class ChatGUI(QMainWindow):
         # Запрашиваем загрузку истории через события
         self.event_bus.emit(Events.LOAD_HISTORY)
 
-    def _on_history_loaded(self, event: Event):
+    def _on_history_loaded(self, data: dict):
         """Обработчик загруженной истории"""
-        data = event.data
         messages = data.get('messages', [])
         
         for entry in messages:
@@ -1054,9 +1080,8 @@ class ChatGUI(QMainWindow):
         # Запрашиваем загрузку дополнительной истории через события
         self.event_bus.emit(Events.LOAD_MORE_HISTORY)
 
-    def _on_more_history_loaded(self, event: Event):
+    def _on_more_history_loaded(self, data: dict):
         """Обработчик загруженной дополнительной истории"""
-        data = event.data
         messages_to_prepend = data.get('messages', [])
         
         if not messages_to_prepend:
@@ -1234,9 +1259,9 @@ class ChatGUI(QMainWindow):
         
         self.loading_dialog.show()
 
-    def _on_model_initialized(self, event: Event):
+    def _on_model_initialized(self, data: dict):
         """Обработчик успешной инициализации модели"""
-        model_id = event.data.get('model_id')
+        model_id = data.get('model_id')
         
         if hasattr(self, 'loading_dialog') and self.loading_dialog:
             self.loading_dialog.close()
@@ -1258,15 +1283,15 @@ class ChatGUI(QMainWindow):
         else:
             QMessageBox.critical(self, "Ошибка", "Не удалось активировать модель после инициализации")
 
-    def _on_model_init_cancelled(self, event: Event):
+    def _on_model_init_cancelled(self, data: dict):
         """Обработчик отмены инициализации модели"""
         if hasattr(self, 'loading_dialog') and self.loading_dialog:
             self.loading_dialog.close()
 
-    def _on_model_init_failed(self, event: Event):
+    def _on_model_init_failed(self, data: dict):
         """Обработчик ошибки инициализации модели"""
-        model_id = event.data.get('model_id')
-        error = event.data.get('error', 'Unknown error')
+        model_id = data.get('model_id')
+        error = data.get('error', 'Unknown error')
         
         if hasattr(self, 'loading_dialog') and self.loading_dialog:
             self.loading_dialog.close()
@@ -1858,9 +1883,9 @@ class ChatGUI(QMainWindow):
         # Отправляем событие для запроса кода
         self.event_bus.emit(Events.REQUEST_TG_CODE, {'future': code_future})
 
-    def _on_show_tg_code_dialog(self, event: Event):
+    def _on_show_tg_code_dialog(self, data: dict):
         """Показать диалог ввода кода Telegram"""
-        code_future = event.data.get('future')
+        code_future = data.get('future')
         
         dialog = QDialog(self)
         dialog.setWindowTitle("Подтверждение Telegram")
@@ -1909,9 +1934,9 @@ class ChatGUI(QMainWindow):
         # Отправляем событие для запроса пароля
         self.event_bus.emit(Events.REQUEST_TG_PASSWORD, {'future': password_future})
 
-    def _on_show_tg_password_dialog(self, event: Event):
+    def _on_show_tg_password_dialog(self, data: dict):
         """Показать диалог ввода пароля Telegram"""
-        password_future = event.data.get('future')
+        password_future = data.get('future')
         
         dialog = QDialog(self)
         dialog.setWindowTitle("Двухфакторная аутентификация")
@@ -2011,14 +2036,14 @@ class ChatGUI(QMainWindow):
         # Отправляем событие для скрытия статуса Миты
         self.event_bus.emit(Events.HIDE_MITA_STATUS)
 
-    def _on_reload_prompts_success(self, event: Event):
+    def _on_reload_prompts_success(self):
         """Обработчик успешной загрузки промптов"""
         QMessageBox.information(self, _("Успешно", "Success"), 
             _("Промпты успешно скачаны и перезагружены.", "Prompts successfully downloaded and reloaded."))
     
-    def _on_reload_prompts_failed(self, event: Event):
+    def _on_reload_prompts_failed(self, data: dict):
         """Обработчик ошибки загрузки промптов"""
-        error = event.data.get('error', 'Unknown error')
+        error = data.get('error', 'Unknown error')
         if error == "Event loop not running":
             QMessageBox.critical(self, _("Ошибка", "Error"), 
                 _("Не удалось запустить асинхронную загрузку промптов.", "Failed to start asynchronous prompt download."))
@@ -2031,9 +2056,9 @@ class ChatGUI(QMainWindow):
         """Показать диалог загрузки"""
         self.event_bus.emit(Events.SHOW_LOADING_POPUP, {"message": message})
     
-    def _on_display_loading_popup(self, event: Event):
+    def _on_display_loading_popup(self, data: dict):
         """Отобразить попап загрузки"""
-        message = event.data.get('message', 'Loading...')
+        message = data.get('message', 'Loading...')
         
         if not hasattr(self, 'loading_popup'):
             from PyQt6.QtWidgets import QProgressDialog
@@ -2051,7 +2076,34 @@ class ChatGUI(QMainWindow):
         """Закрыть диалог загрузки"""
         self.event_bus.emit(Events.CLOSE_LOADING_POPUP)
     
-    def _on_hide_loading_popup(self, event: Event):
+    def _on_hide_loading_popup(self):
         """Скрыть попап загрузки"""
         if hasattr(self, 'loading_popup') and self.loading_popup:
             self.loading_popup.close()
+
+    def _on_clear_user_input(self):
+        if self.user_entry:
+            self.user_entry.clear()
+
+    def _on_show_info_message(self, data: dict):
+        title = data.get('title', 'Информация')
+        message = data.get('message', '')
+        QMessageBox.information(self, title, message)
+
+    def _on_show_error_message(self, data: dict):
+        title = data.get('title', 'Ошибка')
+        message = data.get('message', '')
+        QMessageBox.critical(self, title, message)
+
+    def _on_update_model_loading_status(self, status: str):
+        if hasattr(self, 'loading_status_label'):
+            self.loading_status_label.setText(status)
+
+    def _on_finish_model_loading(self, data: dict):
+        model_id = data.get('model_id')
+        if hasattr(self, 'finish_model_loading') and hasattr(self, 'loading_dialog'):
+            self.finish_model_loading(model_id, self.loading_dialog)
+
+    def _on_cancel_model_loading(self):
+        if hasattr(self, 'cancel_model_loading') and hasattr(self, 'loading_dialog'):
+            self.cancel_model_loading(self.loading_dialog)

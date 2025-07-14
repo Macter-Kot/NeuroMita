@@ -248,6 +248,8 @@ if __name__ == "__main__":
         
         # Обновляем ссылку на реальный view в контроллере
         controller.update_view(main_win)
+
+        main_win.load_chat_history()
         
         # Подключаем сигналы после создания view
         controller.connect_view_signals()

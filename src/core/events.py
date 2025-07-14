@@ -444,3 +444,5 @@ class Events:
     # От telegram_controller.py
     PROMPT_FOR_TG_CODE = "prompt_for_tg_code"
     PROMPT_FOR_TG_PASSWORD = "prompt_for_tg_password"
+    TELEGRAM_SEND_VOICE_REQUEST = "telegram_send_voice_request"
+

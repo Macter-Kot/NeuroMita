@@ -29,6 +29,7 @@ class TelegramController:
     def _subscribe_to_events(self):
         self.event_bus.subscribe("telegram_settings_loaded", self._on_telegram_settings_loaded, weak=False)
         self.event_bus.subscribe("telegram_settings_changed", self._on_telegram_settings_changed, weak=False)
+        self.event_bus.subscribe("telegram_send_voice_request", self._on_send_voice_request, weak=False)
     
     def _on_telegram_settings_loaded(self, event: Event):
         data = event.data
@@ -99,3 +100,30 @@ class TelegramController:
             logger.info(f"Критическая ошибка при инициализации Telegram Bot: {e}")
             self.silero_connected = False
             self.bot_handler_ready = False
+
+    def _on_send_voice_request(self, event: Event):
+        data = event.data
+        text = data.get('text', '')
+        speaker_command = data.get('speaker_command', '')
+        id = data.get('id', 0)
+        future = data.get('future')
+        
+        if self.bot_handler and self.bot_handler_ready:
+            asyncio.run_coroutine_threadsafe(
+                self._async_send_and_receive(text, speaker_command, id, future),
+                self.main.loop
+            )
+        else:
+            logger.error("Bot handler не готов для отправки голосового запроса")
+            if future:
+                future.set_exception(Exception("Bot handler not ready"))
+
+    async def _async_send_and_receive(self, text, speaker_command, id, future):
+        try:
+            await self.bot_handler.send_and_receive(text, speaker_command, id)
+            if future:
+                future.set_result(True)
+        except Exception as e:
+            logger.error(f"Ошибка при отправке голосового запроса: {e}")
+            if future:
+                future.set_exception(e)

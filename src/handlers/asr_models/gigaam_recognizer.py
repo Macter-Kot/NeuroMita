@@ -382,7 +382,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         self._log_queue = mp.Queue()
         
         # Импортируем функцию только когда нужна (избегаем циклических импортов)
-        from asr_models.gigaam_process import run_gigaam_process
+        from handlers.asr_models.gigaam_process import run_gigaam_process
         
         # Создаем и запускаем процесс
         self._process = mp.Process(

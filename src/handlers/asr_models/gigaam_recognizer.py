@@ -196,28 +196,63 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             return True
         return False
     
+    # GigaAMRecognizer.transcribe()
     async def transcribe(self, audio_data: np.ndarray, sample_rate: int) -> Optional[str]:
-        """Отправка команды на транскрибацию в процесс"""
-        if not self._is_initialized or not self._process or not self._process.is_alive():
+        """
+        Отправляем команду через очередь и асинхронно ждём ответ.
+        Никаких .wait() в event-loop'е, никаких numpy-объектов в очередях.
+        """
+        if (not self._is_initialized or
+                not self._process or
+                not self._process.is_alive()):
             self.logger.error("GigaAM процесс не инициализирован")
             return None
-        
-        # Сбрасываем событие
-        self._transcribe_event.clear()
-        self._transcribe_result = None
-        
-        # Отправляем команду транскрибации
-        self._command_queue.put(('transcribe', audio_data, sample_rate))
-        
-        # Ждем результат (с таймаутом)
-        if self._transcribe_event.wait(timeout=30):
-            return self._transcribe_result
-        else:
-            self.logger.error("Таймаут при ожидании транскрибации")
+
+        # 1) Записываем аудио во временный файл
+        import tempfile, wave, os, uuid
+        tmp_dir = tempfile.gettempdir()
+        tmp_name = f"gigaam_{uuid.uuid4().hex}.wav"
+        tmp_path = os.path.join(tmp_dir, tmp_name)
+
+        try:
+            audio_int16 = (audio_data * 32767).astype(np.int16)
+            with wave.open(tmp_path, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                wf.writeframes(audio_int16.tobytes())
+        except Exception as e:
+            self.logger.error(f"Не удалось создать временный wav для GigaAM: {e}")
             return None
+
+        # 2) Создаём future, куда монитор-поток положит результат
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[str | None] = loop.create_future()
+
+        def _result_setter(result: str | None):
+            if not future.done():
+                future.set_result(result)
+
+        # 3) складываем future в словарь «ожидающих» (создадим, если его ещё нет)
+        if not hasattr(self, "_pending_futures"):
+            self._pending_futures: dict[str, Callable[[str | None], None]] = {}
+        self._pending_futures[tmp_path] = _result_setter
+
+        # 4) отправляем команду процессу (только путь + sr)
+        self._command_queue.put(("transcribe", tmp_path, sample_rate))
+
+        # 5) ждём результат (с таймаутом)
+        try:
+            return await asyncio.wait_for(future, timeout=30)
+        except asyncio.TimeoutError:
+            self.logger.error("Таймаут ожидания транскрипции GigaAM")
+            return None
+        finally:
+            # файл удалит сам воркер, но на всякий случай можно подчистить
+            pass
     
     async def live_recognition(self, microphone_index: int, handle_voice_callback, 
-                              vad_model, active_flag, **kwargs) -> None:
+                          vad_model, active_flag, **kwargs) -> None:
         """Live recognition с VAD в основном процессе, транскрибация в отдельном"""
         if not self._is_initialized or not self._process or not self._process.is_alive():
             self.logger.error("GigaAM процесс не инициализирован")
@@ -248,13 +283,16 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         is_speaking = False
         silence_counter = 0
 
-        with self._sd.InputStream(
+        stream = self._sd.InputStream(
             samplerate=sample_rate,
             channels=1,
             dtype='float32',
             blocksize=chunk_size,
             device=microphone_index
-        ) as stream:
+        )
+        stream.start()
+
+        try:
             while active_flag():
                 audio_chunk, overflowed = stream.read(chunk_size)
                 if overflowed:
@@ -287,6 +325,9 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                         speech_buffer.clear()
                         silence_counter = 0
                         
+                        # Закрываем stream перед тяжелой работой
+                        stream.close()
+                        
                         # Отправляем на транскрибацию в процесс
                         text = await self.transcribe(audio_to_process, sample_rate)
                         if text:
@@ -294,8 +335,20 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                             await handle_voice_callback(text)
                         else:
                             await self._save_failed_audio(audio_to_process, sample_rate)
+                        
+                        # Открываем stream заново
+                        stream = self._sd.InputStream(
+                            samplerate=sample_rate,
+                            channels=1,
+                            dtype='float32',
+                            blocksize=chunk_size,
+                            device=microphone_index
+                        )
+                        stream.start()
                 
                 await asyncio.sleep(0.01)
+        finally:
+            stream.close()
     
     async def _save_failed_audio(self, audio_data: np.ndarray, sample_rate: int):
         self.logger.info("Сохранение аудиофрагмента в папку Failed...")
@@ -352,9 +405,11 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                             self._process_initialized = False
                             
                         elif result_type == 'transcription':
-                            # Сохраняем результат транскрипции
-                            self._transcribe_result = result[1]
-                            self._transcribe_event.set()
+                            wav_path, text = result[1], result[2]
+                            if hasattr(self, "_pending_futures"):
+                                cb = self._pending_futures.pop(wav_path, None)
+                                if cb:
+                                    cb(text)
                             
                         elif result_type == 'transcription_error':
                             self._transcribe_result = None

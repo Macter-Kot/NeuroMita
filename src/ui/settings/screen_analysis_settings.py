@@ -48,7 +48,7 @@ def setup_screen_analysis_controls(gui, parent_layout):
         {'label': _('Ширина захвата', 'Capture Width'), 'key': 'SCREEN_CAPTURE_WIDTH', 'type': 'entry', 'default': '1024', 'validation': gui.validate_positive_integer},
         {'label': _('Высота захвата', 'Capture Height'), 'key': 'SCREEN_CAPTURE_HEIGHT', 'type': 'entry', 'default': '768', 'validation': gui.validate_positive_integer},
         {'label': _('Отправлять запросы с кадрами', 'Send Image Requests'), 'key': 'SEND_IMAGE_REQUESTS', 'type': 'checkbutton', 'default_checkbutton': False},
-        {'label': _('Период запросов (сек)', 'Request Interval (sec)'), 'key': 'IMAGE_REQUEST_INTERVAL', 'type': 'entry', 'default': '20.0', 'validation': gui.validate_float_positive},
+        {'label': _('Период запросов (сек)', 'Request Interval (sec)'), 'key': 'IMAGE_REQUEST_INTERVAL', 'type': 'entry', 'depends_on': "SEND_IMAGE_REQUESTS", 'default': '20.0', 'validation': gui.validate_float_positive},
         {'label': _('Исключить окно GUI', 'Exclude GUI Window'), 'key': 'EXCLUDE_GUI_WINDOW', 'type': 'checkbutton', 'default_checkbutton': False},
         {'label': _('Заголовок искл. окна', 'Excluded Window Title'), 'key': 'EXCLUDE_WINDOW_TITLE', 'type': 'entry', 'default': ''},
     ]

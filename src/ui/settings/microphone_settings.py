@@ -1,7 +1,8 @@
 import re
-from PyQt6.QtWidgets import QComboBox, QCheckBox
+from PyQt6.QtWidgets import QComboBox, QCheckBox, QWidget, QHBoxLayout, QLabel, QSizePolicy
+from PyQt6.QtCore import Qt
 
-from ui.gui_templates import create_settings_section
+from ui.gui_templates import create_settings_section, create_setting_widget
 from main_logger import logger
 from handlers.asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
@@ -10,18 +11,65 @@ import sounddevice as sd
 import time
 
 def setup_microphone_controls(gui, parent_layout):
+    # Создаем основную секцию
+    gui.mic_section = create_settings_section(
+        gui, parent_layout, 
+        _("Настройки микрофона", "Microphone Settings"), 
+        []  # Передаем пустой список, виджеты добавим вручную
+    )
+    
+    content_widget = gui.mic_section.content_frame
+    content_layout = gui.mic_section.content_layout
+    
+    # --- Микрофон (специальная обработка для длинных названий) ---
+    mic_row = QWidget()
+    mic_layout = QHBoxLayout(mic_row)
+    mic_layout.setContentsMargins(0, 2, 0, 2)
+    mic_layout.setSpacing(10)
+    
+    mic_label = QLabel(_("Микрофон", "Microphone"))
+    mic_label.setMinimumWidth(140)
+    mic_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    
+    gui.mic_combobox = QComboBox()
+    gui.mic_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    gui.mic_combobox.setMaximumWidth(400)  # Ограничиваем максимальную ширину
+    
+    # Заполняем список микрофонов
+    mic_list = get_microphone_list()
+    for mic_name in mic_list:
+        gui.mic_combobox.addItem(mic_name)
+        # Добавляем полное название как tooltip
+        index = gui.mic_combobox.count() - 1
+        gui.mic_combobox.setItemData(index, mic_name, Qt.ItemDataRole.ToolTipRole)
+    
+    # Устанавливаем текущее значение
+    current_mic = gui.settings.get('MIC_DEVICE', mic_list[0] if mic_list else "")
+    gui.mic_combobox.setCurrentText(current_mic)
+    gui.mic_combobox.setToolTip(current_mic)
+    
+    # Подключаем обработчик
+    gui.mic_combobox.currentTextChanged.connect(lambda text: (
+        gui._save_setting('MIC_DEVICE', text),
+        gui.mic_combobox.setToolTip(text),
+        on_mic_selected(gui)
+    ))
+    
+    mic_layout.addWidget(mic_label)
+    mic_layout.addWidget(gui.mic_combobox, 1)
+    content_layout.addWidget(mic_row)
+    
+    # --- Остальные настройки через шаблон ---
     mic_settings = [
-        {'label': _("Микрофон", "Microphone"), 'type': 'combobox', 'key': 'MIC_DEVICE',
-         'options': get_microphone_list(), 'default': get_microphone_list()[0] if get_microphone_list() else "",
-         'command': lambda: on_mic_selected(gui), 'widget_name': 'mic_combobox'},
         {'label': _("Тип распознавания", "Recognition Type"), 'type': 'combobox', 'key': 'RECOGNIZER_TYPE',
          'options': ["google", "gigaam"], 'default': "google",
          'tooltip': _("Выберите движок распознавания речи", "Select speech recognition engine"),
          'command': lambda: update_recognizer_specific_widgets(gui, gui.settings.get('RECOGNIZER_TYPE'))},
         {'label': _("Устройство GigaAM", "GigaAM Device"), 'type': 'combobox', 'key': 'GIGAAM_DEVICE',
          'options': ["auto", "cuda", "cpu", "dml"], 'default': "auto",
-         'tooltip': _("Устройство для GigaAM. auto - выберет CUDA для NVIDIA и DML/CPU для остальных. dml - только для AMD/Intel.", "Device for GigaAM. auto - selects CUDA for NVIDIA and DML/CPU for others. dml - for AMD/Intel only."),
-         'widget_name': 'GIGAAM_DEVICE_frame', 'command': lambda: on_gigaam_device_selected(gui)},
+         'tooltip': _("Устройство для GigaAM. auto - выберет CUDA для NVIDIA и DML/CPU для остальных. dml - только для AMD/Intel.", 
+                     "Device for GigaAM. auto - selects CUDA for NVIDIA and DML/CPU for others. dml - for AMD/Intel only."),
+         'widget_name': 'GIGAAM_DEVICE_combobox', 'command': lambda: on_gigaam_device_selected(gui)},
         {'label': _("Порог тишины (VAD)", "Silence Threshold (VAD)"), 'type': 'entry', 'key': 'SILENCE_THRESHOLD',
          'default': '0.01', 'validation': gui.validate_float_positive,
          'tooltip': _("Порог громкости для определения начала/конца речи (VAD).", "Volume threshold for Voice Activity Detection (VAD).")},
@@ -30,22 +78,50 @@ def setup_microphone_controls(gui, parent_layout):
          'tooltip': _("Длительность тишины для определения конца фразы (VAD).", "Duration of silence to detect end of phrase (VAD).")},
         {'label': _("Интервал обработки Vosk (сек)", "Vosk Process Interval (sec)"), 'type': 'entry', 'key': 'VOSK_PROCESS_INTERVAL',
          'default': '0.1', 'validation': gui.validate_float_positive,
-         'tooltip': _("Интервал, с которым Vosk обрабатывает аудио в режиме реального времени.", "Interval at which Vosk processes audio in live recognition mode.")},
+         'tooltip': _("Интервал, с которым Vosk обрабатывает аудио в режиме реального времени.", 
+                     "Interval at which Vosk processes audio in live recognition mode.")},
         {'label': _("Распознавание", "Recognition"), 'type': 'checkbutton', 'key': 'MIC_ACTIVE',
          'default_checkbutton': False, 'tooltip': _("Включить/выключить распознавание голоса", "Toggle voice recognition")},
-        {'label': _("Мгновенная отправка", "Immediate sending"), 'type': 'checkbutton', 'key': 'MIC_INSTANT_SENT',
-         'default_checkbutton': False, 'tooltip': _("Отправлять сообщение сразу после распознавания", "Send message immediately after recognition")},
+        {'label': _("Мгновенная отправка", "Immediate sending"), 'type': 'checkbutton', 'key': 'MIC_INSTANT_SENT', 
+         "depends_on": "MIC_ACTIVE", 'default_checkbutton': False, 
+         'tooltip': _("Отправлять сообщение сразу после распознавания", "Send message immediately after recognition")},
         {'label': _("Обновить список", "Refresh list"), 'type': 'button', 'command': lambda: update_mic_list(gui)}
     ]
-
-    gui.mic_section = create_settings_section(gui, parent_layout, _("Настройки микрофона", "Microphone Settings"), mic_settings)
     
+    for config in mic_settings:
+        widget = create_setting_widget(
+            gui=gui,
+            parent=content_widget,
+            label=config.get('label'),
+            setting_key=config.get('key', ''),
+            widget_type=config.get('type', 'entry'),
+            options=config.get('options'),
+            default=config.get('default', ''),
+            default_checkbutton=config.get('default_checkbutton', False),
+            validation=config.get('validation'),
+            tooltip=config.get('tooltip'),
+            command=config.get('command'),
+            widget_name=config.get('widget_name'),
+            depends_on=config.get('depends_on')
+        )
+        if widget:
+            content_layout.addWidget(widget)
+    
+    # Скрываем/показываем специфичные виджеты
     update_recognizer_specific_widgets(gui, gui.settings.get('RECOGNIZER_TYPE'))
+    
+    # Также создаем frame для GIGAAM_DEVICE чтобы можно было его скрывать
+    if hasattr(gui, 'GIGAAM_DEVICE_combobox'):
+        gui.GIGAAM_DEVICE_frame = gui.GIGAAM_DEVICE_combobox.parent()
 
 def get_microphone_list():
     try:
         devices = sd.query_devices()
-        input_devices = [f"{d['name']} ({i})" for i, d in enumerate(devices) if d['max_input_channels'] > 0]
+        input_devices = []
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0:
+                device_name = f"{d['name']} ({i})"
+                input_devices.append(device_name)
         return input_devices or [_("Микрофоны не найдены", "No microphones found")]
     except Exception as e:
         logger.error(f"Ошибка получения списка микрофонов: {e}")
@@ -117,9 +193,16 @@ def update_mic_list(gui):
         current_selection = gui.mic_combobox.currentText()
         gui.mic_combobox.clear()
         new_list = get_microphone_list()
-        gui.mic_combobox.addItems(new_list)
+        
+        for mic_name in new_list:
+            gui.mic_combobox.addItem(mic_name)
+            # Добавляем полное название как tooltip
+            index = gui.mic_combobox.count() - 1
+            gui.mic_combobox.setItemData(index, mic_name, Qt.ItemDataRole.ToolTipRole)
+        
         if current_selection in new_list:
             gui.mic_combobox.setCurrentText(current_selection)
+            gui.mic_combobox.setToolTip(current_selection)
 
 def load_mic_settings(gui):
     try:
@@ -134,8 +217,10 @@ def load_mic_settings(gui):
         if hasattr(gui, 'mic_combobox'):
             if full_device_name in all_devices:
                 gui.mic_combobox.setCurrentText(full_device_name)
+                gui.mic_combobox.setToolTip(full_device_name)
             elif all_devices:
                 gui.mic_combobox.setCurrentIndex(0)
+                gui.mic_combobox.setToolTip(gui.mic_combobox.currentText())
             
             # Устанавливаем микрофон через событие
             event_bus.emit(Events.SET_MICROPHONE, {

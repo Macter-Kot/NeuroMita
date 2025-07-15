@@ -304,29 +304,17 @@ class SpeechRecognition:
             logger.debug("Распознавание речи уже остановлено.")
             return
 
-        SpeechRecognition.active = False
         logger.info("Запрос на остановку распознавания речи...")
+        SpeechRecognition.active = False # Сигнализируем циклу в задаче, что нужно выйти
 
-        if SpeechRecognition._recognition_task and not SpeechRecognition._recognition_task.done():
-            try:
-                SpeechRecognition._recognition_task.result(timeout=5.0)  # Увеличили таймаут до 5 сек
-                logger.info("Задача распознавания речи успешно завершена.")
-            except asyncio.TimeoutError:
-                logger.warning("Таймаут при ожидании завершения задачи распознавания речи.")
-                if SpeechRecognition._recognition_task:
-                    SpeechRecognition._recognition_task.cancel()
-                    # Ожидаем, пока задача действительно завершится
-                    start_time = time.time()
-                    while SpeechRecognition._is_running and time.time() - start_time < 5:
-                        time.sleep(0.1)
-                    if SpeechRecognition._is_running:
-                        logger.error("Задача распознавания не завершилась после отмены.")
-            except Exception as e:
-                logger.error(f"Ошибка при ожидании завершения задачи распознавания речи: {e}")
-        else:
-            logger.debug("Задача распознавания речи уже завершена или не была запущена.")
-
+        task = SpeechRecognition._recognition_task
+        if task and not task.done():
+            task.cancel()
+            logger.info(f"Задача распознавания речи {id(task)} помечена на отмену.")
+        
+        SpeechRecognition._is_running = False
         SpeechRecognition._recognition_task = None
+        logger.info("Процедура остановки распознавания речи инициирована.")
 
     @staticmethod
     async def get_current_text() -> str:

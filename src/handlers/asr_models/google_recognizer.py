@@ -97,144 +97,159 @@ class GoogleRecognizer(SpeechRecognizerInterface):
         except Exception as e:
             return False, f"Ошибка проверки микрофона: {e}"
     
-    async def live_recognition(self, microphone_index: int, handle_voice_callback, 
-                              vad_model, active_flag, **kwargs) -> None:
+    async def live_recognition(      # сигнатура сохранилась
+            self,
+            microphone_index: int,
+            handle_voice_callback,   # async-корутина, куда передаём текст
+            vad_model,               # игнорируем для Google, но оставляем ради совместимости
+            active_flag,
+            **kwargs
+    ) -> None:
+        """
+        Онлайн-распознавание через Google Speech API.
+        Реализация использует Recognizer.listen_in_background, поэтому
+        • не блокирует event-loop;
+        • не запускает лишние executors;
+        • корректно завершается без heap-corruption.
+        """
+
+        # ------------------------------------------------------------------
+        # 1. Проверки зависимостей / доступа к микрофону
+        # ------------------------------------------------------------------
         if self._sr is None:
             self.logger.error("Модуль SpeechRecognition не инициализирован")
             return
 
-        # Проверяем список микрофонов
         try:
             mic_list = self._sr.Microphone.list_microphone_names()
             if microphone_index >= len(mic_list):
                 self.logger.error(f"Индекс микрофона {microphone_index} выходит за пределы списка")
                 return
-                
         except Exception as e:
             self.logger.error(f"Не удалось получить список микрофонов: {e}")
             return
-        
-        # Проверяем разрешения на микрофон
-        permissions_ok, permission_error = self._check_microphone_permissions(microphone_index)
-        if not permissions_ok:
-            self.logger.error(f"Проблема с доступом к микрофону: {permission_error}")
-            
-            # Показываем MessageBox с ошибкой
-            try:
-                from PyQt6.QtWidgets import QMessageBox, QApplication
-                if QApplication.instance():
-                    msg = QMessageBox()
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    msg.setWindowTitle(_("Ошибка доступа к микрофону", "Microphone Access Error"))
-                    
-                    if "разрешени" in permission_error.lower() or "access denied" in permission_error.lower():
-                        msg.setText(_("Нет разрешения на доступ к микрофону", "No permission to access microphone"))
-                        msg.setInformativeText(_(
-                            "Проверьте настройки конфиденциальности Windows:\n"
-                            "Настройки → Конфиденциальность → Микрофон\n"
-                            "Разрешите доступ к микрофону для приложений",
-                            "Check Windows privacy settings:\n"
-                            "Settings → Privacy → Microphone\n"
-                            "Allow microphone access for applications"
-                        ))
-                    else:
-                        msg.setText(_("Ошибка доступа к микрофону", "Microphone access error"))
-                        msg.setInformativeText(permission_error)
-                    
-                    msg.exec()
-            except:
-                pass  # Если GUI недоступен, просто продолжаем
-            
+
+        ok, err = self._check_microphone_permissions(microphone_index)
+        if not ok:
+            self.logger.error(f"Проблема с доступом к микрофону: {err}")
             return
 
+        # ------------------------------------------------------------------
+        # 2. Открываем источник (PyAudio-stream) с подбором sample_rate
+        # ------------------------------------------------------------------
         recognizer = self._sr.Recognizer()
-        chunk_size = kwargs.get('chunk_size', 1024)
-        
-        # Конфигурации для попыток подключения
+        recognizer.pause_threshold = 0.8
+        recognizer.non_speaking_duration = 0.3
+        recognizer.dynamic_energy_threshold = False
+
+        chunk_size = kwargs.get("chunk_size", 1024)
         configs = [
             {"sample_rate": 44100, "chunk_size": chunk_size},
             {"sample_rate": 22050, "chunk_size": chunk_size},
             {"sample_rate": 16000, "chunk_size": chunk_size},
         ]
-        
-        source = None
-        for config in configs:
+
+        chosen_cfg = None
+        for cfg in configs:
             try:
-                source = self._sr.Microphone(
-                    device_index=microphone_index,
-                    sample_rate=config['sample_rate'],
-                    chunk_size=config['chunk_size']
-                )
-                
-                source.__enter__()
-                
-                if hasattr(source, 'stream') and source.stream is not None:
-                    self.logger.info(f"Микрофон подключен: {mic_list[microphone_index]}")
-                    break
-                else:
-                    source.__exit__(None, None, None)
-                    source = None
-                    
-            except Exception as e:
-                if source:
+                # Тестово открываем и тут же закрываем микрофон
+                with self._sr.Microphone(device_index=microphone_index,
+                                        sample_rate=cfg["sample_rate"],
+                                        chunk_size=cfg["chunk_size"]) as test_source:
+                    #  Быстрая подстройка под шум внутри тестового открытия
                     try:
-                        source.__exit__(None, None, None)
-                    except:
+                        recognizer.adjust_for_ambient_noise(test_source, duration=0.5)
+                    except Exception:
                         pass
-                source = None
-                self.logger.debug(f"Конфигурация {config} не подошла: {e}")
-        
-        if source is None:
-            self.logger.error("Не удалось подключиться к микрофону")
+
+                # если дошли сюда без исключения – конфигурация рабочая
+                chosen_cfg = cfg
+                self.logger.info(
+                    f"Микрофон подключён: {mic_list[microphone_index]} "
+                    f"(sr={cfg['sample_rate']}, chunk={cfg['chunk_size']})"
+                )
+                break
+
+            except Exception as e:
+                self.logger.debug(f"Конфигурация {cfg} не подошла: {e}")
+
+        if chosen_cfg is None:
+            self.logger.error("Не удалось подключиться к микрофону ни по одной конфигурации")
             return
-        
+
+        # Создаём НОВЫЙ экземпляр (НЕ открываем) – его передадим listen_in_background
+        source = self._sr.Microphone(
+            device_index=microphone_index,
+            sample_rate=chosen_cfg["sample_rate"],
+            chunk_size=chosen_cfg["chunk_size"],
+        )
+        # Быстрая подстройка под шум
         try:
-            # Быстрая настройка шума
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        except Exception:
+            pass
+
+        # ------------------------------------------------------------------
+        # 3. Callback, который будет работать в ФОНОВОМ ПОТОКЕ listen_in_background
+        # ------------------------------------------------------------------
+        loop = asyncio.get_running_loop()     # текущий asyncio-loop
+
+        def _bg_callback(rec: "speech_recognition.Recognizer", audio):
+            """
+            Работает из background-thread’а, который создаёт
+            SpeechRecognition.listen_in_background.
+            Вся тяжёлая синхронщина – здесь, но вывод результатов
+            отдаём обратно в asyncio-loop НЕ блокируя его.
+            """
             try:
-                recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            except:
-                pass  # Игнорируем ошибки настройки шума
-            
-            self.logger.info("Микрофон готов к распознаванию")
-            
-            # Основной цикл
+                text = rec.recognize_google(audio, language="ru-RU")
+                if text and text.strip():
+                    self.logger.info(f"Распознано (google): {text}")
+
+                    # Планируем выполнение асинхронного пользовательского коллбэка
+                    # внутри event-loop’а, а не в текущем (фон)-потоке.
+                    loop.call_soon_threadsafe(
+                        lambda t=text: asyncio.create_task(handle_voice_callback(t))
+                    )
+            except self._sr.UnknownValueError:
+                # просто тишина / не разобрал – игнорируем
+                pass
+            except self._sr.RequestError as e:
+                # Ошибка связи с API; выводим и продолжаем
+                self.logger.error(f"Google API error (bg-thread): {e}")
+            except Exception as e:
+                self.logger.exception(f"Ошибка в bg-callback: {e}")
+
+        # ------------------------------------------------------------------
+        # 4. Запускаем прослушивание в фоне
+        # ------------------------------------------------------------------
+        stop_listening = recognizer.listen_in_background(
+            source,
+            _bg_callback,
+            phrase_time_limit=10,          # можно подстроить
+        )
+
+        self.logger.info("Микрофон готов к распознаванию (listen_in_background запущен).")
+
+        # ------------------------------------------------------------------
+        # 5. Живём, пока active_flag() == True
+        # ------------------------------------------------------------------
+        try:
+            # Просто периодически «встряхиваем» цикл, чтобы ловить отмену/stop
             while active_flag():
-                try:
-                    audio = await asyncio.get_event_loop().run_in_executor(
-                        None, lambda: recognizer.listen(source, timeout=5, phrase_time_limit=10)
-                    )
-                    
-                    text = await asyncio.get_event_loop().run_in_executor(
-                        None, lambda: recognizer.recognize_google(audio, language="ru-RU")
-                    )
-                    
-                    if text and text.strip():
-                        self.logger.info(f"Распознано: {text}")
-                        await handle_voice_callback(text)
-                        
-                except self._sr.WaitTimeoutError:
-                    continue
-                except self._sr.UnknownValueError:
-                    continue
-                except self._sr.RequestError as e:
-                    self.logger.error(f"Ошибка Google API: {e}")
-                    await asyncio.sleep(2)
-                except RuntimeError as e:
-                    if "after shutdown" in str(e):
-                        self.logger.warning("Попытка run_in_executor после shutdown. Выходим из цикла.")
-                        break
-                    raise
-                except Exception as e:
-                    self.logger.error(f"Ошибка распознавания: {e}")
-                    await asyncio.sleep(1)
-                    
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            self.logger.info("live_recognition отменена пользователем.")
         finally:
-            if source:
-                try:
-                    source.__exit__(None, None, None)
-                    self.logger.debug("Микрофон закрыт")
-                except:
-                    pass
+            # 6. Остановка: закрываем background-поток и PyAudio-stream
+            try:
+                stop_listening(wait_for_stop=False)   # мягкая остановка фонового потока
+            except Exception as e:
+                self.logger.warning(f"Ошибка при stop_listening: {e}")
+
+            source = None
+
+            self.logger.info("Микрофон (Google) корректно закрыт.")
     
     def cleanup(self) -> None:
         self._sr = None

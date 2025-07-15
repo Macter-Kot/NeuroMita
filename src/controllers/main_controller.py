@@ -98,7 +98,6 @@ class MainController:
 
         self.audio_controller.delete_all_sound_files()
 
-        self.telegram_controller.start_silero_async()
         
         # Подписываемся на события
         self._subscribe_to_events()
@@ -116,6 +115,7 @@ class MainController:
             self.gui_controller = GuiController(self, view)
             logger.warning("GuiController успешно инициализирован.")
             self.settings_controller.load_api_settings(False)
+            self.telegram_controller.start_silero_async()
 
     def connect_view_signals(self):
         self.gui_controller.connect_view_signals()

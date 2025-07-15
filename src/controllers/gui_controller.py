@@ -32,6 +32,17 @@ class GuiController:
         logger.info("GuiController подписался на события")
 
         QTimer.singleShot(100, self.check_and_install_ffmpeg)
+
+        # ────────────────────────────────────────────────────────────
+        # Прокидываем auth_signals, созданные в TelegramController,
+        # во View, чтобы к ним могли обращаться все диалоги UI.
+        # ────────────────────────────────────────────────────────────
+        if self.view is not None:
+            self.view.auth_signals = getattr(
+                self.main_controller.telegram_controller,
+                "auth_signals",
+                None
+            )
         
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.UPDATE_STATUS_COLORS, self._on_update_status_colors, weak=False)
@@ -238,9 +249,14 @@ class GuiController:
             logger.error("GuiController: view не найден!")
             
     def get_auth_signals(self):
-        if self.view:
-            return getattr(self.view, 'auth_signals', None)
-        logger.warning("GuiController: view не найден!")
+        """
+        Возвращаем объект TelegramAuthSignals,
+        созданный в TelegramController.
+        """
+        tg_ctrl = getattr(self.main_controller, "telegram_controller", None)
+        if tg_ctrl and hasattr(tg_ctrl, "auth_signals"):
+            return tg_ctrl.auth_signals
+        logger.warning("GuiController: auth_signals ещё не готовы")
         return None
         
     def _on_update_status_colors(self, event: Event):

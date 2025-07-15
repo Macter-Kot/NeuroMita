@@ -7,20 +7,7 @@ from main_logger import logger
 
 
 class AudioConverter:
-    # Проверяем, где лежит ffmpeg\
-    #ffmpeg_rel_path = os.path.join("ffmpeg-7.1-essentials_build", "bin", "ffmpeg.exe")
-    ffmpeg_rel_path = os.path.join("ffmpeg.exe")
-    if getattr(sys, 'frozen', False):
-        # Если программа собрана в exe, получаем путь к исполняемому файлу
-        base_dir = os.path.dirname(sys.executable)
-
-        # Альтернативный вариант: если ffmpeg всё же упакован в _MEIPASS
-        alt_base_dir = sys._MEIPASS
-    else:
-        # Если программа запускается как скрипт
-        base_dir = os.path.dirname(__file__)
-        alt_base_dir = base_dir  # Для единообразия
-    ffmpeg_path = os.path.join(base_dir, ffmpeg_rel_path)
+    ffmpeg_path = os.path.join("ffmpeg.exe")
 
     @staticmethod
     async def convert_to_wav(input_file, output_file):

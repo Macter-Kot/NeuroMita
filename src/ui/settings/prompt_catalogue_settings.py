@@ -10,18 +10,16 @@ from managers.prompt_catalogue_manager import (
     list_prompt_sets, read_info_json, write_info_json,
     copy_prompt_set, create_new_set, delete_prompt_set
 )
-from managers.settings_manager import CollapsibleSection
+from ui.gui_templates import create_section_header
 
 from core.events import get_event_bus, Events
 
 def setup_prompt_catalogue_controls(gui, parent_layout):
     catalogue_path = "PromptsCatalogue"
     
-    prompt_catalogue_section = CollapsibleSection(_("Каталог промптов", "Prompt Catalogue"))
-    parent_layout.addWidget(prompt_catalogue_section)
-
-    content_layout = prompt_catalogue_section.content_layout
-
+    # Создаём заголовок секции
+    create_section_header(parent_layout, _("Каталог промптов", "Prompt Catalogue"))
+    
     # Combobox and Refresh button
     combo_frame = QWidget()
     combo_layout = QHBoxLayout(combo_frame)
@@ -35,7 +33,7 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
     
     refresh_button = QPushButton(_("Обновить", "Refresh"))
     combo_layout.addWidget(refresh_button)
-    content_layout.addWidget(combo_frame)
+    parent_layout.addWidget(combo_frame)
     
     # Action Buttons
     button_frame = QWidget()
@@ -50,11 +48,11 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
     button_layout.addWidget(create_button)
     button_layout.addWidget(open_folder_button)
     button_layout.addWidget(delete_button)
-    content_layout.addWidget(button_frame)
+    parent_layout.addWidget(button_frame)
 
     # Info editing section
     info_json_frame = QFrame()
-    info_json_frame.setObjectName("InfoFrame") # Можно стилизовать, если нужно
+    info_json_frame.setObjectName("InfoFrame")
     info_layout = QVBoxLayout(info_json_frame)
     info_layout.setSpacing(4)
     info_layout.setContentsMargins(0, 5, 0, 5)
@@ -88,7 +86,7 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
     save_button_layout.addStretch()
     
     info_layout.addLayout(save_button_layout)
-    content_layout.addWidget(info_json_frame)
+    parent_layout.addWidget(info_json_frame)
 
     def update_prompt_set_combobox():
         current_text = prompt_set_combobox.currentText()
@@ -153,17 +151,24 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
         if not selected_set_name:
             QMessageBox.warning(gui, _("Внимание", "Warning"), _("Набор промптов не выбран для замены.", "No prompt set selected for replacement."))
             return
-        set_path = os.path.join(catalogue_path, selected_set_name)
-        if gui.model.current_character and gui.model.current_character.char_id:
-             character_prompts_path = os.path.join("Prompts", gui.model.current_character.char_id)
-             if copy_prompt_set(set_path, character_prompts_path):
-                 QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен к текущему персонажу.", "Prompt set successfully applied to the current character."))
-                 if hasattr(gui.model.current_character, 'reload_character_data'):
-                     gui.model.current_character.reload_character_data()
-             else:
-                 QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
+        
+        event_bus = get_event_bus()
+        current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+        
+        if current_char_data and current_char_data[0]:
+            char_data = current_char_data[0]
+            character_name = char_data.get('char_id')
+            
+            set_path = os.path.join(catalogue_path, selected_set_name)
+            character_prompts_path = os.path.join("Prompts", character_name)
+            
+            if copy_prompt_set(set_path, character_prompts_path):
+                QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен к текущему персонажу.", "Prompt set successfully applied to the current character."))
+                event_bus.emit(Events.RELOAD_CHARACTER_DATA)
+            else:
+                QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
         else:
-             QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран. Не удалось применить набор промптов.", "No character selected. Failed to apply prompt set."))
+            QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран. Не удалось применить набор промптов.", "No character selected. Failed to apply prompt set."))
 
     def create_new_set_action():
         event_bus = get_event_bus()

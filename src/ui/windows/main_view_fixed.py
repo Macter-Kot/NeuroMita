@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QScrollArea, QFrame, QSplitter,
     QMessageBox, QDialog, QProgressBar, QStackedWidget,
-    QTextBrowser, QLineEdit, QFileDialog, QGraphicsOpacityEffect, QSizePolicy  
+    QTextBrowser, QLineEdit, QFileDialog, QGraphicsOpacityEffect
 )
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIcon, QPalette, QKeyEvent, QPixmap
 import qtawesome as qta
@@ -40,44 +40,67 @@ from ui.widgets.mita_status_widget import MitaStatusWidget
 from controllers.voice_model_controller import VoiceModelController
 
 from core.events import get_event_bus, Events, Event
-from PyQt6.QtCore import (Qt, QTimer, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QBuffer, QIODevice, QEvent)
 
 
-class SettingsOverlay(QWidget):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setObjectName("SettingsOverlay")
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("""
-            QWidget#SettingsOverlay {
-                background-color: #1a1a1a;
-                border-left: 4px solid #0f0f0f;
-            }
-            QWidget#SettingsOverlay QStackedWidget,
-            QWidget#SettingsOverlay QStackedWidget > QWidget,
-            QWidget#SettingsOverlay QScrollArea,
-            QWidget#SettingsOverlay QScrollArea > QWidget > QWidget {
-                background-color: transparent;
-                border: none;
-            }
-        """)
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 10, 10, 10)
-
-        self.stack = QStackedWidget()
-        lay.addWidget(self.stack)
-
-    def add_container(self, container):
-        self.stack.addWidget(container)
-
-    def show_category(self, container):
-        self.stack.setCurrentWidget(container)
-        self.show()
+class SettingsCollector:
+    """Коллектор для перехвата и добавления виджетов без CollapsibleSection"""
+    def __init__(self, target_layout):
+        self.target_layout = target_layout
         
-        if isinstance(container, QScrollArea):
-            container.verticalScrollBar().setValue(0)
+    def addWidget(self, widget):
+        if isinstance(widget, CollapsibleSection):
+            widget.expand()
+            for i in range(widget.content_layout.count()):
+                item = widget.content_layout.itemAt(i)
+                if item and item.widget():
+                    content_widget = item.widget()
+                    content_widget.setParent(None)
+                    self.target_layout.addWidget(content_widget)
+            widget.deleteLater()
+        else:
+            self.target_layout.addWidget(widget)
+    
+    def addLayout(self, layout):
+        self.target_layout.addLayout(layout)
+    
+    def addStretch(self):
+        self.target_layout.addStretch()
+    
+    def widget(self):
+        return self.target_layout.parentWidget()
+
+class SettingsWrapper:
+    """Обёртка для перехвата виджетов из CollapsibleSection"""
+    def __init__(self, parent, layout):
+        self.parent = parent
+        self.layout = layout
+        self._widget = parent
+        
+    def addWidget(self, widget):
+        if isinstance(widget, CollapsibleSection):
+            # Раскрываем секцию
+            widget.expand()
+            # Добавляем заголовок как обычную метку
+            title_label = QLabel(widget.title_label.text())
+            title_label.setObjectName('SeparatorLabel')
+            title_label.setStyleSheet('font-weight: bold; padding: 5px 0;')
+            self.layout.addWidget(title_label)
+            
+            # Извлекаем все виджеты из содержимого
+            while widget.content_layout.count():
+                item = widget.content_layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(self.parent)
+                    self.layout.addWidget(item.widget())
+        else:
+            widget.setParent(self.parent)
+            self.layout.addWidget(widget)
+    
+    def widget(self):
+        return self._widget
+
+
 
 class SettingsIconButton(QPushButton):
     def __init__(self, icon_name, tooltip_text, parent=None):
@@ -88,44 +111,20 @@ class SettingsIconButton(QPushButton):
         self.setIconSize(QSize(icon_size, icon_size))
         self.setToolTip(tooltip_text)
         self.setFixedSize(40, 40)
-        self.is_active = False
-        self.update_style()
-        
-    def set_active(self, active):
-        self.is_active = active
-        self.update_style()
-        
-    def update_style(self):
-        if self.is_active:
-            self.setStyleSheet("""
-                QPushButton {
-                    background-color: #8a2be2;
-                    border: none;
-                    padding: 8px;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #9932cc;
-                }
-                QPushButton:pressed {
-                    background-color: #7b1fa2;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    border: none;
-                    padding: 8px;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(138, 43, 226, 0.3);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(138, 43, 226, 0.5);
-                }
-            """)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: rgba(138, 43, 226, 0.3);
+            }
+            QPushButton:pressed {
+                background-color: rgba(138, 43, 226, 0.5);
+            }
+        """)
 
 class ChatGUI(QMainWindow):
     update_chat_signal = pyqtSignal(str, str, bool, str)
@@ -168,8 +167,6 @@ class ChatGUI(QMainWindow):
         super().__init__()
         self.settings = settings
         
-        self.SETTINGS_PANEL_WIDTH = 400
-        
         self.event_bus = get_event_bus()
         self._connect_signals()
         
@@ -208,12 +205,6 @@ class ChatGUI(QMainWindow):
         self.pulse_error_signal.connect(self._pulse_error_slot)
 
         self.setup_ui()
-        
-        self.settings_animation = QPropertyAnimation(self.settings_overlay, b"maximumWidth")
-        self.settings_animation.setDuration(250)
-        self.settings_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
-
-
         self.chat_window.installEventFilter(self)
 
         self.overlay = OverlayWidget(self)
@@ -276,21 +267,16 @@ class ChatGUI(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        self.setup_chat_frame(main_layout)
         self.setup_settings_panel(main_layout)
+        self.setup_chat_frame(main_layout)
         
+        # Инициализируем контейнеры настроек
         self._init_settings_containers()
         
         self.resize(1200, 800)
-        
-    def _on_hide_animation_finished(self):
-        self.settings_overlay.hide()
-        try:
-            self.settings_animation.finished.disconnect(self._on_hide_animation_finished)
-        except TypeError:
-            pass
 
     def _init_settings_containers(self):
+        """Создаём контейнер для каждой категории настроек и сразу кладём в QStackedWidget."""
         callbacks = {
             "general":     self.setup_common_controls,
             "language":    language_settings.create_language_section,
@@ -311,65 +297,77 @@ class ChatGUI(QMainWindow):
         }
 
         for key, fn in callbacks.items():
+            # ИЗМЕНЕНО: Создаем ScrollArea для каждой категории, чтобы контент можно было прокручивать
             scroll_area = QScrollArea()
             scroll_area.setWidgetResizable(True)
             scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-            scroll_area.setObjectName(f"ScrollArea_{key}")
-            
-            # Отключаем горизонтальную полосу прокрутки
-            scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            
-            content_widget = QWidget()
-            content_widget.setObjectName(f"ContentWidget_{key}")
-            
-            content_layout = QVBoxLayout(content_widget)
-            content_layout.setContentsMargins(10, 10, 10, 10)  # Добавляем отступы
-            content_layout.setSpacing(5)
+            scroll_area.setStyleSheet("QScrollArea { background-color: transparent; }")
+
+            cont = QWidget() # Виджет, который будет внутри ScrollArea
+            lay  = QVBoxLayout(cont)
+            lay.setContentsMargins(0, 5, 5, 5) # Небольшой отступ справа для скроллбара
+            lay.setSpacing(10)
 
             if isinstance(fn, types.MethodType) and fn.__self__ is self:
-                fn(content_layout)
+                fn(lay)
             else:
-                fn(self, content_layout)
-            
-            content_layout.addStretch()
-            
-            scroll_area.setWidget(content_widget)
+                fn(self, lay)
 
+            # Логика разворачивания CollapsibleSection остается прежней
+            i = 0
+            while i < lay.count():
+                item = lay.itemAt(i)
+                w = item.widget()
+                if isinstance(w, CollapsibleSection):
+                    w.expand()
+                    while w.content_layout.count():
+                        sub_item = w.content_layout.takeAt(0)
+                        if sub_item.widget():
+                            sub_w = sub_item.widget()
+                            sub_w.setParent(cont)
+                            lay.insertWidget(i, sub_w)
+                            i += 1
+                    w.deleteLater()
+                    lay.removeItem(item)
+                    continue
+                i += 1
+
+            lay.addStretch()
+            
+            # ИЗМЕНЕНО: Добавляем виджет с контентом в ScrollArea
+            scroll_area.setWidget(cont)
+            
+            # ИЗМЕНЕНО: Сохраняем ScrollArea в словаре и добавляем в QStackedWidget
             self.settings_containers[key] = scroll_area
-            self.settings_overlay.add_container(scroll_area)
+            self.settings_stack.addWidget(scroll_area)
 
     def show_settings_category(self, category):
-        self.settings_animation.stop()
-
-        is_hiding = (self.current_settings_category == category and self.settings_overlay.width() > 0)
-        
-        # Обновляем активное состояние кнопок
-        for cat, btn in self.settings_buttons.items():
-            btn.set_active(cat == category and not is_hiding)
-        
-        if is_hiding:
+        # Логика для скрытия панели, если нажать на ту же иконку
+        if self.current_settings_category == category and self.settings_container.isVisible():
+            self.settings_container.hide()
             self.current_settings_category = None
-            self.settings_animation.setEndValue(0)
-            
-            try:
-                self.settings_animation.finished.disconnect(self._on_hide_animation_finished)
-            except TypeError:
-                pass
-            self.settings_animation.finished.connect(self._on_hide_animation_finished)
+            return
 
-        else:
-            self.current_settings_category = category
-            cont = self.settings_containers.get(category)
-            if not cont:
-                return
+        # Получаем контейнер (теперь это QScrollArea)
+        cont = self.settings_containers.get(category)
+        if not cont:
+            return
 
-            self.settings_overlay.show_category(cont)
-            self.settings_animation.setEndValue(self.SETTINGS_PANEL_WIDTH)
+        # Переключаем QStackedWidget на нужную страницу
+        self.settings_stack.setCurrentWidget(cont)
+        
+        # Показываем фрейм с настройками, если он был скрыт
+        if not self.settings_container.isVisible():
+            self.settings_container.show()
 
-        self.settings_animation.setStartValue(self.settings_overlay.width())
-        self.settings_animation.start()
+        # Обновляем текущую категорию
+        self.current_settings_category = category
+        
+        # Прокрутка в начало при переключении
+        cont.verticalScrollBar().setValue(0)
 
     def _create_debug_section(self, parent, layout):
+        """Создаёт секцию отладки"""
         debug_label = QLabel(_('Отладочная информация', 'Debug Information'))
         debug_label.setObjectName('SeparatorLabel')
         layout.addWidget(debug_label)
@@ -380,15 +378,37 @@ class ChatGUI(QMainWindow):
         self.debug_window.setMinimumHeight(200)
         layout.addWidget(self.debug_window)
         
-        status_indicators_widget.create_status_indicators(self, layout)
+        # Статус индикаторы
+        wrapper = SettingsWrapper(parent, layout)
+        status_indicators_widget.create_status_indicators(self, wrapper)
         
         self.update_debug_info()
 
     def _create_news_section(self, parent, layout):
+        """Создаёт секцию новостей"""
         news_label = QLabel(self.get_news_content())
         news_label.setWordWrap(True)
         news_label.setObjectName('SeparatorLabel')
         layout.addWidget(news_label)
+
+    def _create_simple_settings(self, config_list, parent, layout):
+        """Создаёт простые настройки без CollapsibleSection"""
+        for config in config_list:
+            widget = gui_templates.create_setting_widget(
+                gui=self,
+                parent=parent,
+                label=config.get('label'),
+                setting_key=config.get('key', ''),
+                widget_type=config.get('type', 'entry'),
+                options=config.get('options'),
+                default=config.get('default', ''),
+                default_checkbutton=config.get('default_checkbutton', False),
+                validation=config.get('validation'),
+                tooltip=config.get('tooltip'),
+                command=config.get('command')
+            )
+            if widget:
+                layout.addWidget(widget)
 
     def setup_news_control(self, parent):
         news_label = QLabel(self.get_news_content())
@@ -400,7 +420,7 @@ class ChatGUI(QMainWindow):
             {'label': _('Скрывать (приватные) данные', 'Hide (private) data'), 'key': 'HIDE_PRIVATE',
             'type': 'checkbutton', 'default_checkbutton': True},
         ]
-        gui_templates.create_settings_direct(self, parent_layout, common_config)
+        self.create_settings_section(parent_layout, _("Общие настройки", "Common settings"), common_config)
 
     def setup_debug_controls(self, parent):
         self.debug_window = QTextEdit()
@@ -413,26 +433,55 @@ class ChatGUI(QMainWindow):
         
         self.update_debug_info()
 
+    def _create_custom_language_section(self, parent, layout):
+        """Создаёт секцию языка напрямую"""
+        lang_config = [
+            {'label': 'Язык / Language', 'key': 'LANGUAGE', 'type': 'combobox',
+            'options': ["RU", "EN"], 'default': "RU"},
+        ]
+        self._create_simple_settings(lang_config, parent, layout)
+        
+        info_label = QLabel('Перезапусти программу после смены! / Restart program after change!')
+        info_label.setObjectName('SeparatorLabel')
+        layout.addWidget(info_label)
+
     def setup_settings_panel(self, main_layout):
-        settings_panel = QWidget()
-        settings_panel.setFixedWidth(50)
-        settings_panel.setStyleSheet("""
-            QWidget {
+        # Панель с иконками слева
+        icon_panel = QWidget()
+        icon_panel.setFixedWidth(50)
+        icon_panel.setObjectName("IconPanel") # ДОБАВЛЕНО: Имя для стилизации
+        icon_panel.setStyleSheet("""
+            QWidget#IconPanel {
                 background-color: #1e1e1e;
+                border-right: 1px solid #3a3a3a;
             }
         """)
         
-        panel_layout = QVBoxLayout(settings_panel)
+        panel_layout = QVBoxLayout(icon_panel)
         panel_layout.setContentsMargins(5, 10, 5, 10)
         panel_layout.setSpacing(5)
         
-        self.settings_overlay = SettingsOverlay(self)
-        self.settings_overlay.setMaximumWidth(0)
-        self.settings_overlay.hide()
+        # ДОБАВЛЕНО: Создаем постоянный контейнер для настроек, который будет частью макета
+        self.settings_container = QFrame()
+        self.settings_container.setObjectName("SettingsContainerFrame")
+        self.settings_container.setFixedWidth(400)
+        self.settings_container.setStyleSheet("""
+            QFrame#SettingsContainerFrame {
+                background-color: rgba(44, 44, 44, 0.95);
+                border-right: 1px solid #3a3a3a;
+            }
+        """)
+        settings_container_layout = QVBoxLayout(self.settings_container)
+        settings_container_layout.setContentsMargins(10, 10, 10, 10)
+        settings_container_layout.setSpacing(5)
         
-        # Сохраняем кнопки для управления активным состоянием
-        self.settings_buttons = {}
+        # ДОБАВЛЕНО: QStackedWidget для переключения между категориями настроек
+        self.settings_stack = QStackedWidget()
+        settings_container_layout.addWidget(self.settings_stack)
         
+        # ДОБАВЛЕНО: Скрываем контейнер по умолчанию
+        self.settings_container.hide()
+
         settings_categories = [
             ("fa5s.cog", _("Общие", "General"), "general"),
             ("fa5s.language", _("Язык", "Language"), "language"), 
@@ -454,14 +503,14 @@ class ChatGUI(QMainWindow):
         
         for icon_name, tooltip, category in settings_categories:
             btn = SettingsIconButton(icon_name, tooltip)
-            btn.clicked.connect(lambda checked, cat=category, b=btn: self.show_settings_category(cat))
+            btn.clicked.connect(lambda checked, cat=category: self.show_settings_category(cat))
             panel_layout.addWidget(btn)
-            self.settings_buttons[category] = btn
         
         panel_layout.addStretch()
         
-        main_layout.addWidget(self.settings_overlay)
-        main_layout.addWidget(settings_panel)
+        # ДОБАВЛЕНО: Добавляем оба виджета в главный макет
+        main_layout.addWidget(icon_panel)
+        main_layout.addWidget(self.settings_container)
 
     def setup_chat_frame(self, main_layout):
         chat_widget = QWidget()
@@ -469,10 +518,9 @@ class ChatGUI(QMainWindow):
         chat_layout.setContentsMargins(10, 10, 10, 10)
         chat_layout.setSpacing(5)
         
-        # Верхняя панель с кнопками и статусами
-        top_panel_layout = QHBoxLayout()
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
         
-        # Кнопки слева
         self.clear_chat_button = QPushButton(_("Очистить", "Clear"))
         self.clear_chat_button.clicked.connect(self.clear_chat_display)
         self.clear_chat_button.setMaximumHeight(30)
@@ -481,21 +529,11 @@ class ChatGUI(QMainWindow):
         self.load_history_button.clicked.connect(self.load_chat_history)
         self.load_history_button.setMaximumHeight(30)
         
-        top_panel_layout.addWidget(self.clear_chat_button)
-        top_panel_layout.addWidget(self.load_history_button)
+        button_layout.addWidget(self.clear_chat_button)
+        button_layout.addWidget(self.load_history_button)
         
-        # Статус индикаторы правее от кнопок (с небольшим отступом)
-        top_panel_layout.addSpacing(20)  # Отступ между кнопками и индикаторами
+        chat_layout.addLayout(button_layout)
         
-        # Создаем статус индикаторы
-        from ui.widgets import status_indicators_widget
-        status_indicators_widget.create_status_indicators_inline(self, top_panel_layout)
-        
-        top_panel_layout.addStretch()  # Растяжка справа
-        
-        chat_layout.addLayout(top_panel_layout)
-        
-        # Остальная часть остается без изменений...
         self.chat_window = QTextBrowser()
         self.chat_window.setOpenExternalLinks(False)
         self.chat_window.setReadOnly(True)
@@ -659,26 +697,128 @@ class ChatGUI(QMainWindow):
         
         main_layout.addWidget(chat_widget, 1)
 
+
+    def _create_settings_widgets(self, category):
+        widgets = []
+        
+        # Создаем временный контейнер, который будет собирать все виджеты
+        class WidgetCollector(QWidget):
+            def __init__(self, widgets_list):
+                super().__init__()
+                self.widgets_list = widgets_list
+                self.layout_obj = QVBoxLayout(self)
+                self.layout_obj.setContentsMargins(0, 0, 0, 0)
+                
+            def addWidget(self, widget):
+                # Перехватываем добавление виджетов
+                if isinstance(widget, CollapsibleSection):
+                    # Раскрываем секцию
+                    widget.expand()
+                    # Извлекаем все виджеты из содержимого секции
+                    for i in range(widget.content_layout.count()):
+                        item = widget.content_layout.itemAt(i)
+                        if item and item.widget():
+                            content_widget = item.widget()
+                            self.widgets_list.append(content_widget)
+                else:
+                    self.widgets_list.append(widget)
+        
+        collector = WidgetCollector(widgets)
+        
+        if category == "general":
+            common_config = [
+                {'label': _('Скрывать (приватные) данные', 'Hide (private) data'), 'key': 'HIDE_PRIVATE',
+                'type': 'checkbutton', 'default_checkbutton': True},
+            ]
+            gui_templates.create_settings_section(self, collector, _("Общие настройки", "Common settings"), common_config)
+                    
+        elif category == "language":
+            language_settings.create_language_section(self, collector)
+            
+        elif category == "api":
+            api_settings.setup_api_controls(self, collector)
+            
+        elif category == "models":
+            general_model_settings.setup_general_settings_control(self, collector)
+            
+        elif category == "voice":
+            voiceover_settings.setup_voiceover_controls(self, collector)
+            
+        elif category == "microphone":
+            microphone_settings.setup_microphone_controls(self, collector)
+            
+        elif category == "characters":
+            character_settings.setup_mita_controls(self, collector)
+            
+        elif category == "prompts":
+            prompt_catalogue_settings.setup_prompt_catalogue_controls(self, collector)
+            
+        elif category == "chat":
+            chat_settings.setup_chat_settings_controls(self, collector)
+            
+        elif category == "screen":
+            screen_analysis_settings.setup_screen_analysis_controls(self, collector)
+            
+        elif category == "tokens":
+            token_settings.setup_token_settings_controls(self, collector)
+            
+        elif category == "commands":
+            command_replacer_settings.setup_command_replacer_controls(self, collector)
+            
+        elif category == "history":
+            history_compressor.setup_history_compressor_controls(self, collector)
+            
+        elif category == "gamemaster":
+            gamemaster_settings.setup_game_master_controls(self, collector)
+            
+        elif category == "debug":
+            # Создаем секцию отладки
+            debug_config = []
+            section = gui_templates.create_settings_section(self, collector, _("Отладка", "Debug"), debug_config)
+            
+            self.debug_window = QTextEdit()
+            self.debug_window.setReadOnly(True)
+            self.debug_window.setObjectName("DebugWindow")
+            self.debug_window.setMinimumHeight(200)
+            
+            # Добавляем в секцию через её метод
+            if hasattr(section, 'add_widget'):
+                section.add_widget(self.debug_window)
+            
+            # Статус индикаторы
+            status_indicators_widget.create_status_indicators(self, collector)
+            
+            self.update_debug_info()
+            
+        elif category == "news":
+            news_config = [
+                {'label': self.get_news_content(), 'type': 'text'},
+            ]
+            gui_templates.create_settings_section(self, collector, _("Новости", "News"), news_config)
+        
+        # Важно: отсоединяем виджеты от collector перед возвратом
+        for widget in widgets:
+            if widget.parent() == collector:
+                widget.setParent(None)
+        
+        return widgets
+    
     def _debug_wrapper(self, parent_layout):
-        debug_label = QLabel(_('Отладочная информация', 'Debug Information'))
-        debug_label.setObjectName('SeparatorLabel')
-        parent_layout.addWidget(debug_label)
-        
-        self.debug_window = QTextEdit()
-        self.debug_window.setReadOnly(True)
-        self.debug_window.setObjectName("DebugWindow")
-        self.debug_window.setMinimumHeight(200)
-        parent_layout.addWidget(self.debug_window)
-        
-        self.update_debug_info()
+        """Debug-настройки без CollapsibleSection."""
+        self.setup_debug_controls(parent_layout)
 
     def _news_wrapper(self, parent_layout):
         self.setup_news_control(parent_layout)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        # Этот overlay для другого - для показа изображений, его оставляем
         self.overlay.resize(self.size())
         
+        # УДАЛЕНО: Ручное позиционирование settings_overlay больше не нужно,
+        # так как settings_container является частью автоматического макета.
+        
+        # Этот код для другого виджета, его оставляем
         QTimer.singleShot(0, self._position_mita_status)
 
     def _adjust_input_height(self):
@@ -1308,6 +1448,16 @@ class ChatGUI(QMainWindow):
         QTimer.singleShot(0, lambda: scrollbar.setValue(scrollbar.maximum() - old_max + old_value))
         
         logger.info(f"Загружено еще {len(messages_to_prepend)} сообщений.")
+
+    def create_settings_section(self, parent_layout, title, settings_config, icon_name=None):
+        return gui_templates.create_settings_section(self, parent_layout, title, settings_config, icon_name=icon_name)
+
+    def create_setting_widget(self, parent, label, setting_key='', widget_type='entry',
+                              options=None, default='', default_checkbutton=False, validation=None, tooltip=None,
+                              width=None, height=None, command=None, hide=False):
+        return gui_templates.create_setting_widget(self, parent, label, setting_key, widget_type,
+                                                  options, default, default_checkbutton, validation, tooltip,
+                                                  width, height, command, hide)
 
     def _save_setting(self, key, value):
         self.event_bus.emit(Events.SAVE_SETTING, {'key': key, 'value': value})
@@ -2193,52 +2343,3 @@ class ChatGUI(QMainWindow):
     def _on_cancel_model_loading(self):
         if hasattr(self, 'cancel_model_loading') and hasattr(self, 'loading_dialog'):
             self.cancel_model_loading(self.loading_dialog)
-
-    # region Следующие функции надо бы перенести в более подходящее место
-
-    def create_settings_section(self, parent_layout, title, settings_config, icon_name=None):
-        """Обёртка для обратной совместимости с модулями настроек"""
-        # Создаём контейнер для заголовка
-        header_widget = QWidget()
-        header_layout = QVBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 10)
-        header_layout.setSpacing(5)
-        
-        # Создаём заголовок
-        title_label = QLabel(title)
-        title_label.setObjectName('SectionTitle')
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet('''
-            QLabel#SectionTitle {
-                font-size: 14px;
-                font-weight: bold;
-                color: #ffffff;
-                padding: 5px 0;
-            }
-        ''')
-        header_layout.addWidget(title_label)
-        
-        # Создаём разделитель
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet('''
-            QFrame {
-                background-color: #4a4a4a;
-                max-height: 2px;
-                margin: 0 10px;
-            }
-        ''')
-        header_layout.addWidget(separator)
-        
-        parent_layout.addWidget(header_widget)
-        
-        # Создаём настройки
-        gui_templates.create_settings_direct(self, parent_layout, settings_config)
-
-    def create_settings_flat(self, parent_layout, title, settings_config, icon_name=None):
-        """Создаёт настройки без секции (плоско) - для микрофона, озвучки, персонажей и промптов"""
-        # Просто создаём настройки напрямую без заголовка секции
-        gui_templates.create_settings_direct(self, parent_layout, settings_config)
-
-    # endregion

@@ -1,5 +1,4 @@
-
-from ui.gui_templates import create_settings_section
+from ui.gui_templates import create_settings_section, create_section_header
 from utils import getTranslationVariant as _
 from main_logger import logger
 
@@ -38,6 +37,10 @@ def on_camera_selected(gui):
                 logger.error(f"Не удалось извлечь индекс из '{selection}'")
 
 def setup_screen_analysis_controls(gui, parent_layout):
+    # ОДИН ОБЩИЙ ЗАГОЛОВОК для всех настроек экрана
+    create_section_header(parent_layout, _("Настройки экрана", "Screen Settings"))
+    
+    # Первая CollapsibleSection
     screen_analysis_config = [
         {'label': _('Включить анализ экрана', 'Enable Screen Analysis'), 'key': 'ENABLE_SCREEN_ANALYSIS', 'type': 'checkbutton', 'default_checkbutton': False},
         {'label': _('Интервал захвата (сек)', 'Capture Interval (sec)'), 'key': 'SCREEN_CAPTURE_INTERVAL', 'type': 'entry', 'default': '5.0', 'validation': gui.validate_float_positive},
@@ -54,6 +57,7 @@ def setup_screen_analysis_controls(gui, parent_layout):
     ]
     create_settings_section(gui, parent_layout, _("Настройки анализа экрана", "Screen Analysis Settings"), screen_analysis_config)
 
+    # Вторая CollapsibleSection
     camera_analysis_config = [
         {'label': _('Включить захват с камеры', 'Enable Camera Capture'), 'key': 'ENABLE_CAMERA_CAPTURE', 'type': 'checkbutton', 'default_checkbutton': False},
         {'label': _('Камера', 'Camera'), 'key': 'CAMERA_DEVICE', 'type': 'combobox', 'options': get_camera_list(), 'default': get_camera_list()[0], 'command': lambda: on_camera_selected(gui), 'widget_name': 'camera_combobox'},
@@ -68,6 +72,7 @@ def setup_screen_analysis_controls(gui, parent_layout):
     ]
     gui.camera_section = create_settings_section(gui, parent_layout, _("Настройки захвата с камеры", "Camera Capture Settings"), camera_analysis_config)
 
+    # Третья CollapsibleSection
     frame_compression_config = [
         {'label': _('Включить угасание кадров', 'Enable Frame Regression'), 'key': 'IMAGE_QUALITY_REDUCTION_ENABLED', 'type': 'checkbutton', 'default_checkbutton': False},
         {'label': _('Начальный индекс снижения', 'Reduction Start Index'), 'key': 'IMAGE_QUALITY_REDUCTION_START_INDEX', 'type': 'entry', 'default': '25', 'validation': gui.validate_positive_integer_or_zero},

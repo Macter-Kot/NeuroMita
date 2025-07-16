@@ -264,4 +264,11 @@ def get_stylesheet():
         QLabel:disabled {
             color: #6a6a6a;
         }
+        QWidget#SettingsOverlay QStackedWidget > QWidget > QWidget {
+            background-color: transparent;
+        }
+
+        QLabel:disabled {
+            color: #6a6a6a;
+        }
     """

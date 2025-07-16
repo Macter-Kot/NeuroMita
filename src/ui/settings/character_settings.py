@@ -6,7 +6,7 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from presets.api_presets import API_PRESETS
-from ui.gui_templates import create_settings_section
+from ui.gui_templates import create_settings_direct
 from ui.settings.prompt_catalogue_settings import list_prompt_sets
 from managers.prompt_catalogue_manager import copy_prompt_set, get_prompt_catalogue_folder_name
 from main_logger import logger
@@ -21,8 +21,8 @@ def setup_mita_controls(gui, parent_layout):
     character_list = all_characters[0] if all_characters else ["Crazy"]
 
     provider_names = list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi'] + list(gui.settings.get("CUSTOM_API_PRESETS", {}).keys())
-    provider_names = list(dict.fromkeys(provider_names))  # Убрать дубликаты
-    provider_names.insert(0, _("Текущий", "Current"))  # 'Current' как первый вариант
+    provider_names = list(dict.fromkeys(provider_names))
+    provider_names.insert(0, _("Текущий", "Current"))
 
     # Получаем текущего персонажа для начальной настройки
     current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
@@ -55,13 +55,13 @@ def setup_mita_controls(gui, parent_layout):
         {'label': 'Меню эмоций Мит', 'key': 'EMOTION_MENU', 'type': 'checkbutton', 'default_checkbutton': False},
     ]
 
-    section = create_settings_section(gui, parent_layout, _("Настройки персонажей", "Characters settings"), mita_config)
+    create_settings_direct(gui, parent_layout, mita_config, 
+                          title=_("Настройки персонажей", "Characters settings"))
 
     if hasattr(gui, 'prompt_pack_combobox'):
         gui.prompt_pack_combobox.currentTextChanged.connect(lambda: apply_prompt_set(gui))
 
     if hasattr(gui, 'character_combobox'):
-        # Initial setup based on saved settings
         current_char = gui.settings.get("CHARACTER", "Crazy")
         change_character_actions(gui, current_char)
 
@@ -84,7 +84,6 @@ def change_character_actions(gui, character=None):
     else:
         return
 
-    # Устанавливаем персонажа для изменения
     event_bus.emit(Events.SET_CHARACTER_TO_CHANGE, {'character': selected_character})
     event_bus.emit(Events.CHECK_CHANGE_CHARACTER)
 
@@ -134,7 +133,6 @@ def apply_prompt_set(gui, force_apply=True):
         if copy_prompt_set(set_path, character_prompts_path):
             if force_apply:
                 QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен.", "Prompt set applied successfully."))
-            # Перезагружаем данные персонажа
             event_bus.emit(Events.RELOAD_CHARACTER_DATA)
         else:
             if force_apply:
@@ -218,5 +216,4 @@ def save_character_provider(gui, provider: str):
     provider_key = f"CHAR_PROVIDER_{selected_character}"
     gui.settings.set(provider_key, provider)
     logger.info(f"Saved provider '{provider}' for character '{selected_character}'")
-    # Обновляем персонажа
     event_bus.emit(Events.CHECK_CHANGE_CHARACTER)

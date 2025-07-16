@@ -2,7 +2,7 @@ import re
 from PyQt6.QtWidgets import QComboBox, QCheckBox, QWidget, QHBoxLayout, QLabel, QSizePolicy
 from PyQt6.QtCore import Qt
 
-from ui.gui_templates import create_settings_section, create_setting_widget
+from ui.gui_templates import create_setting_widget, create_settings_direct, create_section_header
 from main_logger import logger
 from handlers.asr_handler import SpeechRecognition
 from utils import getTranslationVariant as _
@@ -11,53 +11,62 @@ import sounddevice as sd
 import time
 
 def setup_microphone_controls(gui, parent_layout):
-    # Создаем основную секцию
-    gui.mic_section = create_settings_section(
-        gui, parent_layout, 
-        _("Настройки микрофона", "Microphone Settings"), 
-        []  # Передаем пустой список, виджеты добавим вручную
-    )
-    
-    content_widget = gui.mic_section.content_frame
-    content_layout = gui.mic_section.content_layout
+    # Создаём заголовок секции
+    create_section_header(parent_layout, _("Настройки микрофона", "Microphone Settings"))
     
     # --- Микрофон (специальная обработка для длинных названий) ---
     mic_row = QWidget()
+    mic_row.setMaximumWidth(380)  # Ограничиваем ширину всей строки
     mic_layout = QHBoxLayout(mic_row)
     mic_layout.setContentsMargins(0, 2, 0, 2)
     mic_layout.setSpacing(10)
     
     mic_label = QLabel(_("Микрофон", "Microphone"))
     mic_label.setMinimumWidth(140)
+    mic_label.setMaximumWidth(140)
     mic_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
     
     gui.mic_combobox = QComboBox()
     gui.mic_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-    gui.mic_combobox.setMaximumWidth(400)  # Ограничиваем максимальную ширину
+    gui.mic_combobox.setMinimumWidth(150)  # Минимальная ширина
+    gui.mic_combobox.setMaximumWidth(220)  # Максимальная ширина для предотвращения растягивания
     
     # Заполняем список микрофонов
     mic_list = get_microphone_list()
     for mic_name in mic_list:
-        gui.mic_combobox.addItem(mic_name)
-        # Добавляем полное название как tooltip
+        # Обрезаем слишком длинные названия для отображения
+        display_name = mic_name
+        if len(mic_name) > 40:
+            display_name = mic_name[:37] + "..."
+        gui.mic_combobox.addItem(display_name)
+        # Сохраняем полное название в данных элемента
         index = gui.mic_combobox.count() - 1
+        gui.mic_combobox.setItemData(index, mic_name, Qt.ItemDataRole.UserRole)
         gui.mic_combobox.setItemData(index, mic_name, Qt.ItemDataRole.ToolTipRole)
     
     # Устанавливаем текущее значение
     current_mic = gui.settings.get('MIC_DEVICE', mic_list[0] if mic_list else "")
-    gui.mic_combobox.setCurrentText(current_mic)
+    # Ищем по полному названию
+    for i in range(gui.mic_combobox.count()):
+        if gui.mic_combobox.itemData(i, Qt.ItemDataRole.UserRole) == current_mic:
+            gui.mic_combobox.setCurrentIndex(i)
+            break
     gui.mic_combobox.setToolTip(current_mic)
     
     # Подключаем обработчик
-    gui.mic_combobox.currentTextChanged.connect(lambda text: (
-        gui._save_setting('MIC_DEVICE', text),
-        gui.mic_combobox.setToolTip(text),
-        on_mic_selected(gui)
-    ))
+    def on_mic_changed(index):
+        if index >= 0:
+            full_name = gui.mic_combobox.itemData(index, Qt.ItemDataRole.UserRole)
+            gui._save_setting('MIC_DEVICE', full_name)
+            gui.mic_combobox.setToolTip(full_name)
+            on_mic_selected(gui, full_name)
+    
+    gui.mic_combobox.currentIndexChanged.connect(on_mic_changed)
     
     mic_layout.addWidget(mic_label)
-    mic_layout.addWidget(gui.mic_combobox, 1)
-    content_layout.addWidget(mic_row)
+    mic_layout.addWidget(gui.mic_combobox)
+    mic_layout.addStretch()  # Добавляем растяжку справа
+    parent_layout.addWidget(mic_row)
     
     # --- Остальные настройки через шаблон ---
     mic_settings = [
@@ -88,10 +97,11 @@ def setup_microphone_controls(gui, parent_layout):
         {'label': _("Обновить список", "Refresh list"), 'type': 'button', 'command': lambda: update_mic_list(gui)}
     ]
     
+    # Создаём виджеты с ограничением ширины
     for config in mic_settings:
         widget = create_setting_widget(
             gui=gui,
-            parent=content_widget,
+            parent=parent_layout.parent(),
             label=config.get('label'),
             setting_key=config.get('key', ''),
             widget_type=config.get('type', 'entry'),
@@ -105,12 +115,12 @@ def setup_microphone_controls(gui, parent_layout):
             depends_on=config.get('depends_on')
         )
         if widget:
-            content_layout.addWidget(widget)
+            widget.setMaximumWidth(380)  # Ограничиваем ширину каждого виджета
+            parent_layout.addWidget(widget)
     
     # Скрываем/показываем специфичные виджеты
     update_recognizer_specific_widgets(gui, gui.settings.get('RECOGNIZER_TYPE'))
     
-    # Также создаем frame для GIGAAM_DEVICE чтобы можно было его скрывать
     if hasattr(gui, 'GIGAAM_DEVICE_combobox'):
         gui.GIGAAM_DEVICE_frame = gui.GIGAAM_DEVICE_combobox.parent()
 
@@ -137,12 +147,19 @@ def update_recognizer_specific_widgets(gui, recognizer_type):
     if hasattr(gui, 'GIGAAM_DEVICE_frame'):
         gui.GIGAAM_DEVICE_frame.setVisible(show_gigaam)
 
-def on_mic_selected(gui):
+def on_mic_selected(gui, full_device_name=None):
     if not hasattr(gui, 'mic_combobox'): 
         return
     
     event_bus = get_event_bus()
-    selection = gui.mic_combobox.currentText()
+    
+    if full_device_name is None:
+        # Получаем полное имя из данных элемента
+        index = gui.mic_combobox.currentIndex()
+        if index >= 0:
+            full_device_name = gui.mic_combobox.itemData(index, Qt.ItemDataRole.UserRole)
+    
+    selection = full_device_name
     
     if selection and '(' in selection:
         try:
@@ -152,18 +169,15 @@ def on_mic_selected(gui):
             if device_id_match:
                 device_id = int(device_id_match.group(1))
                 
-                # Устанавливаем микрофон через событие
                 event_bus.emit(Events.SET_MICROPHONE, {
                     'name': microphone_name,
                     'device_id': device_id
                 })
                 
-                # Перезапускаем распознавание если активно
                 if gui.settings.get("MIC_ACTIVE", False):
                     def restart_recognition():
                         try:
                             event_bus.emit(Events.STOP_SPEECH_RECOGNITION)
-                            # Ожидаем завершения предыдущей задачи
                             start_time = time.time()
                             while SpeechRecognition._is_running and time.time() - start_time < 5:
                                 time.sleep(0.1)
@@ -174,7 +188,6 @@ def on_mic_selected(gui):
                         except Exception as e:
                             logger.error(f"Ошибка перезапуска распознавания: {e}")
                     
-                    # Запускаем в отдельном потоке чтобы избежать блокировки UI
                     import threading
                     threading.Thread(target=restart_recognition, daemon=True).start()
                         
@@ -190,19 +203,30 @@ def on_gigaam_device_selected(gui):
 
 def update_mic_list(gui):
     if hasattr(gui, 'mic_combobox'):
-        current_selection = gui.mic_combobox.currentText()
+        current_index = gui.mic_combobox.currentIndex()
+        current_full_name = None
+        if current_index >= 0:
+            current_full_name = gui.mic_combobox.itemData(current_index, Qt.ItemDataRole.UserRole)
+        
         gui.mic_combobox.clear()
         new_list = get_microphone_list()
         
         for mic_name in new_list:
-            gui.mic_combobox.addItem(mic_name)
-            # Добавляем полное название как tooltip
+            display_name = mic_name
+            if len(mic_name) > 40:
+                display_name = mic_name[:37] + "..."
+            gui.mic_combobox.addItem(display_name)
             index = gui.mic_combobox.count() - 1
+            gui.mic_combobox.setItemData(index, mic_name, Qt.ItemDataRole.UserRole)
             gui.mic_combobox.setItemData(index, mic_name, Qt.ItemDataRole.ToolTipRole)
         
-        if current_selection in new_list:
-            gui.mic_combobox.setCurrentText(current_selection)
-            gui.mic_combobox.setToolTip(current_selection)
+        # Восстанавливаем выбор
+        if current_full_name:
+            for i in range(gui.mic_combobox.count()):
+                if gui.mic_combobox.itemData(i, Qt.ItemDataRole.UserRole) == current_full_name:
+                    gui.mic_combobox.setCurrentIndex(i)
+                    gui.mic_combobox.setToolTip(current_full_name)
+                    break
 
 def load_mic_settings(gui):
     try:
@@ -215,20 +239,23 @@ def load_mic_settings(gui):
         full_device_name = f"{device_name} ({device_id})"
 
         if hasattr(gui, 'mic_combobox'):
-            if full_device_name in all_devices:
-                gui.mic_combobox.setCurrentText(full_device_name)
-                gui.mic_combobox.setToolTip(full_device_name)
-            elif all_devices:
-                gui.mic_combobox.setCurrentIndex(0)
-                gui.mic_combobox.setToolTip(gui.mic_combobox.currentText())
+            found = False
+            for i in range(gui.mic_combobox.count()):
+                if gui.mic_combobox.itemData(i, Qt.ItemDataRole.UserRole) == full_device_name:
+                    gui.mic_combobox.setCurrentIndex(i)
+                    gui.mic_combobox.setToolTip(full_device_name)
+                    found = True
+                    break
             
-            # Устанавливаем микрофон через событие
+            if not found and gui.mic_combobox.count() > 0:
+                gui.mic_combobox.setCurrentIndex(0)
+                gui.mic_combobox.setToolTip(gui.mic_combobox.itemData(0, Qt.ItemDataRole.UserRole))
+            
             event_bus.emit(Events.SET_MICROPHONE, {
                 'name': device_name,
                 'device_id': device_id
             })
 
-        # После загрузки настроек запускаем распознавание, если активно
         if gui.settings.get("MIC_ACTIVE", False):
             event_bus.emit(Events.UPDATE_SPEECH_SETTINGS, {
                 'key': "MIC_ACTIVE",

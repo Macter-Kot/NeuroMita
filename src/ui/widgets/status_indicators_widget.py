@@ -36,3 +36,29 @@ def create_status_indicators(gui, parent_layout):
     parent_layout.addWidget(status_frame)
     
     gui.update_status_colors()
+
+def create_status_indicators_inline(gui, layout):
+    """Создает статус индикаторы для верхней панели чата"""
+    def create_indicator(text):
+        checkbox = QCheckBox(text)
+        checkbox.setObjectName("StatusIndicator")
+        checkbox.setEnabled(False)
+        checkbox.setStyleSheet("color: #ffffff; spacing: 5px;")
+        return checkbox
+
+    gui.game_status_checkbox = create_indicator(_('Игра', 'Game'))
+    layout.addWidget(gui.game_status_checkbox)
+
+    gui.silero_status_checkbox = create_indicator(_('Телеграм', 'Telegram'))
+    layout.addWidget(gui.silero_status_checkbox)
+
+    gui.mic_status_checkbox = create_indicator(_('Распознавание', 'Recognition'))
+    layout.addWidget(gui.mic_status_checkbox)
+
+    gui.screen_capture_status_checkbox = create_indicator(_('Захват экрана', 'Screen'))
+    layout.addWidget(gui.screen_capture_status_checkbox)
+
+    gui.camera_capture_status_checkbox = create_indicator(_('Камера', 'Camera'))
+    layout.addWidget(gui.camera_capture_status_checkbox)
+    
+    gui.update_status_colors()

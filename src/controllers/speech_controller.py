@@ -89,7 +89,10 @@ class SpeechController:
                 
     def send_instantly(self, text_to_send):
         try:
-            if self.main.llm_processing:
+            llm_status_result = self.events_bus.emit_and_wait(Events.GET_LLM_PROCESSING_STATUS, timeout=0.1)
+            llm_processing = llm_status_result[0] if llm_status_result else False
+            
+            if llm_processing:
                 logger.debug("Пропускаем instant send - LLM обрабатывает запрос")
                 return
             

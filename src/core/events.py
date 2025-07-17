@@ -456,4 +456,5 @@ class Events:
     UPDATE_SCREEN_CAPTURE_EXCLUSION = "update_screen_capture_exclusion"
     CAPTURE_SETTINGS_LOADED = "capture_settings_loaded"
     SEND_PERIODIC_IMAGE_REQUEST = "send_periodic_image_request"
+    GET_LLM_PROCESSING_STATUS = "get_llm_processing_status"
 

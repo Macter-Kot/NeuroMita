@@ -137,13 +137,6 @@ class SpeechController:
         result = self.events_bus.emit_and_wait(Events.GET_USER_INPUT, timeout=0.5)
         return result[0] if result else ""
         
-    def _send_message(self):
-        self.events_bus.emit(Events.SEND_MESSAGE, {
-            'user_input': self.main.user_input,
-            'system_input': '',
-            'image_data': []
-        })
-        
     def _check_user_entry_exists(self):
         result = self.events_bus.emit_and_wait(Events.CHECK_USER_ENTRY_EXISTS, timeout=0.5)
         return result[0] if result else False

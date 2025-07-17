@@ -466,3 +466,7 @@ class Events:
     GET_INSTANT_SEND_STATUS = "get_instant_send_status"
     SET_INSTANT_SEND_STATUS = "set_instant_send_status"
 
+    # От loop_controller.py
+    LOOP_READY = "loop_ready"
+    RUN_IN_LOOP = "run_in_loop"
+

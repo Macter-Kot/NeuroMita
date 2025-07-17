@@ -15,6 +15,7 @@ from controllers.speech_controller import SpeechController
 from controllers.server_controller import ServerController
 from controllers.settings_controller import SettingsController
 from controllers.chat_controller import ChatController
+from controllers.loop_controller import LoopController
 
 from main_logger import logger
 from utils.ffmpeg_installer import install_ffmpeg
@@ -45,10 +46,8 @@ class MainController:
 
         self.staged_images = []
 
-        self.loop_ready_event = threading.Event()
-        self.loop = None
-        self.asyncio_thread = threading.Thread(target=self.start_asyncio_loop, daemon=True)
-        self.asyncio_thread.start()
+        self.loop_controller = LoopController(self)
+        logger.warning("LoopController успешно инициализирован.")
 
         self.gui_controller = None
 
@@ -157,8 +156,6 @@ class MainController:
         self.event_bus.subscribe(Events.STOP_SPEECH_RECOGNITION, self._on_stop_speech_recognition, weak=False)
         self.event_bus.subscribe(Events.UPDATE_SPEECH_SETTINGS, self._on_update_speech_settings, weak=False)
         
-        self.event_bus.subscribe(Events.GET_EVENT_LOOP, self._on_get_event_loop, weak=False)
-        
         self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
         self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
@@ -171,34 +168,6 @@ class MainController:
         self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input, weak=False)
         self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
-
-        self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
-
-
-    def start_asyncio_loop(self):
-        try:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            logger.info("Цикл событий asyncio успешно запущен.")
-            self.loop_ready_event.set()
-            try:
-                self.loop.run_forever()
-            except Exception as e:
-                logger.info(f"Ошибка в цикле событий asyncio: {e}")
-            finally:
-                logger.info("Начинаем shutdown asyncio loop...")
-                pending = asyncio.all_tasks(self.loop)
-                for task in pending:
-                    task.cancel()
-                try:
-                    self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                except Exception as e:
-                    logger.error(f"Ошибка при завершении pending tasks: {e}")
-                self.loop.close()
-                logger.info("Цикл событий asyncio закрыт.")
-        except Exception as e:
-            logger.info(f"Ошибка при запуске цикла событий asyncio: {e}")
-            self.loop_ready_event.set()
 
     def all_settings_actions(self, key, value):
         self.settings_controller.all_settings_actions(key, value)
@@ -259,25 +228,7 @@ class MainController:
         SpeechRecognition.speech_recognition_stop()
         time.sleep(2)
         
-        if self.loop and not self.loop.is_closed():
-            logger.info("Остановка asyncio loop...")
-            try:
-                if self.loop.is_running():
-                    self.loop.run_until_complete(self.loop.shutdown_default_executor())
-                
-                self.loop.call_soon_threadsafe(self.loop.stop)
-                self.loop.run_forever()
-            except Exception as e:
-                logger.error(f"Ошибка при shutdown loop: {e}")
-            finally:
-                if not self.loop.is_closed():
-                    self.loop.close()
-                logger.info("Asyncio loop остановлен.")
-        
-        if self.asyncio_thread.is_alive():
-            self.asyncio_thread.join(timeout=5)
-            if self.asyncio_thread.is_alive():
-                logger.warning("Asyncio thread didn't stop in time.")
+        self.loop_controller.stop_loop()
         
         logger.info("Закрываемся")
 
@@ -516,8 +467,8 @@ class MainController:
         
         try:
             from handlers.asr_handler import SpeechRecognition
-            if hasattr(self, 'loop'):
-                SpeechRecognition.speech_recognition_start(device_id, self.loop)
+            if hasattr(self, 'loop_controller') and self.loop_controller.loop:
+                SpeechRecognition.speech_recognition_start(device_id, self.loop_controller.loop)
                 logger.info("Распознавание речи запущено")
         except Exception as e:
             logger.error(f"Ошибка запуска распознавания речи: {e}")
@@ -536,11 +487,6 @@ class MainController:
         
         if key and hasattr(self, 'speech_controller'):
             self.speech_controller.update_speech_settings(key, value)
-    
-    def _on_get_event_loop(self, event: Event):
-        if hasattr(self, 'loop'):
-            return self.loop
-        return None
     
     def _on_show_loading_popup(self, event: Event):
         message = event.data.get('message', 'Loading...')
@@ -608,22 +554,6 @@ class MainController:
         thread = threading.Thread(target=check_loop, daemon=True)
         thread.start()
 
-    def _on_send_periodic_image_request(self, event: Event):
-        if self.loop and self.loop.is_running():
-            import asyncio
-            data = event.data
-            asyncio.run_coroutine_threadsafe(
-                self.chat_controller.async_send_message(
-                    user_input=data.get('user_input', ''),
-                    system_input=data.get('system_input', ''), 
-                    image_data=data.get('image_data', [])
-                ),
-                self.loop
-            )
-        else:
-            logger.error("Ошибка: Цикл событий не готов для периодической отправки изображений.")
-
-    # Делегирующие свойства
     @property
     def bot_handler(self):
         return self.telegram_controller.bot_handler
@@ -795,3 +725,7 @@ class MainController:
     @silero_turn_off_video.setter
     def silero_turn_off_video(self, value):
         self.audio_controller.silero_turn_off_video = value
+
+    @property
+    def loop(self):
+        return self.loop_controller.loop

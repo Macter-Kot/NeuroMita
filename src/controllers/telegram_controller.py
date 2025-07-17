@@ -30,6 +30,8 @@ class TelegramController:
         self.event_bus.subscribe("telegram_settings_loaded", self._on_telegram_settings_loaded, weak=False)
         self.event_bus.subscribe("telegram_settings_changed", self._on_telegram_settings_changed, weak=False)
         self.event_bus.subscribe("telegram_send_voice_request", self._on_send_voice_request, weak=False)
+        self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
+        self.event_bus.subscribe(Events.GET_SILERO_STATUS, self._on_get_silero_status, weak=False)
     
     def _on_telegram_settings_loaded(self, event: Event):
         data = event.data
@@ -47,6 +49,13 @@ class TelegramController:
             self.bot_handler.silero_time_limit = int(value)
         elif key == "AUDIO_BOT" and self.bot_handler:
             self.bot_handler.tg_bot = value
+    
+    def _on_set_silero_connected(self, event: Event):
+        self.silero_connected = event.data.get('connected', False)
+        logger.info(f"Статус подключения Silero установлен: {self.silero_connected}")
+    
+    def _on_get_silero_status(self, event: Event):
+        return self.silero_connected
         
     def connect_view_signals(self):
         self.auth_signals.code_required.connect(self._on_code_required)

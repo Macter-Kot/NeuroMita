@@ -1,16 +1,26 @@
 import threading
-import time  # Добавлено для time.strftime, хотя оно уже используется
+import time
 from server import ChatServer
 from main_logger import logger
 from PyQt6.QtCore import QTimer
+from core.events import get_event_bus, Events, Event
 
 class ServerController:
     def __init__(self, main_controller):
         self.main = main_controller
+        self.event_bus = get_event_bus()
         self.server = ChatServer(self.main, self.main.model_controller.model)
         self.server_thread = None
         self.running = False
+        
+        self._subscribe_to_events()
         self.start_server()
+        
+    def _subscribe_to_events(self):
+        self.event_bus.subscribe(Events.GET_SERVER_DATA, self._on_get_server_data, weak=False)
+        self.event_bus.subscribe(Events.RESET_SERVER_DATA, self._on_reset_server_data, weak=False)
+        self.event_bus.subscribe(Events.STOP_SERVER, self._on_stop_server, weak=False)
+        self.event_bus.subscribe(Events.GET_CHAT_SERVER, self._on_get_chat_server, weak=False)
         
     def start_server(self):
         if not self.running:
@@ -28,18 +38,16 @@ class ServerController:
         logger.info("Начинаем остановку сервера...")
         self.running = False
         
-        # Остановка внутреннего сервера с обработкой ошибок
         try:
             self.server.stop()
         except OSError as e:
-            if e.winerror == 10038:  # Игнорируем WinError 10038 (сокет уже не является сокетом)
+            if e.winerror == 10038:
                 logger.debug("Сокет уже закрыт, игнорируем ошибку 10038.")
             else:
                 logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Неожиданная ошибка при остановке сервера: {e}", exc_info=True)
         
-        # Ожидание завершения потока
         if self.server_thread and self.server_thread.is_alive():
             logger.info("Ожидание завершения серверного потока...")
             self.server_thread.join(timeout=5)
@@ -55,3 +63,21 @@ class ServerController:
             if needUpdate:
                 logger.info(f"[{time.strftime('%H:%M:%S')}] run_server_loop: Обнаружено needUpdate, вызываю load_chat_history.")
                 QTimer.singleShot(0, self.main.view.load_chat_history)
+    
+    def _on_get_server_data(self, event: Event):
+        return {
+            'patch_to_sound_file': self.main.patch_to_sound_file,
+            'id_sound': self.main.id_sound,
+            'instant_send': self.main.instant_send,
+            'silero_connected': self.main.silero_connected
+        }
+    
+    def _on_reset_server_data(self, event: Event):
+        self.main.instant_send = False
+        self.main.patch_to_sound_file = ""
+    
+    def _on_stop_server(self, event: Event):
+        self.stop_server()
+    
+    def _on_get_chat_server(self, event: Event):
+        return self.server

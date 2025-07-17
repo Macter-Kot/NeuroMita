@@ -36,7 +36,6 @@ class MainController:
         self.api_model = ""
         self.makeRequest = False
 
-        self.instant_send = False
         self.dialog_active = False
 
         self.lazy_load_batch_size = 50
@@ -138,7 +137,6 @@ class MainController:
         self.event_bus.subscribe(Events.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
         
         self.event_bus.subscribe(Events.GET_CONNECTION_STATUS, self._on_get_connection_status, weak=False)
-        self.event_bus.subscribe(Events.GET_SILERO_STATUS, self._on_get_silero_status, weak=False)
         self.event_bus.subscribe(Events.GET_MIC_STATUS, self._on_get_mic_status, weak=False)
         self.event_bus.subscribe(Events.GET_SCREEN_CAPTURE_STATUS, self._on_get_screen_capture_status, weak=False)
         self.event_bus.subscribe(Events.GET_CAMERA_CAPTURE_STATUS, self._on_get_camera_capture_status, weak=False)
@@ -146,7 +144,6 @@ class MainController:
         self.event_bus.subscribe(Events.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
         self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
         self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
-        self.event_bus.subscribe(Events.STOP_SERVER, self._on_stop_server, weak=False)
         
         self.event_bus.subscribe(Events.CHECK_TEXT_TO_TALK, self._on_check_text_to_talk, weak=False)
         
@@ -169,17 +166,11 @@ class MainController:
 
         self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
         self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
-        self.event_bus.subscribe(Events.SET_ID_SOUND, self._on_set_id_sound, weak=False)
         self.event_bus.subscribe(Events.UPDATE_CHAT, self._on_update_chat, weak=False)
-        self.event_bus.subscribe(Events.GET_SERVER_DATA, self._on_get_server_data, weak=False)
         self.event_bus.subscribe(Events.GET_SETTINGS, self._on_get_settings, weak=False)
-        self.event_bus.subscribe(Events.RESET_SERVER_DATA, self._on_reset_server_data, weak=False)
         self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input, weak=False)
         self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
-
-        self.event_bus.subscribe(Events.SET_SOUND_FILE_DATA, self._on_set_sound_file_data, weak=False)
-        self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
 
         self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
 
@@ -260,7 +251,7 @@ class MainController:
         self.audio_controller.delete_all_sound_files()
         
         try:
-            self.server_controller.stop_server()
+            self.event_bus.emit(Events.STOP_SERVER)
         except Exception as e:
             logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
         
@@ -457,9 +448,6 @@ class MainController:
     def _on_get_connection_status(self, event: Event):
         return self.ConnectedToGame
     
-    def _on_get_silero_status(self, event: Event):
-        return self.silero_connected
-    
     def _on_get_mic_status(self, event: Event):
         return self.mic_recognition_active
     
@@ -477,9 +465,6 @@ class MainController:
     
     def _on_delete_sound_files(self, event: Event):
         self.delete_all_sound_files()
-    
-    def _on_stop_server(self, event: Event):
-        self.stop_server()
     
     def _on_check_text_to_talk(self, event: Event):
         self.check_text_to_talk_or_send()
@@ -583,9 +568,6 @@ class MainController:
     def _on_set_dialog_active(self, event: Event):
         self.dialog_active = event.data.get('active', False)
 
-    def _on_set_id_sound(self, event: Event):
-        self.id_sound = event.data.get('id', 0)
-
     def _on_update_chat(self, event: Event):
         role = event.data.get('role', '')
         content = event.data.get('content', '')
@@ -599,20 +581,8 @@ class MainController:
             'emotion': emotion
         })
 
-    def _on_get_server_data(self, event: Event):
-        return {
-            'patch_to_sound_file': self.patch_to_sound_file,
-            'id_sound': self.id_sound,
-            'instant_send': self.instant_send,
-            'silero_connected': self.silero_connected
-        }
-
     def _on_get_settings(self, event: Event):
         return self.settings.settings
-
-    def _on_reset_server_data(self, event: Event):
-        self.instant_send = False
-        self.patch_to_sound_file = ""
 
     def _on_clear_user_input(self, event: Event):
         self.clear_user_input()
@@ -622,16 +592,6 @@ class MainController:
 
     def _on_set_connected_to_game(self, event: Event):
         self.ConnectedToGame = event.data.get('connected', False)
-
-    def _on_set_sound_file_data(self, event: Event):
-        self.patch_to_sound_file = event.data.get('patch_to_sound_file', '')
-        self.id_sound = event.data.get('id_sound', 0)
-        logger.info(f"Установлены данные звукового файла: {self.patch_to_sound_file}, ID: {self.id_sound}")
-
-
-    def _on_set_silero_connected(self, event: Event):
-        self.silero_connected = event.data.get('connected', False)
-        logger.info(f"Статус подключения Silero установлен: {self.silero_connected}")
     
     def start_periodic_checks(self):
         import threading
@@ -663,14 +623,7 @@ class MainController:
         else:
             logger.error("Ошибка: Цикл событий не готов для периодической отправки изображений.")
 
-    @property
-    def silero_connected(self):
-        return self.telegram_controller.silero_connected
-    
-    @silero_connected.setter
-    def silero_connected(self, value):
-        self.telegram_controller.silero_connected = value
-    
+    # Делегирующие свойства
     @property
     def bot_handler(self):
         return self.telegram_controller.bot_handler
@@ -752,10 +705,6 @@ class MainController:
         return self.model_controller.model
     
     @property
-    def server(self):
-        return self.server_controller.server
-    
-    @property
     def device_id(self):
         return self.speech_controller.device_id
     
@@ -770,22 +719,6 @@ class MainController:
     @selected_microphone.setter
     def selected_microphone(self, value):
         self.speech_controller.selected_microphone = value
-    
-    @property
-    def patch_to_sound_file(self):
-        return self.audio_controller.patch_to_sound_file
-    
-    @patch_to_sound_file.setter
-    def patch_to_sound_file(self, value):
-        self.audio_controller.patch_to_sound_file = value
-    
-    @property
-    def id_sound(self):
-        return self.audio_controller.id_sound
-    
-    @id_sound.setter
-    def id_sound(self, value):
-        self.audio_controller.id_sound = value
     
     @property
     def voiceover_method(self):
@@ -830,10 +763,6 @@ class MainController:
     @property
     def delete_all_sound_files(self):
         return self.audio_controller.delete_all_sound_files
-    
-    @property 
-    def stop_server(self):
-        return self.server_controller.stop_server
     
     @property
     def camera_capture(self):

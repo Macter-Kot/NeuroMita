@@ -57,10 +57,14 @@ class ChatController:
             self.event_bus.emit(Events.UPDATE_DEBUG_INFO)
             self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
 
-            if self.main.server and self.main.server.client_socket:
+            # Получаем сервер через событие
+            server_result = self.event_bus.emit_and_wait(Events.GET_CHAT_SERVER, timeout=1.0)
+            server = server_result[0] if server_result else None
+            
+            if server and server.client_socket:
                 final_response_text = response if response else "..."
                 try:
-                    self.main.server.send_message_to_server(final_response_text)
+                    server.send_message_to_server(final_response_text)
                     logger.info("Ответ отправлен в игру.")
                 except Exception as e:
                     logger.error(f"Не удалось отправить ответ в игру: {e}")

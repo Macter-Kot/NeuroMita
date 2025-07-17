@@ -12,6 +12,7 @@ class SpeechController:
         self.selected_microphone = ""
         self.device_id = 0
         self.mic_recognition_active = False
+        self.instant_send = False
         self.events_bus = get_event_bus()
         
         self._subscribe_to_events()
@@ -19,6 +20,8 @@ class SpeechController:
     def _subscribe_to_events(self):
         self.events_bus.subscribe("speech_settings_loaded", self._on_speech_settings_loaded, weak=False)
         self.events_bus.subscribe("speech_setting_changed", self._on_speech_setting_changed, weak=False)
+        self.events_bus.subscribe(Events.GET_INSTANT_SEND_STATUS, self._on_get_instant_send_status, weak=False)
+        self.events_bus.subscribe(Events.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
         
     def _on_speech_settings_loaded(self, event: Event):
         self.settings = event.data.get('settings')
@@ -35,6 +38,12 @@ class SpeechController:
         key = event.data.get('key')
         value = event.data.get('value')
         self.update_speech_settings(key, value)
+    
+    def _on_get_instant_send_status(self, event: Event):
+        return self.instant_send
+    
+    def _on_set_instant_send_status(self, event: Event):
+        self.instant_send = event.data.get('status', False)
             
     def update_speech_settings(self, key, value):
         if key == "MIC_ACTIVE":
@@ -107,7 +116,7 @@ class SpeechController:
             })
             
             if self.main.ConnectedToGame:
-                self.main.instant_send = True
+                self.instant_send = True
                 
             self.events_bus.emit(Events.SEND_MESSAGE, {
                 'user_input': text_to_send,

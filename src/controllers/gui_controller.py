@@ -33,10 +33,6 @@ class GuiController:
 
         QTimer.singleShot(100, self.check_and_install_ffmpeg)
 
-        # ────────────────────────────────────────────────────────────
-        # Прокидываем auth_signals, созданные в TelegramController,
-        # во View, чтобы к ним могли обращаться все диалоги UI.
-        # ────────────────────────────────────────────────────────────
         if self.view is not None:
             self.view.auth_signals = getattr(
                 self.main_controller.telegram_controller,
@@ -118,7 +114,7 @@ class GuiController:
             
     def clear_user_input(self):
         logger.debug("GuiController: clear_user_input")
-        self.main_controller.user_input = ""
+        self.event_bus.emit(Events.CLEAR_USER_INPUT)
         if self.view and self.view.user_entry:
             self.view.user_entry.clear()
         else:
@@ -249,10 +245,6 @@ class GuiController:
             logger.error("GuiController: view не найден!")
             
     def get_auth_signals(self):
-        """
-        Возвращаем объект TelegramAuthSignals,
-        созданный в TelegramController.
-        """
         tg_ctrl = getattr(self.main_controller, "telegram_controller", None)
         if tg_ctrl and hasattr(tg_ctrl, "auth_signals"):
             return tg_ctrl.auth_signals
@@ -319,20 +311,21 @@ class GuiController:
         
     def _on_get_tg_auth_data(self, event: Event):
         logger.debug("GuiController: получено событие GET_TG_AUTH_DATA")
+        results = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
+        loop = results[0] if results else None
         return {
-            'loop': self.main_controller.loop,
+            'loop': loop,
             'auth_signals': self.get_auth_signals()
         }
         
     def _on_started_response(self, event: Event):
         logger.info("GuiController: получено событие ON_STARTED_RESPONSE_GENERATION")
         character_name = "Мита"
-        if (self.main_controller.model_controller and 
-            self.main_controller.model_controller.model and
-            hasattr(self.main_controller.model_controller.model, 'current_character') and
-            self.main_controller.model_controller.model.current_character and
-            hasattr(self.main_controller.model_controller.model.current_character, 'name')):
-            character_name = self.main_controller.model_controller.model.current_character.name
+        
+        results = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+        if results and results[0]:
+            character_data = results[0]
+            character_name = character_data.get('name', 'Мита')
         
         print(f"[DEBUG] GuiController: вызываем show_mita_thinking с {character_name}")
         self.show_mita_thinking(character_name)

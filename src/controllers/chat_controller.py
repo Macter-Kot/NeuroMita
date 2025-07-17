@@ -5,8 +5,8 @@ from core.events import get_event_bus, Events, Event
 
 
 class ChatController:
-    def __init__(self, main_controller):
-        self.main = main_controller
+    def __init__(self, settings):
+        self.settings = settings
         self.event_bus = get_event_bus()
         self.llm_processing = False
         
@@ -15,6 +15,7 @@ class ChatController:
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.SEND_MESSAGE, self._on_send_message, weak=False)
         self.event_bus.subscribe(Events.GET_LLM_PROCESSING_STATUS, self._on_get_llm_processing_status, weak=False)
+        self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
         
     async def async_send_message(
         self,
@@ -26,7 +27,7 @@ class ChatController:
             print("[DEBUG] Начинаем async_send_message, показываем статус")
             self.llm_processing = True
             
-            is_streaming = bool(self.main.settings.get("ENABLE_STREAMING", False))
+            is_streaming = bool(self.settings.get("ENABLE_STREAMING", False))
 
             def stream_callback_handler(chunk: str):
                 self.event_bus.emit(Events.APPEND_STREAM_CHUNK_UI, {'chunk': chunk})
@@ -90,13 +91,31 @@ class ChatController:
         image_data = data.get('image_data', [])
         
         if image_data:
-            self.main.last_image_request_time = time.time()
+            self.event_bus.emit(Events.UPDATE_LAST_IMAGE_REQUEST_TIME)
         
-        if self.main.loop and self.main.loop.is_running():
-            asyncio.run_coroutine_threadsafe(
-                self.async_send_message(user_input, system_input, image_data),
-                self.main.loop
-            )
+        coro = self.async_send_message(user_input, system_input, image_data)
+        
+        self.event_bus.emit(Events.RUN_IN_LOOP, {
+            'coroutine': coro,
+            'callback': None
+        })
     
     def _on_get_llm_processing_status(self, event: Event):
         return self.llm_processing
+    
+    def _on_send_periodic_image_request(self, event: Event):
+        data = event.data
+        
+        if data.get('image_data'):
+            self.event_bus.emit(Events.UPDATE_LAST_IMAGE_REQUEST_TIME)
+        
+        coro = self.async_send_message(
+            user_input=data.get('user_input', ''),
+            system_input=data.get('system_input', ''), 
+            image_data=data.get('image_data', [])
+        )
+        
+        self.event_bus.emit(Events.RUN_IN_LOOP, {
+            'coroutine': coro,
+            'callback': None
+        })

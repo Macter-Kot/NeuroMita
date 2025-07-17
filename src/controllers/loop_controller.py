@@ -22,7 +22,6 @@ class LoopController:
     
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.GET_EVENT_LOOP, self._on_get_event_loop, weak=False)
-        self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
         self.event_bus.subscribe(Events.RUN_IN_LOOP, self._on_run_in_loop, weak=False)
     
     def start_asyncio_loop(self):
@@ -105,17 +104,3 @@ class LoopController:
             if callback:
                 callback(None, Exception("Loop not ready"))
     
-    def _on_send_periodic_image_request(self, event: Event):
-        if self.loop and self.loop.is_running():
-            import asyncio
-            data = event.data
-            asyncio.run_coroutine_threadsafe(
-                self.main_controller.chat_controller.async_send_message(
-                    user_input=data.get('user_input', ''),
-                    system_input=data.get('system_input', ''), 
-                    image_data=data.get('image_data', [])
-                ),
-                self.loop
-            )
-        else:
-            logger.error("Ошибка: Цикл событий не готов для периодической отправки изображений.")

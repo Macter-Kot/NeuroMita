@@ -91,7 +91,7 @@ class MainController:
         logger.warning("SpeechController успешно инициализирован.")
         self.server_controller = ServerController(self)
         logger.warning("ServerController успешно инициализирован.")
-        self.chat_controller = ChatController(self)
+        self.chat_controller = ChatController(self.settings)
         logger.warning("ChatController успешно инициализирован.")
 
         
@@ -602,13 +602,6 @@ class MainController:
     def image_request_timer_running(self):
         return self.capture_controller.image_request_timer_running
     
-    @property
-    def last_image_request_time(self):
-        return self.capture_controller.last_image_request_time
-    
-    @last_image_request_time.setter
-    def last_image_request_time(self, value):
-        self.capture_controller.last_image_request_time = value
     
     @property
     def textToTalk(self):

@@ -84,7 +84,7 @@ class MainController:
         
         self.audio_controller = AudioController(self)
         logger.warning("AudioController успешно инициализирован.")
-        self.model_controller = ModelController(self.settings, self.api_key, self.api_key_res, self.api_url, 
+        self.model_controller = ModelController(self, self.api_key, self.api_key_res, self.api_url, 
                                                self.api_model, self.makeRequest, self.pip_installer)
         logger.warning("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self)
@@ -121,8 +121,6 @@ class MainController:
     
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.CLEAR_CHAT, self._on_clear_chat, weak=False)
-        self.event_bus.subscribe(Events.LOAD_HISTORY, self._on_load_history, weak=False)
-        self.event_bus.subscribe(Events.LOAD_MORE_HISTORY, self._on_load_more_history, weak=False)
         
         self.event_bus.subscribe(Events.SAVE_SETTING, self._on_save_setting, weak=False)
         self.event_bus.subscribe(Events.GET_SETTING, self._on_get_setting, weak=False)
@@ -151,24 +149,11 @@ class MainController:
         self.event_bus.subscribe(Events.STOP_SERVER, self._on_stop_server, weak=False)
         
         self.event_bus.subscribe(Events.CHECK_TEXT_TO_TALK, self._on_check_text_to_talk, weak=False)
-        self.event_bus.subscribe(Events.GET_CHARACTER_NAME, self._on_get_character_name, weak=False)
-        self.event_bus.subscribe(Events.GET_CURRENT_CONTEXT_TOKENS, self._on_get_current_context_tokens, weak=False)
-        self.event_bus.subscribe(Events.CALCULATE_COST, self._on_calculate_cost, weak=False)
         
         self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
         
         self.event_bus.subscribe(Events.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
         self.event_bus.subscribe(Events.REQUEST_TG_PASSWORD, self._on_request_tg_password, weak=False)
-
-        self.event_bus.subscribe(Events.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)
-        self.event_bus.subscribe(Events.GET_CURRENT_CHARACTER, self._on_get_current_character, weak=False)
-        self.event_bus.subscribe(Events.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change, weak=False)
-        self.event_bus.subscribe(Events.CHECK_CHANGE_CHARACTER, self._on_check_change_character, weak=False)
-        self.event_bus.subscribe(Events.GET_CHARACTER, self._on_get_character, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHARACTER_DATA, self._on_reload_character_data, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHARACTER_PROMPTS, self._on_reload_character_prompts, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_CHARACTER_HISTORY, self._on_clear_character_history, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_ALL_HISTORIES, self._on_clear_all_histories, weak=False)
         
         self.event_bus.subscribe(Events.SET_MICROPHONE, self._on_set_microphone, weak=False)
         self.event_bus.subscribe(Events.START_SPEECH_RECOGNITION, self._on_start_speech_recognition, weak=False)
@@ -176,20 +161,14 @@ class MainController:
         self.event_bus.subscribe(Events.UPDATE_SPEECH_SETTINGS, self._on_update_speech_settings, weak=False)
         
         self.event_bus.subscribe(Events.GET_EVENT_LOOP, self._on_get_event_loop, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_PROMPTS_ASYNC, self._on_reload_prompts_async, weak=False)
         
         self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
         self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
-        self.event_bus.subscribe(Events.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
-
         self.event_bus.subscribe(Events.SET_TTS_DATA, self._on_set_tts_data, weak=False)
 
         self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
-        self.event_bus.subscribe(Events.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change_server, weak=False)
-        self.event_bus.subscribe(Events.SET_GAME_DATA, self._on_set_game_data, weak=False)
         self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
-        self.event_bus.subscribe(Events.ADD_TEMPORARY_SYSTEM_INFO, self._on_add_temporary_system_info, weak=False)
         self.event_bus.subscribe(Events.SET_ID_SOUND, self._on_set_id_sound, weak=False)
         self.event_bus.subscribe(Events.UPDATE_CHAT, self._on_update_chat, weak=False)
         self.event_bus.subscribe(Events.GET_SERVER_DATA, self._on_get_server_data, weak=False)
@@ -356,51 +335,6 @@ class MainController:
     def _on_clear_chat(self, event: Event):
         pass
     
-    def _on_load_history(self, event: Event):
-        self.loaded_messages_offset = 0
-        self.total_messages_in_history = 0
-        self.loading_more_history = False
-        
-        chat_history = self.model.current_character.load_history()
-        all_messages = chat_history["messages"]
-        self.total_messages_in_history = len(all_messages)
-        
-        max_display_messages = int(self.settings.get("MAX_CHAT_HISTORY_DISPLAY", 100))
-        start_index = max(0, self.total_messages_in_history - max_display_messages)
-        messages_to_load = all_messages[start_index:]
-        
-        self.loaded_messages_offset = len(messages_to_load)
-        
-        self.event_bus.emit("history_loaded", {
-            'messages': messages_to_load,
-            'total_messages': self.total_messages_in_history,
-            'loaded_offset': self.loaded_messages_offset
-        })
-    
-    def _on_load_more_history(self, event: Event):
-        if self.loaded_messages_offset >= self.total_messages_in_history:
-            return
-        
-        self.loading_more_history = True
-        try:
-            chat_history = self.model.current_character.load_history()
-            all_messages = chat_history["messages"]
-            
-            lazy_load_batch_size = getattr(self, 'lazy_load_batch_size', 50)
-            end_index = self.total_messages_in_history - self.loaded_messages_offset
-            start_index = max(0, end_index - lazy_load_batch_size)
-            messages_to_prepend = all_messages[start_index:end_index]
-            
-            if messages_to_prepend:
-                self.loaded_messages_offset += len(messages_to_prepend)
-                
-                self.event_bus.emit("more_history_loaded", {
-                    'messages': messages_to_prepend,
-                    'loaded_offset': self.loaded_messages_offset
-                })
-        finally:
-            self.loading_more_history = False
-    
     def _on_save_setting(self, event: Event):
         key = event.data.get('key')
         value = event.data.get('value')
@@ -550,23 +484,6 @@ class MainController:
     def _on_check_text_to_talk(self, event: Event):
         self.check_text_to_talk_or_send()
     
-    def _on_get_character_name(self, event: Event):
-        return self.model.current_character.name
-    
-    def _on_get_current_context_tokens(self, event: Event):
-        if hasattr(self.model, 'get_current_context_token_count'):
-            return self.model.get_current_context_token_count()
-        return 0
-    
-    def _on_calculate_cost(self, event: Event):
-        self.model.token_cost_input = float(self.settings.get("TOKEN_COST_INPUT", 0.000001))
-        self.model.token_cost_output = float(self.settings.get("TOKEN_COST_OUTPUT", 0.000002))
-        self.model.max_model_tokens = int(self.settings.get("MAX_MODEL_TOKENS", 32000))
-        
-        if hasattr(self.model, 'calculate_cost_for_current_context'):
-            return self.model.calculate_cost_for_current_context()
-        return 0.0
-    
     def _on_schedule_g4f_update(self, event: Event):
         version = event.data.get('version', 'latest')
         
@@ -590,61 +507,6 @@ class MainController:
         password_future = event.data.get('future')
         if password_future:
             self.event_bus.emit("show_tg_password_dialog", {'future': password_future})
-    
-    def _on_get_all_characters(self, event: Event):
-        if hasattr(self.model, 'get_all_mitas'):
-            return self.model.get_all_mitas()
-        return []
-    
-    def _on_get_current_character(self, event: Event):
-        if hasattr(self.model, 'current_character'):
-            char = self.model.current_character
-            return {
-                'name': char.name if hasattr(char, 'name') else '',
-                'char_id': char.char_id if hasattr(char, 'char_id') else '',
-                'is_cartridge': char.is_cartridge if hasattr(char, 'is_cartridge') else False
-            }
-        return None
-    
-    def _on_set_character_to_change(self, event: Event):
-        character_name = event.data.get('character')
-        if character_name and hasattr(self.model, 'current_character_to_change'):
-            self.model.current_character_to_change = character_name
-    
-    def _on_check_change_character(self, event: Event):
-        if hasattr(self.model, 'check_change_current_character'):
-            self.model.check_change_current_character()
-    
-    def _on_get_character(self, event: Event):
-        character_name = event.data.get('name')
-        if character_name and hasattr(self.model, 'characters'):
-            return self.model.characters.get(character_name)
-        return None
-    
-    def _on_reload_character_data(self, event: Event):
-        if hasattr(self.model, 'current_character'):
-            char = self.model.current_character
-            if hasattr(char, 'reload_character_data'):
-                char.reload_character_data()
-    
-    def _on_reload_character_prompts(self, event: Event):
-        character_name = event.data.get('character')
-        if character_name and hasattr(self.model, 'characters'):
-            char = self.model.characters.get(character_name)
-            if char and hasattr(char, 'reload_prompts'):
-                char.reload_prompts()
-    
-    def _on_clear_character_history(self, event: Event):
-        if hasattr(self.model, 'current_character'):
-            char = self.model.current_character
-            if hasattr(char, 'clear_history'):
-                char.clear_history()
-    
-    def _on_clear_all_histories(self, event: Event):
-        if hasattr(self.model, 'characters'):
-            for character in self.model.characters.values():
-                if hasattr(character, 'clear_history'):
-                    character.clear_history()
     
     def _on_set_microphone(self, event: Event):
         microphone_name = event.data.get('name')
@@ -695,49 +557,12 @@ class MainController:
             return self.loop
         return None
     
-    def _on_reload_prompts_async(self, event: Event):
-        if self.loop and self.loop.is_running():
-            import asyncio
-            asyncio.run_coroutine_threadsafe(self._async_reload_prompts(), self.loop)
-        else:
-            logger.error("Цикл событий asyncio не запущен. Невозможно выполнить асинхронную загрузку промптов.")
-            self.event_bus.emit("reload_prompts_failed", {"error": "Event loop not running"})
-    
-    async def _async_reload_prompts(self):
-        try:
-            from utils.prompt_downloader import PromptDownloader
-            downloader = PromptDownloader()
-            success = await self.loop.run_in_executor(None, downloader.download_and_replace_prompts)
-            
-            if success:
-                if hasattr(self.model, 'current_character_to_change'):
-                    character_name = self.model.current_character_to_change
-                    character = self.model.characters.get(character_name)
-                    if character:
-                        await self.loop.run_in_executor(None, character.reload_prompts)
-                    else:
-                        logger.error("Персонаж для перезагрузки не найден")
-                
-                self.event_bus.emit("reload_prompts_success")
-            else:
-                self.event_bus.emit("reload_prompts_failed", {"error": "Download failed"})
-        except Exception as e:
-            logger.error(f"Ошибка при обновлении промптов: {e}")
-            self.event_bus.emit("reload_prompts_failed", {"error": str(e)})
-    
     def _on_show_loading_popup(self, event: Event):
         message = event.data.get('message', 'Loading...')
         self.event_bus.emit("display_loading_popup", {"message": message})
     
     def _on_close_loading_popup(self, event: Event):
         self.event_bus.emit("hide_loading_popup")
-
-    def _on_get_debug_info(self, event: Event):
-        if hasattr(self.model, 'current_character'):
-            char = self.model.current_character
-            if hasattr(char, 'current_variables_string'):
-                return char.current_variables_string()
-        return "Debug info not available"
 
     def _on_set_tts_data(self, event: Event):
         data = event.data
@@ -755,26 +580,8 @@ class MainController:
         is_connected = event.data.get('is_connected', False)
         self.update_game_connection(is_connected)
 
-    def _on_set_character_to_change_server(self, event: Event):
-        character = event.data.get('character', '')
-        if self.model and hasattr(self.model, 'current_character_to_change'):
-            self.model.current_character_to_change = character
-
-    def _on_set_game_data(self, event: Event):
-        if self.model:
-            self.model.distance = event.data.get('distance', 0.0)
-            self.model.roomPlayer = event.data.get('roomPlayer', -1)
-            self.model.roomMita = event.data.get('roomMita', -1)
-            self.model.nearObjects = event.data.get('nearObjects', '')
-            self.model.actualInfo = event.data.get('actualInfo', '')
-
     def _on_set_dialog_active(self, event: Event):
         self.dialog_active = event.data.get('active', False)
-
-    def _on_add_temporary_system_info(self, event: Event):
-        content = event.data.get('content', '')
-        if content and self.model and hasattr(self.model, 'add_temporary_system_info'):
-            self.model.add_temporary_system_info(content)
 
     def _on_set_id_sound(self, event: Event):
         self.id_sound = event.data.get('id', 0)

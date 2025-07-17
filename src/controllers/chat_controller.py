@@ -34,18 +34,14 @@ class ChatController:
             if is_streaming:
                 self.event_bus.emit(Events.PREPARE_STREAM_UI)
 
-            response = await asyncio.wait_for(
-                self.main.loop.run_in_executor(
-                    None,
-                    lambda: self.main.model.generate_response(
-                        user_input=user_input,
-                        system_input=system_input,
-                        image_data=image_data,
-                        stream_callback=stream_callback_handler if is_streaming else None
-                    )
-                ),
-                timeout=600.0
-            )
+            response_result = self.event_bus.emit_and_wait(Events.GENERATE_RESPONSE, {
+                'user_input': user_input,
+                'system_input': system_input,
+                'image_data': image_data,
+                'stream_callback': stream_callback_handler if is_streaming else None
+            }, timeout=600.0)
+            
+            response = response_result[0] if response_result else None
 
             if is_streaming:
                 self.event_bus.emit(Events.FINISH_STREAM_UI)

@@ -21,7 +21,8 @@ class ChatController:
         self,
         user_input: str,
         system_input: str = "",
-        image_data: list[bytes] | None = None
+        image_data: list[bytes] | None = None,
+        message_id: int | None = None  # ДОБАВИТЬ ПАРАМЕТР
     ):
         try:
             print("[DEBUG] Начинаем async_send_message, показываем статус")
@@ -35,18 +36,37 @@ class ChatController:
             if is_streaming:
                 self.event_bus.emit(Events.PREPARE_STREAM_UI)
 
-            
-            message_id = getattr(self, 'current_message_id', None)
-
             response_result = self.event_bus.emit_and_wait(Events.GENERATE_RESPONSE, {
                 'user_input': user_input,
                 'system_input': system_input,
                 'image_data': image_data,
                 'stream_callback': stream_callback_handler if is_streaming else None,
-                'message_id': message_id  # Добавить это поле
+                'message_id': message_id  # Передаем message_id дальше
             }, timeout=600.0)
             
             response = response_result[0] if response_result else None
+
+            if response and self.settings.get("SILERO_USE"):
+                character_result = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=3.0)
+                current_character = character_result[0] if character_result else None
+                
+                logger.info(current_character)
+                if current_character:
+                    is_game_master = current_character.get('name') == 'GameMaster'
+                    if not is_game_master or self.settings.get("GM_VOICE"):
+                        from utils import process_text_to_voice
+                        processed_response = process_text_to_voice(response)
+                        
+                        speaker = current_character.get("silero_command")
+                        if self.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
+                            speaker = current_character.get("miku_tts_name")
+                        
+                        self.event_bus.emit(Events.VOICEOVER_REQUESTED, {
+                            'text': processed_response,
+                            'speaker': speaker,
+                            'message_id': message_id
+                        })
+                        logger.info(f"Озвучка запрошена: {processed_response[:50]}... с message_id: {message_id}")
 
             if is_streaming:
                 self.event_bus.emit(Events.FINISH_STREAM_UI)
@@ -93,16 +113,35 @@ class ChatController:
         user_input = data.get('user_input', '')
         system_input = data.get('system_input', '')
         image_data = data.get('image_data', [])
+        message_id = data.get('message_id')
         
         if image_data:
             self.event_bus.emit(Events.UPDATE_LAST_IMAGE_REQUEST_TIME)
         
-        coro = self.async_send_message(user_input, system_input, image_data)
+        # Получаем главный asyncio-loop
+        loop_res = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
+        loop = loop_res[0] if loop_res else None
         
-        self.event_bus.emit(Events.RUN_IN_LOOP, {
-            'coroutine': coro,
-            'callback': None
-        })
+        if loop and loop.is_running():
+            # Запускаем корутину в этом loop'е и синхронно ждём результата
+            import asyncio
+            fut = asyncio.run_coroutine_threadsafe(
+                self.async_send_message(user_input, system_input, image_data, message_id),
+                loop
+            )
+            try:
+                response = fut.result(timeout=600)
+                return response  # ответ попадёт вызвавшему emit_and_wait
+            except Exception as e:
+                logger.error(f"async_send_message failed: {e}", exc_info=True)
+                return None
+        else:
+            # fallback: нет цикла ⇒ запускаем напрямую
+            import asyncio
+            response = asyncio.run(
+                self.async_send_message(user_input, system_input, image_data, message_id)
+            )
+            return response
     
     def _on_get_llm_processing_status(self, event: Event):
         return self.llm_processing
@@ -116,7 +155,8 @@ class ChatController:
         coro = self.async_send_message(
             user_input=data.get('user_input', ''),
             system_input=data.get('system_input', ''), 
-            image_data=data.get('image_data', [])
+            image_data=data.get('image_data', []),
+            message_id=data.get('message_id')  # ДОБАВИТЬ
         )
         
         self.event_bus.emit(Events.RUN_IN_LOOP, {

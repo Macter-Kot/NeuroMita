@@ -63,7 +63,7 @@ class AudioController:
                 self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
 
                 if self.voiceover_method == "TG":
-                    logger.info("Используем Telegram (Silero/Miku) для озвучки")
+                    logger.info(f"Используем Telegram (Silero/Miku) для озвучки: {speaker}")
                     asyncio.run_coroutine_threadsafe(
                         self.run_send_and_receive(text, speaker, self.id_sound),
                         self.main.loop

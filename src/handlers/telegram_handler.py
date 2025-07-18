@@ -83,6 +83,7 @@ class TelegramBotHandler:
             self.start_time = time.time()
 
     async def send_and_receive(self, input_message, speaker_command, message_id):
+        logger.info(f"Отправка сообщения на озвучку Telegram: {speaker_command} {input_message}")
         if not input_message or not speaker_command:
             return
 

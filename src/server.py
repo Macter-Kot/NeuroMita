@@ -119,16 +119,16 @@ class ChatServer:
                 if system_message != "-":
                     logger.info(f"Получено system_message {system_message} id {message_id}")
                     self.event_bus.emit(Events.SET_ID_SOUND, {'id': message_id})
-                    response = asyncio.run(self.generate_response("", system_message, decoded_image_data))
+                    response = self.generate_response("", system_message, decoded_image_data)
                 elif self.messages_to_say:
                     response = self.messages_to_say.pop(0)
             elif message == "boring":
                 logger.info(f"Получено boring message id {message_id}")
                 date_now = datetime.now().replace(microsecond=0)
                 self.event_bus.emit(Events.SET_ID_SOUND, {'id': message_id})
-                response = asyncio.run(self.generate_response("",
+                response = self.generate_response("",
                                               f"Время {date_now}, Игрок долго молчит( Ты можешь что-то сказать или предпринять",
-                                              decoded_image_data))
+                                              decoded_image_data)
                 logger.info("Отправлено Мите на озвучку: " + response)
             else:
                 logger.info(f"Получено message id {message_id}")
@@ -139,7 +139,7 @@ class ChatServer:
                     'is_initial': False,
                     'emotion': ''
                 })
-                response = asyncio.run(self.generate_response(message, "", decoded_image_data))
+                response = self.generate_response(message, "", decoded_image_data)
                 logger.info("Отправлено Мите на озвучку: " + response)
 
                 if not character:
@@ -210,37 +210,23 @@ class ChatServer:
             if self.client_socket:
                 self.client_socket.close()
 
-    async def generate_response(self, input_text, system_input_text, image_data: list[bytes] = None):
+    def generate_response(self, input_text, system_input_text, image_data: list[bytes] = None):
         if image_data is None:
             image_data = []
         try:
             self.event_bus.emit(Events.SET_WAITING_ANSWER, {'waiting': True})
             
-            # ДОБАВИТЬ ЭТУ СТРОКУ:
             message_id = getattr(self, 'current_message_id', None)
 
-            loop_result = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
-            loop = loop_result[0] if loop_result else None
+            # Используем событие вместо прямого вызова
+            response_result = self.event_bus.emit_and_wait(Events.SEND_MESSAGE, {
+                'user_input': input_text,
+                'system_input': system_input_text,
+                'image_data': image_data,
+                'message_id': message_id  # Передаем message_id через событие
+            }, timeout=120.0)
             
-            if not loop:
-                logger.error("Event loop не найден")
-                return "Произошла ошибка при обработке вашего сообщения."
-
-            # ИЗМЕНИТЬ future на передачу message_id через ChatController
-            from controllers.chat_controller import ChatController
-            if hasattr(self.controller, 'chat_controller'):
-                self.controller.chat_controller.current_message_id = message_id
-
-            future = asyncio.run_coroutine_threadsafe(
-                self.controller.chat_controller.async_send_message(
-                    user_input=input_text,
-                    system_input=system_input_text,
-                    image_data=image_data
-                ),
-                loop
-            )
-            
-            response = future.result(timeout=120.0)
+            response = response_result[0] if response_result else None
             
             return response if response else "Произошла ошибка при обработке вашего сообщения."
 

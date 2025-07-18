@@ -1,4 +1,4 @@
-# File: chat_model.py
+# File: chat_handler.py
 import base64
 import concurrent.futures
 import datetime

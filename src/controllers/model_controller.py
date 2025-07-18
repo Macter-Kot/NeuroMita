@@ -146,7 +146,11 @@ class ModelController:
             return {
                 'name': char.name if hasattr(char, 'name') else '',
                 'char_id': char.char_id if hasattr(char, 'char_id') else '',
-                'is_cartridge': char.is_cartridge if hasattr(char, 'is_cartridge') else False
+                'is_cartridge': char.is_cartridge if hasattr(char, 'is_cartridge') else False,
+                'silero_command': getattr(char, 'silero_command', ''),
+                'short_name': getattr(char, 'short_name', ''),
+                'miku_tts_name': getattr(char, 'miku_tts_name', 'Player'),
+                'silero_turn_off_video': getattr(char, 'silero_turn_off_video', False),
             }
         return None
     
@@ -280,30 +284,10 @@ class ModelController:
         system_input = event.data.get('system_input', '')
         image_data = event.data.get('image_data', [])
         stream_callback = event.data.get('stream_callback', None)
-        message_id = event.data.get('message_id', None)  # ДОБАВИТЬ ЭТУ СТРОКУ
+        message_id = event.data.get('message_id', None)
         
         if hasattr(self.model, 'generate_response'):
-            response = self.model.generate_response(user_input, system_input, image_data, stream_callback, message_id)
-            
-            # ДОБАВИТЬ: Если есть ответ и нужна озвучка, инициировать событие
-            if response and self.main.settings.get("SILERO_USE"):
-                text_to_voice = process_text_to_voice(response)
-
-                character = self.model.current_character if hasattr(self.model, "current_character") else None
-                speaker = character.silero_command
-                speaker_miku = character.miku_tts_name
-                
-                # Проверить настройку бота
-                if self.main.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
-                    speaker = speaker_miku
-                
-                self.event_bus.emit(Events.VOICEOVER_REQUESTED, {
-                    'text': text_to_voice,
-                    'speaker': speaker,
-                    'message_id': message_id
-                })
-            
-            return response
+            return self.model.generate_response(user_input, system_input, image_data, stream_callback, message_id)
         return None
     
     def _on_reload_prompts_async(self, event: Event):

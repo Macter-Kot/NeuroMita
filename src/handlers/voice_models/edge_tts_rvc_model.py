@@ -16,6 +16,8 @@ import re
 from PyQt6.QtCore import QTimer
 from utils.pip_installer import PipInstaller
 
+from core.events import get_event_bus, Events
+
 from managers.settings_manager import SettingsManager
 
 from utils import getTranslationVariant as _
@@ -29,6 +31,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         self.current_tts_rvc = None
         self.current_silero_model = None
         self.current_silero_sample_rate = 48000
+        self.events = get_event_bus()
         self._load_module()
 
     def _load_module(self):
@@ -464,7 +467,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 final_output_path = output_file_rvc
             
             if self.parent.parent.ConnectedToGame and TEST_WITH_DONE_AUDIO is None:
-                self.parent.parent.patch_to_sound_file = final_output_path
+                self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
             return final_output_path
         except Exception as error:
             traceback.print_exc()
@@ -599,7 +602,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             )
             
             if hasattr(self.parent.parent, 'ConnectedToGame') and self.parent.parent.ConnectedToGame:
-                self.parent.parent.patch_to_sound_file = final_output_path
+                self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
             
             return final_output_path
             

@@ -6,6 +6,7 @@ import time
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 
+# Контроллер для работы с циклом событий asyncio
 
 class LoopController:
     def __init__(self, main_controller):

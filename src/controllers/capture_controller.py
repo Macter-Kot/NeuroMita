@@ -5,6 +5,8 @@ from handlers.screen_handler import ScreenCapture
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 
+# Контроллер захвата экрана и камеры
+
 class CaptureController:
     def __init__(self, main_controller):
         logger.info("CaptureController инициализируется")

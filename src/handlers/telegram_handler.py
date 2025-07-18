@@ -28,7 +28,6 @@ class TelegramBotHandler:
         self.phone = phone
         self.tg_bot = tg_bot
         
-        self.patch_to_sound_file = ""
         self.last_speaker_command = ""
         self.last_send_time = -1
 

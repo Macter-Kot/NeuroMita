@@ -77,6 +77,7 @@ class ChatServer:
         transmitted_to_game = False
         try:
             message_id = message_data["id"]
+            self.current_message_id = message_id
 
             message_type = message_data["type"]
             character = str(message_data["character"])
@@ -214,6 +215,9 @@ class ChatServer:
             image_data = []
         try:
             self.event_bus.emit(Events.SET_WAITING_ANSWER, {'waiting': True})
+            
+            # ДОБАВИТЬ ЭТУ СТРОКУ:
+            message_id = getattr(self, 'current_message_id', None)
 
             loop_result = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
             loop = loop_result[0] if loop_result else None
@@ -221,6 +225,11 @@ class ChatServer:
             if not loop:
                 logger.error("Event loop не найден")
                 return "Произошла ошибка при обработке вашего сообщения."
+
+            # ИЗМЕНИТЬ future на передачу message_id через ChatController
+            from controllers.chat_controller import ChatController
+            if hasattr(self.controller, 'chat_controller'):
+                self.controller.chat_controller.current_message_id = message_id
 
             future = asyncio.run_coroutine_threadsafe(
                 self.controller.chat_controller.async_send_message(

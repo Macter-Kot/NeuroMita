@@ -1,7 +1,9 @@
 from handlers.chat_handler import ChatModel
-from utils import _
+from utils import _, process_text_to_voice
 from core.events import get_event_bus, Events, Event
 from main_logger import logger
+
+# Контроллер для работы с моделью LLM
 
 class ModelController:
     def __init__(self, main_controller, api_key, api_key_res, api_url, api_model, makeRequest, pip_installer):
@@ -278,9 +280,30 @@ class ModelController:
         system_input = event.data.get('system_input', '')
         image_data = event.data.get('image_data', [])
         stream_callback = event.data.get('stream_callback', None)
+        message_id = event.data.get('message_id', None)  # ДОБАВИТЬ ЭТУ СТРОКУ
         
         if hasattr(self.model, 'generate_response'):
-            return self.model.generate_response(user_input, system_input, image_data, stream_callback)
+            response = self.model.generate_response(user_input, system_input, image_data, stream_callback, message_id)
+            
+            # ДОБАВИТЬ: Если есть ответ и нужна озвучка, инициировать событие
+            if response and self.main.settings.get("SILERO_USE"):
+                text_to_voice = process_text_to_voice(response)
+
+                character = self.model.current_character if hasattr(self.model, "current_character") else None
+                speaker = character.silero_command
+                speaker_miku = character.miku_tts_name
+                
+                # Проверить настройку бота
+                if self.main.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
+                    speaker = speaker_miku
+                
+                self.event_bus.emit(Events.VOICEOVER_REQUESTED, {
+                    'text': text_to_voice,
+                    'speaker': speaker,
+                    'message_id': message_id
+                })
+            
+            return response
         return None
     
     def _on_reload_prompts_async(self, event: Event):

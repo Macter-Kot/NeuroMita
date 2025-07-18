@@ -3,7 +3,7 @@ import time
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 
-
+# Контроллер для работы с отправкой сообщений.
 class ChatController:
     def __init__(self, settings):
         self.settings = settings
@@ -35,11 +35,15 @@ class ChatController:
             if is_streaming:
                 self.event_bus.emit(Events.PREPARE_STREAM_UI)
 
+            
+            message_id = getattr(self, 'current_message_id', None)
+
             response_result = self.event_bus.emit_and_wait(Events.GENERATE_RESPONSE, {
                 'user_input': user_input,
                 'system_input': system_input,
                 'image_data': image_data,
-                'stream_callback': stream_callback_handler if is_streaming else None
+                'stream_callback': stream_callback_handler if is_streaming else None,
+                'message_id': message_id  # Добавить это поле
             }, timeout=600.0)
             
             response = response_result[0] if response_result else None

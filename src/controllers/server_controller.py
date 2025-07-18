@@ -5,6 +5,8 @@ from main_logger import logger
 from PyQt6.QtCore import QTimer
 from core.events import get_event_bus, Events, Event
 
+
+# Контроллер для работы с сервером
 class ServerController:
     def __init__(self, main_controller):
         self.main = main_controller
@@ -12,6 +14,8 @@ class ServerController:
         self.server = ChatServer(self.main, self.main.model_controller.model)
         self.server_thread = None
         self.running = False
+        
+        self.patch_to_sound_file = ""
         
         self._subscribe_to_events()
         self.start_server()
@@ -21,6 +25,7 @@ class ServerController:
         self.event_bus.subscribe(Events.RESET_SERVER_DATA, self._on_reset_server_data, weak=False)
         self.event_bus.subscribe(Events.STOP_SERVER, self._on_stop_server, weak=False)
         self.event_bus.subscribe(Events.GET_CHAT_SERVER, self._on_get_chat_server, weak=False)
+        self.event_bus.subscribe(Events.SET_PATCH_TO_SOUND_FILE, self._on_set_patch_to_sound_file, weak=False)
         
     def start_server(self):
         if not self.running:
@@ -66,7 +71,7 @@ class ServerController:
     
     def _on_get_server_data(self, event: Event):
         return {
-            'patch_to_sound_file': self.main.patch_to_sound_file,
+            'patch_to_sound_file': self.patch_to_sound_file,
             'id_sound': self.main.id_sound,
             'instant_send': self.main.instant_send,
             'silero_connected': self.main.silero_connected
@@ -74,10 +79,14 @@ class ServerController:
     
     def _on_reset_server_data(self, event: Event):
         self.main.instant_send = False
-        self.main.patch_to_sound_file = ""
+        self.patch_to_sound_file = ""
     
     def _on_stop_server(self, event: Event):
         self.stop_server()
     
     def _on_get_chat_server(self, event: Event):
         return self.server
+    
+    def _on_set_patch_to_sound_file(self, event: Event):
+        self.patch_to_sound_file = event.data
+        logger.info(f"Установлен путь к звуковому файлу: {self.patch_to_sound_file}")

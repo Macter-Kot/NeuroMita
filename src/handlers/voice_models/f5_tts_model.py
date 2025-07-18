@@ -13,6 +13,8 @@ from main_logger import logger
 from managers.settings_manager import SettingsManager
 from utils import getTranslationVariant as _
 
+from core.events import get_event_bus, Events
+
 import requests
 import math
 from PyQt6.QtCore import QTimer
@@ -23,6 +25,7 @@ class F5TTSModel(IVoiceModel):
         super().__init__(parent, model_id)
         self.f5_pipeline_module = None
         self.current_f5_pipeline = None
+        self.events = get_event_bus()
         self.rvc_handler = rvc_handler
 
     def _load_module(self):
@@ -401,7 +404,8 @@ class F5TTSModel(IVoiceModel):
                     logger.warning("Модель 'high+low' требует RVC, но обработчик не был предоставлен.")
             
             if self.parent.parent and hasattr(self.parent.parent, 'ConnectedToGame') and self.parent.parent.ConnectedToGame:
-                self.parent.parent.patch_to_sound_file = final_output_path
+                self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
+    
 
             return final_output_path
         except Exception as e:

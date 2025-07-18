@@ -22,11 +22,14 @@ from managers.settings_manager import SettingsManager
 
 from utils import getTranslationVariant as _
 
+from core.events import get_event_bus, Events
+
 class FishSpeechModel(IVoiceModel):
     def __init__(self, parent: 'LocalVoice', model_id: str, rvc_handler: Optional[IVoiceModel] = None):
         super().__init__(parent, model_id)
         self.fish_speech_module = None
         self.current_fish_speech = None
+        self.events = get_event_bus()
         self.rvc_handler = rvc_handler
 
     def _load_module(self):
@@ -793,8 +796,7 @@ class FishSpeechModel(IVoiceModel):
                 else:
                     logger.warning("Модель 'medium+low' требует RVC, но обработчик не был предоставлен.")
 
-            if self.parent.parent and hasattr(self.parent.parent, 'patch_to_sound_file'):
-                self.parent.parent.patch_to_sound_file = final_output_path
+            self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
             
             return final_output_path
         except Exception as error:

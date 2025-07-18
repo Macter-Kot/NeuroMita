@@ -5,6 +5,8 @@ from main_logger import logger
 
 from core.events import get_event_bus, Events, Event
 
+# Контроллер для управления распознаванием речи
+
 class SpeechController:
     def __init__(self, main_controller):
         self.main = main_controller
@@ -73,29 +75,6 @@ class SpeechController:
         elif key == "VOSK_PROCESS_INTERVAL":
             SpeechRecognition.VOSK_PROCESS_INTERVAL = float(value)
             
-    def check_text_to_talk_or_send(self):
-        if self.settings and bool(self.settings.get("SILERO_USE")) and self.main.audio_controller.textToTalk:
-            self.main.audio_controller.voice_text()
-
-        timer_running_result = self.events_bus.emit_and_wait("check_image_request_timer_running", timeout=0.1)
-        image_request_timer_running = timer_running_result[0] if timer_running_result else False
-        
-        if image_request_timer_running:
-            self.events_bus.emit("trigger_send_interval_image")
-
-        if self.settings and bool(self.settings.get("MIC_INSTANT_SENT")):
-            if not self.main.audio_controller.waiting_answer:
-                text_from_recognition = SpeechRecognition.receive_text()
-                if text_from_recognition:
-                    logger.warning("Instant send: " + text_from_recognition)
-                    self.send_instantly(text_from_recognition)
-
-        elif self.settings and bool(self.settings.get("MIC_ACTIVE")) and self._check_user_entry_exists():
-            text_from_recognition = SpeechRecognition.receive_text()
-            if text_from_recognition:
-                self._insert_text_to_input(text_from_recognition)
-                self.main.user_input = self._get_user_input()
-                
     def send_instantly(self, text_to_send):
         try:
             llm_status_result = self.events_bus.emit_and_wait(Events.GET_LLM_PROCESSING_STATUS, timeout=0.1)

@@ -10,6 +10,8 @@ class TelegramAuthSignals(QObject):
     code_required = pyqtSignal(object)
     password_required = pyqtSignal(object)
 
+# Контроллер для работы с озвучкой в Telegram
+
 class TelegramController:
     def __init__(self, main_controller):
         self.main = main_controller

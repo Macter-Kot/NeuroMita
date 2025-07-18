@@ -23,7 +23,7 @@ from characters import CrazyMita, KindMita, ShortHairMita, CappyMita, MilaMita, 
 from characters.character import Character  # Character base
 from utils.pip_installer import PipInstaller
 
-from utils import SH, save_combined_messages, calculate_cost_for_combined_messages, process_text_to_voice # Keep utils
+from utils import SH, save_combined_messages, calculate_cost_for_combined_messages # Keep utils
 from utils import _ as translate
 
 from core.events import get_event_bus, Events
@@ -259,7 +259,8 @@ class ChatModel:
             user_input : str,
             system_input : str = "",
             image_data : list[bytes] | None = None,
-            stream_callback: callable = None
+            stream_callback: callable = None,
+            message_id: int | None = None
     ):
         # 0. Подготовка -----------------------------------------------------------------
         if image_data is None:
@@ -434,16 +435,7 @@ class ChatModel:
 
                 self.current_character.save_character_state_to_history(llm_messages_history_limited)
 
-                if self.current_character != self.GameMaster or bool(self.settings.get("GM_VOICE")):
-                    processed_responce = process_text_to_voice(final_response_text)
-                    self.event_bus.emit(Events.SET_TTS_DATA, {
-                        'text': processed_responce,
-                        'speaker': self.current_character.silero_command,
-                        'speaker_miku': self.current_character.miku_tts_name,
-                        'turn_off_video': self.current_character.silero_turn_off_video
-                    })
-                    logger.info(f"TTS Text: {processed_responce}, Speaker: {self.current_character.silero_command}")
-                
+
                 self.event_bus.emit(Events.ON_SUCCESSFUL_RESPONSE)
                 return final_response_text
 
@@ -828,6 +820,8 @@ class ChatModel:
         save_combined_messages(data, "SavedMessages/last_request_common_log")
         response = requests.post(self.api_url, headers=headers, json=data,
                                  stream=bool(self.settings.get("ENABLE_STREAMING", False)))
+        
+        logger.info(response.json())
 
         if response.status_code == 200:
             if bool(self.settings.get("ENABLE_STREAMING", False)):

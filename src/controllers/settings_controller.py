@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import QTimer
 from core.events import get_event_bus, Events
 
+# Контроллер для настроек приложения (settings)
+
 class SettingsController:
     def __init__(self, main_controller, config_path):
         self.main = main_controller

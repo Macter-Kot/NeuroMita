@@ -225,10 +225,6 @@ class ChatGUI(QMainWindow):
         except Exception as e:
             logger.info("Не удалось удачно получить настройки микрофона", e)
 
-        self.check_timer = QTimer()
-        self.check_timer.timeout.connect(self._check_text_to_talk)
-        self.check_timer.start(150)
-
         QTimer.singleShot(500, self.initialize_last_local_model_on_startup)
 
         self.prepare_stream_signal.connect(self._on_stream_start)
@@ -262,9 +258,6 @@ class ChatGUI(QMainWindow):
         self.update_model_loading_status_signal.connect(self._on_update_model_loading_status)
         self.finish_model_loading_signal.connect(self._on_finish_model_loading)
         self.cancel_model_loading_signal.connect(self._on_cancel_model_loading)
-
-    def _check_text_to_talk(self):
-        self.event_bus.emit(Events.CHECK_TEXT_TO_TALK)
 
     def setup_ui(self):
         central_widget = QWidget()

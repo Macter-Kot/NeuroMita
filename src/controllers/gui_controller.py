@@ -6,6 +6,7 @@ from main_logger import logger
 from core.events import get_event_bus, Events, Event
 from utils.ffmpeg_installer import install_ffmpeg
 
+# Контроллер для GUI
 
 class GuiController:
     def __init__(self, main_controller, view):

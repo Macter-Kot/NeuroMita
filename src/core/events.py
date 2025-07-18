@@ -343,7 +343,6 @@ class Events:
     SCHEDULE_G4F_UPDATE = "schedule_g4f_update"
     
     # Разное
-    CHECK_TEXT_TO_TALK = "check_text_to_talk"
     GET_CHARACTER_NAME = "get_character_name"
     GET_CURRENT_CONTEXT_TOKENS = "get_current_context_tokens"
     CALCULATE_COST = "calculate_cost"
@@ -377,7 +376,6 @@ class Events:
     GET_DEBUG_INFO = "get_debug_info"
 
     # От chat_handler.py
-    SET_TTS_DATA = "set_tts_data"
     GET_USER_INPUT = "get_user_input"
 
     # События chat_handler.py
@@ -463,6 +461,7 @@ class Events:
 
     # От server_controller.py
     GET_CHAT_SERVER = "get_chat_server"
+    SET_PATCH_TO_SOUND_FILE = "set_patch_to_sound_file"
 
     GET_INSTANT_SEND_STATUS = "get_instant_send_status"
     SET_INSTANT_SEND_STATUS = "set_instant_send_status"
@@ -470,4 +469,9 @@ class Events:
     # От loop_controller.py
     LOOP_READY = "loop_ready"
     RUN_IN_LOOP = "run_in_loop"
+
+
+    
+    VOICEOVER_REQUESTED = "voiceover_requested"
+
 

@@ -22,6 +22,8 @@ from utils.ffmpeg_installer import install_ffmpeg
 from utils.pip_installer import PipInstaller
 from core.events import get_event_bus, Events, Event
 
+# На текущий момент - контроллер-оркестратор + спагетти из других контроллеров
+
 class MainController:
     def __init__(self, view):
         self.view = view
@@ -104,7 +106,6 @@ class MainController:
         
         self.model_loading_cancelled = False
         
-        self.start_periodic_checks()
 
     def update_view(self, view):
         if not self.gui_controller:
@@ -144,8 +145,6 @@ class MainController:
         self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
         self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
         
-        self.event_bus.subscribe(Events.CHECK_TEXT_TO_TALK, self._on_check_text_to_talk, weak=False)
-        
         self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
         
         self.event_bus.subscribe(Events.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
@@ -159,8 +158,6 @@ class MainController:
         self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
         self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
-        self.event_bus.subscribe(Events.SET_TTS_DATA, self._on_set_tts_data, weak=False)
-
         self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
         self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
         self.event_bus.subscribe(Events.UPDATE_CHAT, self._on_update_chat, weak=False)
@@ -171,9 +168,6 @@ class MainController:
 
     def all_settings_actions(self, key, value):
         self.settings_controller.all_settings_actions(key, value)
-
-    def check_text_to_talk_or_send(self):
-        self.speech_controller.check_text_to_talk_or_send()
 
     def update_game_connection(self, is_connected):
         self.ConnectedToGame = is_connected
@@ -417,8 +411,6 @@ class MainController:
     def _on_delete_sound_files(self, event: Event):
         self.delete_all_sound_files()
     
-    def _on_check_text_to_talk(self, event: Event):
-        self.check_text_to_talk_or_send()
     
     def _on_schedule_g4f_update(self, event: Event):
         version = event.data.get('version', 'latest')
@@ -495,15 +487,6 @@ class MainController:
     def _on_close_loading_popup(self, event: Event):
         self.event_bus.emit("hide_loading_popup")
 
-    def _on_set_tts_data(self, event: Event):
-        data = event.data
-        self.textToTalk = data.get('text', '')
-        self.textSpeaker = data.get('speaker', '')
-        self.textSpeakerMiku = data.get('speaker_miku', '')
-        self.silero_turn_off_video = data.get('turn_off_video', True)
-        
-        logger.info(f"TTS Text: {self.textToTalk}, Speaker: {self.textSpeaker}")
-
     def _on_get_user_input(self, event: Event):
         return self.gui_controller.get_user_input()
 
@@ -538,21 +521,6 @@ class MainController:
 
     def _on_set_connected_to_game(self, event: Event):
         self.ConnectedToGame = event.data.get('connected', False)
-    
-    def start_periodic_checks(self):
-        import threading
-        
-        def check_loop():
-            while True:
-                try:
-                    self._on_check_text_to_talk(Event(name="periodic_check"))
-                    time.sleep(0.15)
-                except Exception as e:
-                    logger.error(f"Ошибка в периодической проверке: {e}")
-                    time.sleep(1)
-        
-        thread = threading.Thread(target=check_loop, daemon=True)
-        thread.start()
 
     @property
     def bot_handler(self):
@@ -602,14 +570,6 @@ class MainController:
     def image_request_timer_running(self):
         return self.capture_controller.image_request_timer_running
     
-    
-    @property
-    def textToTalk(self):
-        return self.audio_controller.textToTalk
-    
-    @textToTalk.setter
-    def textToTalk(self, value):
-        self.audio_controller.textToTalk = value
     
     @property
     def waiting_answer(self):
@@ -694,30 +654,6 @@ class MainController:
     @camera_capture.setter
     def camera_capture(self, value):
         self.capture_controller.camera_capture = value
-
-    @property  
-    def textSpeaker(self):
-        return self.audio_controller.textSpeaker
-
-    @textSpeaker.setter
-    def textSpeaker(self, value):
-        self.audio_controller.textSpeaker = value
-
-    @property
-    def textSpeakerMiku(self):
-        return self.audio_controller.textSpeakerMiku
-
-    @textSpeakerMiku.setter
-    def textSpeakerMiku(self, value):
-        self.audio_controller.textSpeakerMiku = value
-
-    @property
-    def silero_turn_off_video(self):
-        return self.audio_controller.silero_turn_off_video
-
-    @silero_turn_off_video.setter
-    def silero_turn_off_video(self, value):
-        self.audio_controller.silero_turn_off_video = value
 
     @property
     def loop(self):

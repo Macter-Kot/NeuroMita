@@ -456,4 +456,18 @@ class Events:
     UPDATE_SCREEN_CAPTURE_EXCLUSION = "update_screen_capture_exclusion"
     CAPTURE_SETTINGS_LOADED = "capture_settings_loaded"
     SEND_PERIODIC_IMAGE_REQUEST = "send_periodic_image_request"
+    UPDATE_LAST_IMAGE_REQUEST_TIME = "update_last_image_request_time"
+
+    # От chat_controller.py
+    GET_LLM_PROCESSING_STATUS = "get_llm_processing_status"
+
+    # От server_controller.py
+    GET_CHAT_SERVER = "get_chat_server"
+
+    GET_INSTANT_SEND_STATUS = "get_instant_send_status"
+    SET_INSTANT_SEND_STATUS = "set_instant_send_status"
+
+    # От loop_controller.py
+    LOOP_READY = "loop_ready"
+    RUN_IN_LOOP = "run_in_loop"
 

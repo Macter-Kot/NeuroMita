@@ -40,6 +40,7 @@ class CaptureController:
         self.event_bus.subscribe("update_screen_capture_exclusion", self._on_update_screen_capture_exclusion, weak=False)
         self.event_bus.subscribe("check_image_request_timer_running", self._on_check_image_request_timer_running, weak=False)
         self.event_bus.subscribe("trigger_send_interval_image", self._on_trigger_send_interval_image, weak=False)
+        self.event_bus.subscribe(Events.UPDATE_LAST_IMAGE_REQUEST_TIME, self._on_update_last_image_request_time, weak=False)
 
     def _on_capture_settings_loaded(self, event: Event):
         if self.settings:
@@ -88,6 +89,10 @@ class CaptureController:
 
     def _on_trigger_send_interval_image(self, event: Event):
         self.send_interval_image()
+
+    def _on_update_last_image_request_time(self, event: Event):
+        self.last_image_request_time = time.time()
+        logger.debug(f"Обновлено время последнего запроса изображения: {self.last_image_request_time}")
             
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:

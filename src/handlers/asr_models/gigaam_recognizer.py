@@ -27,7 +27,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         self.gigaam_onnx_export_path = "SpeechRecognitionModels/GigaAM_ONNX"
         self.FAILED_AUDIO_DIR = "FailedAudios"
         
-        # Переменные для работы с процессом
         self._process: Optional[Process] = None
         self._command_queue: Optional[Queue] = None
         self._result_queue: Optional[Queue] = None
@@ -36,7 +35,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         self._process_initialized = False
         self._stop_monitor = Event()
         
-        # Для синхронного transcribe
         self._transcribe_result = None
         self._transcribe_event = Event()
         
@@ -66,11 +64,9 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         if onnx_path:
             self.gigaam_onnx_export_path = onnx_path
         
-                # Если процесс уже запущен и изменилось устройство, нужно перезапустить
         if self._process and self._process.is_alive() and old_device != device:
             self.logger.info(f"Перезапуск GigaAM процесса с новым устройством: {device}")
             self._stop_process()
-            # Перезапуск произойдет при следующем вызове init()
             self._is_initialized = False
         else:
             self.logger.info(f"Устройство для GigaAM установлено на: {device}")
@@ -78,11 +74,9 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
     async def install(self) -> bool:
         """Установка зависимостей в основном процессе"""
         try:
-            # Проверяем GPU
             if self._current_gpu is None:
                 self._current_gpu = check_gpu_provider() or "CPU"
             
-            # Устанавливаем PyTorch
             if self._torch is None:
                 try:
                     import torch
@@ -102,7 +96,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                         raise ImportError("Не удалось установить torch, необходимый для GigaAM.")
                     import torch
                 
-                # Настраиваем безопасные глобальные переменные для torch
                 try:
                     import omegaconf
                 except ImportError:
@@ -129,7 +122,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 self.logger.warning("TORCH ADDED SAFE GLOBALS!")
                 self._torch = torch
 
-            # Устанавливаем GigaAM
             try:
                 import gigaam
             except ImportError:
@@ -142,7 +134,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 if not success:
                     raise ImportError("Не удалось установить GigaAM.")
             
-            # Устанавливаем sounddevice для микрофона
             if self._sd is None:
                 try:
                     import sounddevice as sd
@@ -155,12 +146,10 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                     import sounddevice as sd
                     self._sd = sd
             
-            # Устанавливаем numpy
             if self._np is None:
                 import numpy as np
                 self._np = np
             
-            # Если не NVIDIA, устанавливаем ONNX Runtime
             if self._current_gpu != "NVIDIA" and self.gigaam_device != "cuda":
                 try:
                     import onnxruntime
@@ -190,13 +179,11 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         if self._is_initialized and self._process and self._process.is_alive():
             return True
         
-        # Запускаем процесс
         if self._start_process():
             self._is_initialized = True
             return True
         return False
     
-    # GigaAMRecognizer.transcribe()
     async def transcribe(self, audio_data: np.ndarray, sample_rate: int) -> Optional[str]:
         """
         Отправляем команду через очередь и асинхронно ждём ответ.
@@ -208,7 +195,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             self.logger.error("GigaAM процесс не инициализирован")
             return None
 
-        # 1) Записываем аудио во временный файл
         import tempfile, wave, os, uuid
         tmp_dir = tempfile.gettempdir()
         tmp_name = f"gigaam_{uuid.uuid4().hex}.wav"
@@ -225,7 +211,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             self.logger.error(f"Не удалось создать временный wav для GigaAM: {e}")
             return None
 
-        # 2) Создаём future, куда монитор-поток положит результат
         loop = asyncio.get_running_loop()
         future: asyncio.Future[str | None] = loop.create_future()
 
@@ -233,22 +218,18 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             if not future.done():
                 future.set_result(result)
 
-        # 3) складываем future в словарь «ожидающих» (создадим, если его ещё нет)
         if not hasattr(self, "_pending_futures"):
             self._pending_futures: dict[str, Callable[[str | None], None]] = {}
         self._pending_futures[tmp_path] = _result_setter
 
-        # 4) отправляем команду процессу (только путь + sr)
         self._command_queue.put(("transcribe", tmp_path, sample_rate))
 
-        # 5) ждём результат (с таймаутом)
         try:
             return await asyncio.wait_for(future, timeout=30)
         except asyncio.TimeoutError:
             self.logger.error("Таймаут ожидания транскрипции GigaAM")
             return None
         finally:
-            # файл удалит сам воркер, но на всякий случай можно подчистить
             pass
     
     async def live_recognition(self, microphone_index: int, handle_voice_callback, 
@@ -325,9 +306,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                         speech_buffer.clear()
                         silence_counter = 0
                         
-                        # Закрываем stream перед тяжелой работой
-                        stream.close()
-                        
                         # Отправляем на транскрибацию в процесс
                         text = await self.transcribe(audio_to_process, sample_rate)
                         if text:
@@ -336,15 +314,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                         else:
                             await self._save_failed_audio(audio_to_process, sample_rate)
                         
-                        # Открываем stream заново
-                        stream = self._sd.InputStream(
-                            samplerate=sample_rate,
-                            channels=1,
-                            dtype='float32',
-                            blocksize=chunk_size,
-                            device=microphone_index
-                        )
-                        stream.start()
+                        # поток микрофона не закрывали – ничего делать не нужно
                 
                 await asyncio.sleep(0.01)
         finally:
@@ -376,13 +346,10 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         self._np = None
         self._is_initialized = False
     
-    # Вспомогательные методы для работы с процессом
-    
     def _monitor_process(self):
         """Поток для мониторинга результатов от процесса GigaAM"""
         while not self._stop_monitor.is_set() and self._process and self._process.is_alive():
             try:
-                # Обработка логов
                 while not self._log_queue.empty():
                     try:
                         level, msg = self._log_queue.get_nowait()
@@ -390,7 +357,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                     except queue.Empty:
                         break
                 
-                # Обработка результатов
                 while not self._result_queue.empty():
                     try:
                         result = self._result_queue.get_nowait()
@@ -431,15 +397,12 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         
         self.logger.info("Запуск отдельного процесса для GigaAM...")
         
-        # Создаем очереди для коммуникации
         self._command_queue = mp.Queue()
         self._result_queue = mp.Queue()
         self._log_queue = mp.Queue()
         
-        # Импортируем функцию только когда нужна (избегаем циклических импортов)
         from handlers.asr_models.gigaam_process import run_gigaam_process
         
-        # Создаем и запускаем процесс
         self._process = mp.Process(
             target=run_gigaam_process,
             args=(
@@ -450,7 +413,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         )
         self._process.start()
         
-        # Запускаем поток мониторинга
         self._stop_monitor.clear()
         self._monitor_thread = Thread(
             target=self._monitor_process,
@@ -458,7 +420,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         )
         self._monitor_thread.start()
         
-        # Отправляем команду инициализации с текущими настройками
         init_options = {
             'device': self.gigaam_device,
             'model': self.gigaam_model,
@@ -468,8 +429,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         }
         self._command_queue.put(('init', init_options))
         
-        # Ждем инициализации
-        timeout = 120  # секунд (больше времени для загрузки модели)
+        timeout = 120
         start_time = time.time()
         while not self._process_initialized:
             if time.time() - start_time > timeout:
@@ -488,21 +448,17 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             
         self.logger.info("Остановка GigaAM процесса...")
         
-        # Останавливаем мониторинг
         self._stop_monitor.set()
         
-        # Отправляем команду завершения
         if self._command_queue:
             try:
                 self._command_queue.put(('shutdown',))
             except:
                 pass
         
-        # Ждем завершения монитора
         if self._monitor_thread:
             self._monitor_thread.join(timeout=2)
         
-        # Ждем завершения процесса
         if self._process:
             self._process.join(timeout=5)
             
@@ -511,7 +467,6 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 self._process.terminate()
                 self._process.join(timeout=2)
         
-        # Очищаем переменные
         self._process = None
         self._command_queue = None
         self._result_queue = None

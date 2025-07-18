@@ -23,6 +23,9 @@ class TelegramController:
         self.api_id = ""
         self.phone = ""
         
+        self._loop = None
+        self._waiting_for_loop = False
+        
         self.auth_signals = TelegramAuthSignals()
         self._subscribe_to_events()
         
@@ -30,6 +33,9 @@ class TelegramController:
         self.event_bus.subscribe("telegram_settings_loaded", self._on_telegram_settings_loaded, weak=False)
         self.event_bus.subscribe("telegram_settings_changed", self._on_telegram_settings_changed, weak=False)
         self.event_bus.subscribe("telegram_send_voice_request", self._on_send_voice_request, weak=False)
+        self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
+        self.event_bus.subscribe(Events.GET_SILERO_STATUS, self._on_get_silero_status, weak=False)
+        self.event_bus.subscribe(Events.LOOP_READY, self._on_loop_ready, weak=False)
     
     def _on_telegram_settings_loaded(self, event: Event):
         data = event.data
@@ -47,6 +53,23 @@ class TelegramController:
             self.bot_handler.silero_time_limit = int(value)
         elif key == "AUDIO_BOT" and self.bot_handler:
             self.bot_handler.tg_bot = value
+    
+    def _on_set_silero_connected(self, event: Event):
+        self.silero_connected = event.data.get('connected', False)
+        logger.info(f"Статус подключения Silero установлен: {self.silero_connected}")
+    
+    def _on_get_silero_status(self, event: Event):
+        return self.silero_connected
+    
+    def _on_loop_ready(self, event: Event):
+        """Обработчик события готовности loop"""
+        self._loop = event.data.get('loop')
+        logger.info("TelegramController получил уведомление о готовности loop")
+        
+        # Если ждали loop для запуска Silero
+        if self._waiting_for_loop:
+            self._waiting_for_loop = False
+            self._start_silero_with_loop()
         
     def connect_view_signals(self):
         self.auth_signals.code_required.connect(self._on_code_required)
@@ -59,13 +82,30 @@ class TelegramController:
         self.event_bus.emit(Events.PROMPT_FOR_TG_PASSWORD, {'future': password_future})
         
     def start_silero_async(self):
-        logger.info("Ожидание готовности цикла событий...")
-        self.main.loop_ready_event.wait()
-        if self.main.loop and self.main.loop.is_running():
-            logger.info("Запускаем Silero через цикл событий.")
-            asyncio.run_coroutine_threadsafe(self.start_silero(), self.main.loop)
+        logger.info("Запрос на запуск Silero...")
+        
+        # Проверяем, есть ли уже loop
+        if not self._loop:
+            # Пробуем получить loop синхронно
+            loops = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=0.1)
+            if loops and loops[0]:
+                self._loop = loops[0]
+        
+        if self._loop and self._loop.is_running():
+            # Loop готов, запускаем сразу
+            self._start_silero_with_loop()
         else:
-            logger.info("Ошибка: Цикл событий asyncio не запущен.")
+            # Loop ещё не готов, ждём события LOOP_READY
+            logger.info("Loop ещё не готов, ожидаем события LOOP_READY...")
+            self._waiting_for_loop = True
+    
+    def _start_silero_with_loop(self):
+        """Запуск Silero когда loop точно готов"""
+        if self._loop and self._loop.is_running():
+            logger.info("Запускаем Silero через цикл событий.")
+            asyncio.run_coroutine_threadsafe(self.start_silero(), self._loop)
+        else:
+            logger.error("Ошибка: Loop не готов для запуска Silero")
             
     async def start_silero(self):
         logger.info("Telegram Bot запускается!")
@@ -108,15 +148,23 @@ class TelegramController:
         id = data.get('id', 0)
         future = data.get('future')
         
-        if self.bot_handler and self.bot_handler_ready:
-            asyncio.run_coroutine_threadsafe(
-                self._async_send_and_receive(text, speaker_command, id, future),
-                self.main.loop
-            )
-        else:
+        if not self.bot_handler or not self.bot_handler_ready:
             logger.error("Bot handler не готов для отправки голосового запроса")
             if future:
                 future.set_exception(Exception("Bot handler not ready"))
+            return
+            
+        # Используем универсальное событие RUN_IN_LOOP
+        coro = self._async_send_and_receive(text, speaker_command, id, future)
+        
+        def handle_result(result, error):
+            if error and future:
+                future.set_exception(error)
+        
+        self.event_bus.emit(Events.RUN_IN_LOOP, {
+            'coroutine': coro,
+            'callback': handle_result
+        })
 
     async def _async_send_and_receive(self, text, speaker_command, id, future):
         try:

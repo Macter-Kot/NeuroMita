@@ -29,12 +29,12 @@ from utils import _ as translate
 from core.events import get_event_bus, Events
 
 class ChatModel:
-    def __init__(self, controller, api_key, api_key_res, api_url, api_model, api_make_request, pip_installer: PipInstaller):
+    def __init__(self, settings, api_key, api_key_res, api_url, api_model, api_make_request, pip_installer: PipInstaller):
         self.last_key = 0
         self.pip_installer = pip_installer
         self.g4fClient = None
         self.g4f_available = False
-        self.settings = controller.settings
+        self.settings = settings
         self._initialize_g4f()  # Keep g4f initialization
 
         self.api_key = api_key

@@ -165,43 +165,58 @@ class GigaAMProcessWorker:
                                                     sess_options=opts))
         return sessions
     
-    async def transcribe_audio(self, wav_path: str, sample_rate: int):
+    async def transcribe_audio(self, audio_data: np.ndarray, sample_rate: int):
+        """Транскрибация аудио"""
         try:
             pytorch_model = self._gigaam_model_instance
             onnx_sessions = self._gigaam_onnx_sessions
 
             if pytorch_model is None and onnx_sessions is None:
-                self.error("GigaAM не инициализирован")
-                self.result_queue.put(('transcription', wav_path, None))
+                self.error("Распознаватель GigaAM не инициализирован")
+                self.result_queue.put(('transcription', None))
                 return
+            
+            TEMP_AUDIO_DIR = "TempAudios"
+            os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
+            temp_filepath = os.path.join(TEMP_AUDIO_DIR, f"temp_gigaam_{time.time_ns()}.wav")
+            
+            try:
+                audio_data_int16 = (audio_data * 32767).astype(np.int16)
+                with wave.open(temp_filepath, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(sample_rate)
+                    wf.writeframes(audio_data_int16.tobytes())
 
-            transcription = ""
-            if pytorch_model:
-                transcription = pytorch_model.transcribe(wav_path)
-            else:
-                from gigaam.onnx_utils import transcribe_sample
-                model_type = self.gigaam_model.split("_", 1)[-1]
-                transcription = transcribe_sample(
-                    wav_path,
-                    model_type,
-                    onnx_sessions
-                )
+                transcription = ""
+                if pytorch_model:
+                    transcription = pytorch_model.transcribe(temp_filepath)
+                else:
+                    from gigaam.onnx_utils import transcribe_sample
+                    model_type = self.gigaam_model.split("_", 1)[-1]
+                    transcription = transcribe_sample(
+                            temp_filepath,
+                            model_type,
+                            onnx_sessions
+                    )
 
-            text = transcription.strip() if transcription else ""
-            self.result_queue.put(('transcription', wav_path, text if text else None))
+                if transcription and transcription.strip() != '':
+                    self.result_queue.put(('transcription', transcription))
+                else:
+                    self.info("GigaAM не распознал текст")
+                    self.result_queue.put(('transcription', None))
 
+            finally:
+                if os.path.exists(temp_filepath):
+                    try:
+                        os.remove(temp_filepath)
+                    except OSError as e:
+                        self.error(f"Не удалось удалить временный файл {temp_filepath}: {e}")
+                        
         except Exception as e:
             self.error(f"Ошибка транскрибации: {e}", exc_info=True)
-            self.result_queue.put(('transcription', wav_path, None))
-        finally:
-            # удаляем временный файл
-            import os
-            try:
-                if os.path.exists(wav_path):
-                    os.remove(wav_path)
-            except OSError:
-                pass
-    
+            self.result_queue.put(('transcription_error', str(e)))
+
     async def process_commands(self):
         """Основной цикл обработки команд"""
         while True:

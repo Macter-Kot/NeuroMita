@@ -2,7 +2,6 @@ import sounddevice as sd
 import time
 from handlers.asr_handler import SpeechRecognition
 from main_logger import logger
-
 from core.events import get_event_bus, Events, Event
 
 # Контроллер для управления распознаванием речи
@@ -24,6 +23,8 @@ class SpeechController:
         self.events_bus.subscribe("speech_setting_changed", self._on_speech_setting_changed, weak=False)
         self.events_bus.subscribe(Events.GET_INSTANT_SEND_STATUS, self._on_get_instant_send_status, weak=False)
         self.events_bus.subscribe(Events.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
+        # НОВАЯ ПОДПИСКА
+        self.events_bus.subscribe(Events.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
         
     def _on_speech_settings_loaded(self, event: Event):
         self.settings = event.data.get('settings')
@@ -46,6 +47,23 @@ class SpeechController:
     
     def _on_set_instant_send_status(self, event: Event):
         self.instant_send = event.data.get('status', False)
+    
+    def _on_speech_text_recognized(self, event: Event):
+        """Обработчик распознанного текста"""
+        text = event.data.get('text', '')
+        if not text or not self.settings:
+            return
+            
+        if not bool(self.settings.get("MIC_ACTIVE")):
+            return
+            
+        if bool(self.settings.get("MIC_INSTANT_SENT")):
+            if not self.main.audio_controller.waiting_answer:
+                logger.warning("Instant send: " + text)
+                self.send_instantly(text)
+                
+        elif self._check_user_entry_exists():
+            self._insert_text_to_input(text)
             
     def update_speech_settings(self, key, value):
         if key == "MIC_ACTIVE":
@@ -74,7 +92,7 @@ class SpeechController:
             SpeechRecognition.SILENCE_DURATION = float(value)
         elif key == "VOSK_PROCESS_INTERVAL":
             SpeechRecognition.VOSK_PROCESS_INTERVAL = float(value)
-            
+    
     def send_instantly(self, text_to_send):
         try:
             llm_status_result = self.events_bus.emit_and_wait(Events.GET_LLM_PROCESSING_STATUS, timeout=0.1)
@@ -102,9 +120,6 @@ class SpeechController:
                 'system_input': '',
                 'image_data': []
             })
-
-            SpeechRecognition._text_buffer.clear()
-            SpeechRecognition._current_text = ""
             
         except Exception as e:
             logger.info(f"Ошибка обработки текста: {str(e)}")

@@ -470,7 +470,7 @@ class Events:
     LOOP_READY = "loop_ready"
     RUN_IN_LOOP = "run_in_loop"
 
-
+    SPEECH_TEXT_RECOGNIZED = "speech_text_recognized"
     
     VOICEOVER_REQUESTED = "voiceover_requested"
 

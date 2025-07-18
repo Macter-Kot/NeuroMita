@@ -20,6 +20,9 @@ from handlers.asr_models.google_recognizer import GoogleRecognizer
 from handlers.asr_models.gigaam_recognizer import GigaAMRecognizer
 
 
+from core.events import get_event_bus, Events
+
+
 class AudioState:
     def __init__(self):
         self.is_recording = False
@@ -204,9 +207,8 @@ class SpeechRecognition:
     async def handle_voice_message(recognized_text: str) -> None:
         text_clean = recognized_text.strip()
         if text_clean:
-            with SpeechRecognition._text_lock:
-                SpeechRecognition._text_buffer.append(text_clean)
-                SpeechRecognition._current_text += f"{text_clean}. "
+            event_bus = get_event_bus()
+            event_bus.emit(Events.SPEECH_TEXT_RECOGNIZED, {'text': text_clean})
 
     @staticmethod
     async def live_recognition() -> None:

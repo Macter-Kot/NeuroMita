@@ -103,8 +103,6 @@ class MainController:
         self._subscribe_to_events()
         logger.info("MainController подписался на события")
         
-        self.model_loading_cancelled = False
-        
 
     def update_view(self, view):
         if not self.gui_controller:
@@ -314,9 +312,6 @@ class MainController:
                 self.speech_controller.selected_microphone = microphone_name
                 self.speech_controller.device_id = device_id
             
-            self.selected_microphone = microphone_name
-            self.device_id = device_id
-            
             self.settings.set("NM_MICROPHONE_ID", device_id)
             self.settings.set("NM_MICROPHONE_NAME", microphone_name)
             self.settings.save_settings()
@@ -386,120 +381,10 @@ class MainController:
         self.clear_user_input()
 
     def _on_set_waiting_answer(self, event: Event):
-        self.waiting_answer = event.data.get('waiting', False)
+        self.audio_controller.waiting_answer = event.data.get('waiting', False)
 
     def _on_set_connected_to_game(self, event: Event):
         self.ConnectedToGame = event.data.get('connected', False)
-
-    @property
-    def bot_handler(self):
-        return self.telegram_controller.bot_handler
-    
-    @bot_handler.setter
-    def bot_handler(self, value):
-        self.telegram_controller.bot_handler = value
-    
-    @property
-    def bot_handler_ready(self):
-        return self.telegram_controller.bot_handler_ready
-    
-    @bot_handler_ready.setter 
-    def bot_handler_ready(self, value):
-        self.telegram_controller.bot_handler_ready = value
-    
-    
-    @property
-    def screen_capture_instance(self):
-        return self.capture_controller.screen_capture_instance
-    
-    @property
-    def image_request_timer_running(self):
-        return self.capture_controller.image_request_timer_running
-    
-    
-    @property
-    def waiting_answer(self):
-        return self.audio_controller.waiting_answer
-    
-    @waiting_answer.setter
-    def waiting_answer(self, value):
-        self.audio_controller.waiting_answer = value
-    
-    @property
-    def local_voice(self):
-        return self.audio_controller.local_voice
-    
-    @property
-    def model(self):
-        return self.model_controller.model
-    
-    @property
-    def device_id(self):
-        return self.speech_controller.device_id
-    
-    @device_id.setter
-    def device_id(self, value):
-        self.speech_controller.device_id = value
-    
-    @property
-    def selected_microphone(self):
-        return self.speech_controller.selected_microphone
-    
-    @selected_microphone.setter
-    def selected_microphone(self, value):
-        self.speech_controller.selected_microphone = value
-    
-    @property
-    def voiceover_method(self):
-        return self.audio_controller.voiceover_method
-    
-    @voiceover_method.setter
-    def voiceover_method(self, value):
-        self.audio_controller.voiceover_method = value
-    
-    @property
-    def current_local_voice_id(self):
-        return self.audio_controller.current_local_voice_id
-    
-    @current_local_voice_id.setter
-    def current_local_voice_id(self, value):
-        self.audio_controller.current_local_voice_id = value
-    
-    @property
-    def last_voice_model_selected(self):
-        return self.audio_controller.last_voice_model_selected
-    
-    @last_voice_model_selected.setter
-    def last_voice_model_selected(self, value):
-        self.audio_controller.last_voice_model_selected = value
-    
-    @property
-    def model_loading_cancelled(self):
-        return self.audio_controller.model_loading_cancelled
-    
-    @model_loading_cancelled.setter
-    def model_loading_cancelled(self, value):
-        self.audio_controller.model_loading_cancelled = value
-
-    @property
-    def stop_screen_capture_thread(self):
-        return self.capture_controller.stop_screen_capture_thread
-    
-    @property
-    def stop_camera_capture_thread(self):
-        return self.capture_controller.stop_camera_capture_thread
-    
-    @property
-    def delete_all_sound_files(self):
-        return self.audio_controller.delete_all_sound_files
-    
-    @property
-    def camera_capture(self):
-        return self.capture_controller.camera_capture
-    
-    @camera_capture.setter
-    def camera_capture(self, value):
-        self.capture_controller.camera_capture = value
 
     @property
     def loop(self):

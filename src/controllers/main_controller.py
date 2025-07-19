@@ -87,11 +87,11 @@ class MainController:
         self.model_controller = ModelController(self, self.api_key, self.api_key_res, self.api_url, 
                                                self.api_model, self.makeRequest, self.pip_installer)
         logger.warning("ModelController успешно инициализирован.")
-        self.capture_controller = CaptureController(self)
+        self.capture_controller = CaptureController(self.settings)
         logger.warning("CaptureController успешно инициализирован.")
         self.speech_controller = SpeechController(self)
         logger.warning("SpeechController успешно инициализирован.")
-        self.server_controller = ServerController(self)
+        self.server_controller = ServerController()
         logger.warning("ServerController успешно инициализирован.")
         self.chat_controller = ChatController(self.settings)
         logger.warning("ChatController успешно инициализирован.")

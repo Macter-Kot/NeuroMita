@@ -8,15 +8,13 @@ from main_logger import logger
 from core.events import get_event_bus, Events
 
 class ChatServer:
-    def __init__(self, controller, chat_model, host='127.0.0.1', port=12345):
+    def __init__(self, host='127.0.0.1', port=12345):
         self.host = host
         self.port = port
-        self.controller = controller
         self.server_socket = None
         self.client_socket = None
         self.passive_client_socket = None
         self.passive_server_socket = None
-        self.chat_model = chat_model
         self.messages_to_say = []
         self.text_wait_limit_enabled = False
         self.voice_wait_limit_enabled = False

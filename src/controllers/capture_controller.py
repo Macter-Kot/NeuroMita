@@ -8,9 +8,9 @@ from core.events import get_event_bus, Events, Event
 # Контроллер захвата экрана и камеры
 
 class CaptureController:
-    def __init__(self, main_controller):
+    def __init__(self, settings):
         logger.info("CaptureController инициализируется")
-        self.settings = main_controller.settings
+        self.settings = settings
 
         self.event_bus = get_event_bus()
         self.screen_capture_instance = ScreenCapture()

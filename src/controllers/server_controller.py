@@ -8,10 +8,9 @@ from core.events import get_event_bus, Events, Event
 
 # Контроллер для работы с сервером
 class ServerController:
-    def __init__(self, main_controller):
-        self.main = main_controller
+    def __init__(self):
         self.event_bus = get_event_bus()
-        self.server = ChatServer(self.main, self.main.model_controller.model)
+        self.server = ChatServer()
         self.server_thread = None
         self.running = False
         

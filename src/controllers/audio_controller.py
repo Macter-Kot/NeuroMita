@@ -14,8 +14,6 @@ from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
 from utils import _
 from core.events import get_event_bus, Events, Event
 
-# Контроллер для работы с аудио
-
 class AudioController:
     def __init__(self, main_controller):
         self.main = main_controller
@@ -54,30 +52,27 @@ class AudioController:
             
         logger.info(f"Получен запрос на озвучку: {text[:50]}... с message_id: {message_id}")
         
-        # Установить id_sound из message_id
         self.id_sound = message_id if message_id is not None else self.id_sound
         
-        # Вызвать озвучку напрямую
-        if self.main.loop and self.main.loop.is_running():
+        loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP)[0]
+        if loop and loop.is_running():
             try:
                 self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
 
                 if self.voiceover_method == "TG":
                     logger.info(f"Используем Telegram (Silero/Miku) для озвучки: {speaker}")
-                    asyncio.run_coroutine_threadsafe(
-                        self.run_send_and_receive(text, speaker, self.id_sound),
-                        self.main.loop
-                    )
+                    self.event_bus.emit(Events.RUN_IN_LOOP, {
+                        'coroutine': self.run_send_and_receive(text, speaker, self.id_sound)
+                    })
 
                 elif self.voiceover_method == "Local":
                     selected_local_model_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
                     if selected_local_model_id:
                         logger.info(f"Используем {selected_local_model_id} для локальной озвучки")
                         if self.local_voice.is_model_initialized(selected_local_model_id):
-                            asyncio.run_coroutine_threadsafe(
-                                self.run_local_voiceover(text),
-                                self.main.loop
-                            )
+                            self.event_bus.emit(Events.RUN_IN_LOOP, {
+                                'coroutine': self.run_local_voiceover(text)
+                            })
                         else:
                             logger.warning(f"Модель {selected_local_model_id} выбрана, но не инициализирована.")
                     else:
@@ -101,18 +96,15 @@ class AudioController:
         logger.info("Попытка получить фразу")
         self.waiting_answer = True
         
-        # Создаем Future для ожидания результата
         future = asyncio.Future()
         
-        # Отправляем событие вместо прямого вызова
-        self.event_bus.emit("telegram_send_voice_request", {
+        self.event_bus.emit(Events.TELEGRAM_SEND_VOICE_REQUEST, {
             'text': response,
             'speaker_command': speaker_command,
             'id': id,
             'future': future
         })
         
-        # Ждем завершения
         try:
             await future
         except Exception as e:
@@ -124,7 +116,9 @@ class AudioController:
     async def run_local_voiceover(self, text):
         result_path = None
         try:
-            character = self.main.model_controller.model.current_character if hasattr(self.main.model_controller.model, "current_character") else None
+            current_char_data = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER)[0]
+            character = current_char_data['name'] if current_char_data else None
+            
             output_file = f"MitaVoices/output_{uuid.uuid4()}.wav"
             absolute_audio_path = os.path.abspath(output_file)
             os.makedirs(os.path.dirname(absolute_audio_path), exist_ok=True)
@@ -137,11 +131,13 @@ class AudioController:
 
             if result_path:
                 logger.info(f"Локальная озвучка сохранена в: {result_path}")
-                if not self.main.ConnectedToGame and self.settings.get("VOICEOVER_LOCAL_CHAT"):
+                is_connected = self.event_bus.emit_and_wait(Events.GET_CONNECTION_STATUS)[0]
+                
+                if not is_connected and self.settings.get("VOICEOVER_LOCAL_CHAT"):
                     await AudioHandler.handle_voice_file(result_path, self.settings.get("LOCAL_VOICE_DELETE_AUDIO",
                                                                                         True) if os.environ.get(
                         "ENABLE_VOICE_DELETE_CHECKBOX", "0") == "1" else True)
-                elif self.main.ConnectedToGame:
+                elif is_connected:
                     self.event_bus.emit(Events.SET_PATCH_TO_SOUND_FILE, result_path)
                 else:
                     logger.info("Озвучка в локальном чате отключена.")
@@ -191,7 +187,6 @@ class AudioController:
             except Exception as e:
                 logger.error(f"Ошибка при обработке модуля {module_name}: {e}", exc_info=True)
 
-        # Вызываем проверку зависимостей через событие
         self.event_bus.emit(Events.CHECK_TRITON_DEPENDENCIES)
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):

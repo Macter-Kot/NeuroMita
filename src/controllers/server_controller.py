@@ -72,11 +72,17 @@ class ServerController:
             #     self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
     
     def _on_get_server_data(self, event: Event):
+
+        silero_connected_result = self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS)
+        silero_connected = silero_connected_result[0] if silero_connected_result else False
+        instand_send_result = self.event_bus.emit_and_wait(Events.GET_INSTANT_SEND_STATUS)
+        instand_send = instand_send_result[0] if instand_send_result else False
+
         return {
             'patch_to_sound_file': self.patch_to_sound_file,
             'id_sound': self.id_sound,
-            'instant_send': self.event_bus.emit_and_wait(Events.GET_INSTANT_SEND_STATUS),
-            'silero_connected': self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS)
+            'instant_send': instand_send,
+            'silero_connected': silero_connected
         }
     
     def _on_set_id_sound(self, event: Event):

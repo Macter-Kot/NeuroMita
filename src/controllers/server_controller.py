@@ -65,10 +65,11 @@ class ServerController:
             
     def run_server_loop(self):
         while self.running:
-            needUpdate = self.server.handle_connection()
-            if needUpdate:
-                logger.info(f"[{time.strftime('%H:%M:%S')}] run_server_loop: Обнаружено needUpdate, вызываю load_chat_history.")
-                self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+            self.server.handle_connection()
+            # needUpdate = self.server.handle_connection()
+            # if needUpdate:
+            #     logger.info(f"[{time.strftime('%H:%M:%S')}] run_server_loop: Обнаружено needUpdate, вызываю load_chat_history.")
+            #     self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
     
     def _on_get_server_data(self, event: Event):
         return {

@@ -15,6 +15,7 @@ class SpeechController:
         self.mic_recognition_active = False
         self.instant_send = False
         self.events_bus = get_event_bus()
+        self.recognized_text = ""
         
         self._subscribe_to_events()
         
@@ -23,8 +24,17 @@ class SpeechController:
         self.events_bus.subscribe("speech_setting_changed", self._on_speech_setting_changed, weak=False)
         self.events_bus.subscribe(Events.GET_INSTANT_SEND_STATUS, self._on_get_instant_send_status, weak=False)
         self.events_bus.subscribe(Events.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
-        # НОВАЯ ПОДПИСКА
         self.events_bus.subscribe(Events.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
+        self.events_bus.subscribe(Events.SEND_MESSAGE, self._on_sent_message, weak=False)
+        
+        self.events_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
+
+    def _on_sent_message(self, event: Event):
+        self.recognized_text = ""
+
+    def _on_get_user_input(self, event: Event):
+        # тут я хотел логику получения рекогнайза
+        return self.recognized_text
         
     def _on_speech_settings_loaded(self, event: Event):
         self.settings = event.data.get('settings')
@@ -64,7 +74,10 @@ class SpeechController:
                 self.send_instantly(text)
                 
         elif self._check_user_entry_exists():
-            self._insert_text_to_input(text)
+            if self.main.ConnectedToGame:
+                self.recognized_text += text
+            else:    
+                self._insert_text_to_input(text)
             
     def update_speech_settings(self, key, value):
         if key == "MIC_ACTIVE":
@@ -113,8 +126,6 @@ class SpeechController:
                 'emotion': ''
             })
             
-            if self.main.ConnectedToGame:
-                self.instant_send = True
                 
             self.events_bus.emit(Events.SEND_MESSAGE, {
                 'user_input': text_to_send,

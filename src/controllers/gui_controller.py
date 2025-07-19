@@ -53,7 +53,6 @@ class GuiController:
         self.event_bus.subscribe(Events.UPDATE_DEBUG_INFO, self._on_update_debug_info, weak=False)
         self.event_bus.subscribe(Events.UPDATE_TOKEN_COUNT, self._on_update_token_count, weak=False)
         self.event_bus.subscribe(Events.CHECK_AND_INSTALL_FFMPEG, self._on_check_and_install_ffmpeg, weak=False)
-        self.event_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
         self.event_bus.subscribe(Events.GET_TG_AUTH_DATA, self._on_get_tg_auth_data, weak=False)
         
         self.event_bus.subscribe(Events.ON_STARTED_RESPONSE_GENERATION, self._on_started_response, weak=False)
@@ -304,11 +303,6 @@ class GuiController:
     def _on_check_and_install_ffmpeg(self, event: Event):
         logger.debug("GuiController: получено событие CHECK_AND_INSTALL_FFMPEG")
         self.check_and_install_ffmpeg()
-        
-    def _on_get_user_input(self, event: Event):
-        result = self.get_user_input()
-        logger.debug(f"GuiController: получено событие GET_USER_INPUT, возвращаем: '{result}'")
-        return result
         
     def _on_get_tg_auth_data(self, event: Event):
         logger.debug("GuiController: получено событие GET_TG_AUTH_DATA")

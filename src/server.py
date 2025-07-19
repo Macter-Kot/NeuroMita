@@ -77,6 +77,7 @@ class ChatServer:
         transmitted_to_game = False
         try:
             message_id = message_data["id"]
+            
             self.current_message_id = message_id
 
             message_type = message_data["type"]
@@ -115,24 +116,27 @@ class ChatServer:
 
             response = ""
 
+            
+
             if message == "waiting":
                 if system_message != "-":
                     logger.info(f"Получено system_message {system_message} id {message_id}")
-                    self.event_bus.emit(Events.SET_ID_SOUND, {'id': message_id})
+                    self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
                     response = self.generate_response("", system_message, decoded_image_data)
                 elif self.messages_to_say:
                     response = self.messages_to_say.pop(0)
             elif message == "boring":
                 logger.info(f"Получено boring message id {message_id}")
+                self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
                 date_now = datetime.now().replace(microsecond=0)
-                self.event_bus.emit(Events.SET_ID_SOUND, {'id': message_id})
                 response = self.generate_response("",
                                               f"Время {date_now}, Игрок долго молчит( Ты можешь что-то сказать или предпринять",
                                               decoded_image_data)
                 logger.info("Отправлено Мите на озвучку: " + response)
             else:
                 logger.info(f"Получено message id {message_id}")
-                self.event_bus.emit(Events.SET_ID_SOUND, {'id': message_id})
+                
+                self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
                 self.event_bus.emit(Events.UPDATE_CHAT_UI, {
                     'role': 'user',
                     'response': message,

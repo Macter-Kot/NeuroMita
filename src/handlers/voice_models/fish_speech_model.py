@@ -797,7 +797,7 @@ class FishSpeechModel(IVoiceModel):
                     logger.warning("Модель 'medium+low' требует RVC, но обработчик не был предоставлен.")
 
             self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
-            
+            # self.events.emit(Events.SET_ID_SOUND, id_sound)
             return final_output_path
         except Exception as error:
             traceback.print_exc()

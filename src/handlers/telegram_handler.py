@@ -168,11 +168,10 @@ class TelegramBotHandler:
                     logger.info(f"Ошибка при удалении файла {sound_absolute_path}: {remove_error}")
 
                 # Устанавливаем данные через события
-                self.event_bus.emit(Events.SET_SOUND_FILE_DATA, {
-                    'patch_to_sound_file': absolute_wav_path,
-                    'id_sound': message_id
-                })
-                logger.info(f"Файл wav загружен: {absolute_wav_path}")
+                self.event_bus.emit(Events.SET_PATCH_TO_SOUND_FILE, absolute_wav_path)
+                logger.info(f"Файл установлен серверу: {absolute_wav_path}")
+                self.events.emit(Events.SET_ID_SOUND, message_id)
+                logger.info(f"Установленный файлу message_Id: {message_id}")
             else:
                 logger.info(f"Отправлен воспроизводится: {sound_absolute_path}")
                 await AudioHandler.handle_voice_file(file_path)

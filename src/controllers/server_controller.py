@@ -79,7 +79,12 @@ class ServerController:
         }
     
     def _on_set_id_sound(self, event: Event):
-        self.id_sound = event.data.get("id")
+        try:
+            self.id_sound = event.data.get("id")
+            return True
+        except Exception as ex:
+            logger.error("При установке id_sound произошла ошибка: " + str(ex))
+            return False
     
     def _on_reset_server_data(self, event: Event):
         self.main.instant_send = False

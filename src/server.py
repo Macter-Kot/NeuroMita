@@ -28,10 +28,11 @@ class ChatServer:
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
         logger.info(f"Сервер запущен на {self.host}:{self.port}")
-
     def handle_connection(self):
         if not self.server_socket:
             raise RuntimeError("Сервер не запущен. Вызовите start() перед handle_connection().")
+        
+        client_socket = None
         try:
             settings_result = self.event_bus.emit_and_wait(Events.GET_SETTINGS, timeout=1.0)
             settings = settings_result[0] if settings_result else {}
@@ -39,41 +40,54 @@ class ChatServer:
             self.text_wait_limit_enabled = settings.get("LIMIT_TEXT_WAIT", False)
             self.voice_wait_limit_enabled = settings.get("LIMIT_VOICE_WAIT", False)
 
-            self.client_socket, addr = self.server_socket.accept()
+            client_socket, addr = self.server_socket.accept()
 
-            received_data = b""
-            while True:
-                chunk = self.client_socket.recv(65536)
-                if not chunk:
-                    break
-                received_data += chunk
-                if b"}" in chunk and received_data.count(b"{") == received_data.count(b"}"):
-                    break
+            # Получаем полный JSON
+            received_text = self._recv_full_json(client_socket)
             
-            received_text = received_data.decode("utf-8")
-
             if not received_text.strip().endswith("}") or not received_text.strip().startswith("{"):
                 logger.error("Ошибка: JSON оборван или некорректен")
                 return False
+                
             try:
                 message_data = json.loads(received_text)
             except json.JSONDecodeError as e:
                 logger.error(f"Ошибка обработки JSON: {e}")
                 return False
-            self.process_message_data(message_data)
-            return True
+                
+            # Передаем сокет как параметр
+            return self.process_message_data(message_data, client_socket)
 
         except socket.error as e:
             logger.error(f"Socket error: {e}")
+            self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': False})
+            return False
         except Exception as e:
             logger.error(f"Connection handling error: {e}")
             self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': False})
-        finally:
-            if self.client_socket:
-                self.client_socket.close()
             return False
+        finally:
+            if client_socket:
+                try:
+                    client_socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                client_socket.close()
 
-    def process_message_data(self, message_data):
+    def _recv_full_json(self, client_socket):
+        """Вспомогательный метод для получения полного JSON из сокета"""
+        received_data = b""
+        while True:
+            chunk = client_socket.recv(65536)
+            if not chunk:
+                break
+            received_data += chunk
+            if b"}" in chunk and received_data.count(b"{") == received_data.count(b"}"):
+                break
+        
+        return received_data.decode("utf-8")
+
+    def process_message_data(self, message_data, client_socket):
         transmitted_to_game = False
         try:
             message_id = message_data["id"]
@@ -116,8 +130,6 @@ class ChatServer:
 
             response = ""
 
-            
-
             if message == "waiting":
                 if system_message != "-":
                     logger.info(f"Получено system_message {system_message} id {message_id}")
@@ -130,8 +142,8 @@ class ChatServer:
                 self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
                 date_now = datetime.now().replace(microsecond=0)
                 response = self.generate_response("",
-                                              f"Время {date_now}, Игрок долго молчит( Ты можешь что-то сказать или предпринять",
-                                              decoded_image_data)
+                                            f"Время {date_now}, Игрок долго молчит( Ты можешь что-то сказать или предпринять",
+                                            decoded_image_data)
                 logger.info("Отправлено Мите на озвучку: " + response)
             else:
                 logger.info(f"Получено message id {message_id}")
@@ -195,34 +207,27 @@ class ChatServer:
 
             })
             
+            self.event_bus.emit(Events.RESET_SERVER_DATA)
 
+            if transmitted_to_game:
+                self.event_bus.emit(Events.CLEAR_USER_INPUT)
 
             json_message = json.dumps(message_data)
-            self.client_socket.send(json_message.encode("utf-8"))
+            client_socket.sendall(json_message.encode("utf-8"))  # Используем sendall для гарантии отправки всех данных
 
             logger.warning(f"Я ОТПРАВИЛ в игру следующую информацию: {message_data}")
             
-            logger.warning(f"Я сраниваю айдишник из игры {message_id} и айдишник из сервера {server_data.get('id_sound')}: {message_id==server_data.get('id_sound')}")
-
-
-            
-            self.event_bus.emit(Events.RESET_SERVER_DATA)
-
-            
-            if transmitted_to_game:
-                self.event_bus.emit(Events.CLEAR_USER_INPUT)
+            logger.warning(f"Я сравниваю айдишник из игры {message_id} и айдишник из сервера {server_data.get('id_sound')}: {message_id==server_data.get('id_sound')}")
 
             self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': True})
 
             return True
+            
         except Exception as e:
             logger.error(f"Ошибка обработки подключения: {e}")
             self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': False})
             return False
-        finally:
-            if self.client_socket:
-                self.client_socket.close()
-
+        
     def generate_response(self, input_text, system_input_text, image_data: list[bytes] = None):
         if image_data is None:
             image_data = []

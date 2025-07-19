@@ -43,7 +43,7 @@ class SpeechController:
         self.update_speech_settings(key, value)
     
     def _on_get_instant_send_status(self, event: Event):
-        return self.instant_send
+        return bool(self.settings.get("MIC_INSTANT_SENT"))
     
     def _on_set_instant_send_status(self, event: Event):
         self.instant_send = event.data.get('status', False)

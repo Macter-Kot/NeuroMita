@@ -68,11 +68,19 @@ class ChatServer:
             return False
         finally:
             if client_socket:
+                logger.info("SERVER: Вход в блок finally для закрытия сокета.")
                 try:
+                    logger.info("SERVER: Попытка выполнить shutdown сокета.")
                     client_socket.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
+                    logger.info("SERVER: Shutdown сокета выполнен успешно.")
+                except OSError as e:
+                    logger.warning(f"SERVER: Ошибка при shutdown сокета (это может быть нормально): {e}")
+                except Exception as e:
+                    logger.error(f"SERVER: Неожиданная ошибка при shutdown сокета: {e}")
+
+                logger.info("SERVER: Попытка выполнить close сокета.")
                 client_socket.close()
+                logger.info("SERVER: Сокет успешно закрыт.")
 
     def _recv_full_json(self, client_socket):
         """Вспомогательный метод для получения полного JSON из сокета"""

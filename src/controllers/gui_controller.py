@@ -243,7 +243,8 @@ class GuiController:
     def _on_clear_user_input_ui(self, event: Event):
         logger.debug("GuiController: получено событие CLEAR_USER_INPUT_UI")
         self.clear_user_input()
-        
+
+    # ДУБЛИКАТ НАВЕРНОЕ    
     def _on_update_chat(self, event: Event):
         logger.info(f"GuiController: получено событие UPDATE_CHAT с данными: {event.data}")
         role = event.data.get('role', '')
@@ -251,7 +252,8 @@ class GuiController:
         is_initial = event.data.get('is_initial', False)
         emotion = event.data.get('emotion', '')
         self.update_chat(role, content, is_initial, emotion)
-        
+    
+
     def _on_update_chat_ui(self, event: Event):
         logger.info(f"GuiController: получено событие UPDATE_CHAT_UI с данными: {event.data}")
         role = event.data.get('role', '')

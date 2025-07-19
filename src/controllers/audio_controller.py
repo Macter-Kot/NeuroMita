@@ -6,7 +6,6 @@ import importlib
 import glob
 import asyncio
 import functools
-import threading
 from handlers.audio_handler import AudioHandler
 from main_logger import logger
 from handlers.local_voice_handler import LocalVoice
@@ -112,19 +111,26 @@ class AudioController:
         progress_callback = event.data.get('progress_callback')
         
         if model_id:
-            thread = threading.Thread(
-                target=self._init_model_thread,
-                args=(model_id, progress_callback),
-                daemon=True
-            )
-            thread.start()
+            # Запускаем асинхронную инициализацию через event loop
+            self.event_bus.emit(Events.RUN_IN_LOOP, {
+                'coroutine': self._async_init_model(model_id, progress_callback)
+            })
     
-    def _init_model_thread(self, model_id: str, progress_callback=None):
+    async def _async_init_model(self, model_id: str, progress_callback=None):
+        """Асинхронная инициализация модели"""
         try:
             if progress_callback:
                 progress_callback("status", "Инициализация модели...")
             
-            success = self.local_voice.init_model(model_id)
+            # Получаем event loop
+            loop = asyncio.get_running_loop()
+            
+            # Запускаем синхронную инициализацию в executor
+            success = await loop.run_in_executor(
+                None, 
+                self.local_voice.init_model, 
+                model_id
+            )
             
             if success and not self.model_loading_cancelled:
                 self.event_bus.emit("model_initialized", {'model_id': model_id})
@@ -273,17 +279,56 @@ class AudioController:
         self.event_bus.emit(Events.CHECK_TRITON_DEPENDENCIES)
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
+        """Совместимость со старым API - теперь запускает асинхронную инициализацию"""
         try:
             self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
                 'status': _("Загрузка настроек...", "Loading settings...")
             })
 
-            success = False
+            # Создаем callback для обновления статуса
+            def progress_callback(status_type, message):
+                if status_type == "status":
+                    self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                        'status': message
+                    })
+
+            # Запускаем асинхронную инициализацию через event bus
+            self.event_bus.emit(Events.RUN_IN_LOOP, {
+                'coroutine': self._async_init_model_with_ui(model_id, progress_callback)
+            })
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка при запуске инициализации модели {model_id}: {e}", exc_info=True)
+            if not self.model_loading_cancelled:
+                error_message = _("Критическая ошибка при инициализации модели: ",
+                                  "Critical error during model initialization: ") + str(e)
+                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                    'status': _("Ошибка!", "Error!")
+                })
+                self.event_bus.emit(Events.SHOW_ERROR_MESSAGE, {
+                    'title': _("Ошибка", "Error"),
+                    'message': error_message
+                })
+                self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
+
+    async def _async_init_model_with_ui(self, model_id: str, progress_callback):
+        """Асинхронная инициализация с обновлением UI"""
+        try:
             if not self.model_loading_cancelled:
                 self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
                     'status': _("Инициализация модели...", "Initializing model...")
                 })
-                success = self.local_voice.initialize_model(model_id, init=True)
+                
+                # Получаем event loop
+                loop = asyncio.get_running_loop()
+                
+                # Запускаем синхронную инициализацию в executor
+                success = await loop.run_in_executor(
+                    None,
+                    self.local_voice.initialize_model,
+                    model_id,
+                    True  # init=True
+                )
 
             if success and not self.model_loading_cancelled:
                 self.event_bus.emit(Events.FINISH_MODEL_LOADING, {
@@ -300,8 +345,9 @@ class AudioController:
                     'message': error_message
                 })
                 self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
+                
         except Exception as e:
-            logger.error(f"Критическая ошибка в потоке инициализации модели {model_id}: {e}", exc_info=True)
+            logger.error(f"Ошибка при инициализации модели с UI {model_id}: {e}", exc_info=True)
             if not self.model_loading_cancelled:
                 error_message = _("Критическая ошибка при инициализации модели: ",
                                   "Critical error during model initialization: ") + str(e)

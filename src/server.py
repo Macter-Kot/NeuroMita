@@ -195,13 +195,22 @@ class ChatServer:
 
             })
             
-            self.event_bus.emit(Events.RESET_SERVER_DATA)
 
-            if transmitted_to_game:
-                self.event_bus.emit(Events.CLEAR_USER_INPUT)
 
             json_message = json.dumps(message_data)
             self.client_socket.send(json_message.encode("utf-8"))
+
+            logger.warning(f"Я ОТПРАВИЛ в игру следующую информацию: {message_data}")
+            
+            logger.warning(f"Я сраниваю айдишник из игры {message_id} и айдишник из сервера {server_data.get('id_sound')}: {message_id==server_data.get('id_sound')}")
+
+
+            
+            self.event_bus.emit(Events.RESET_SERVER_DATA)
+
+            
+            if transmitted_to_game:
+                self.event_bus.emit(Events.CLEAR_USER_INPUT)
 
             self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': True})
 

@@ -22,7 +22,6 @@ from utils.ffmpeg_installer import install_ffmpeg
 from utils.pip_installer import PipInstaller
 from core.events import get_event_bus, Events, Event
 
-# На текущий момент - контроллер-оркестратор + спагетти из других контроллеров
 
 class MainController:
     def __init__(self, view):
@@ -53,7 +52,7 @@ class MainController:
 
         self.gui_controller = None
 
-        self.telegram_controller = TelegramController(self)
+        self.telegram_controller = TelegramController()
         logger.warning("TelegramController успешно инициализирован.")
         
 
@@ -124,8 +123,6 @@ class MainController:
         
         self.event_bus.subscribe(Events.STAGE_IMAGE, self._on_stage_image, weak=False)
         self.event_bus.subscribe(Events.CLEAR_STAGED_IMAGES, self._on_clear_staged_images, weak=False)
-        self.event_bus.subscribe(Events.CAPTURE_SCREEN, self._on_capture_screen, weak=False)
-        self.event_bus.subscribe(Events.GET_CAMERA_FRAMES, self._on_get_camera_frames, weak=False)
         
         self.event_bus.subscribe(Events.SELECT_VOICE_MODEL, self._on_select_voice_model, weak=False)
         self.event_bus.subscribe(Events.INIT_VOICE_MODEL, self._on_init_voice_model, weak=False)
@@ -135,12 +132,7 @@ class MainController:
         self.event_bus.subscribe(Events.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
         
         self.event_bus.subscribe(Events.GET_CONNECTION_STATUS, self._on_get_connection_status, weak=False)
-        self.event_bus.subscribe(Events.GET_MIC_STATUS, self._on_get_mic_status, weak=False)
-        self.event_bus.subscribe(Events.GET_SCREEN_CAPTURE_STATUS, self._on_get_screen_capture_status, weak=False)
-        self.event_bus.subscribe(Events.GET_CAMERA_CAPTURE_STATUS, self._on_get_camera_capture_status, weak=False)
         
-        self.event_bus.subscribe(Events.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
-        self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
         self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
         
         self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
@@ -295,24 +287,6 @@ class MainController:
     def _on_clear_staged_images(self, event: Event):
         self.clear_staged_images()
     
-    def _on_capture_screen(self, event: Event):
-        history_limit = event.data.get('limit', 1) if event.data else 1
-        
-        if hasattr(self, 'screen_capture_instance'):
-            frames = self.screen_capture_instance.get_recent_frames(history_limit)
-            return frames
-        return []
-    
-    def _on_get_camera_frames(self, event: Event):
-        history_limit = event.data.get('limit', 1) if event.data else 1
-        
-        if (hasattr(self, 'camera_capture') and 
-            self.camera_capture is not None and 
-            self.camera_capture.is_running()):
-            frames = self.camera_capture.get_recent_frames(history_limit)
-            return frames
-        return []
-    
     def _on_select_voice_model(self, event: Event):
         model_id = event.data.get('model_id')
         if model_id and hasattr(self, 'local_voice'):
@@ -390,21 +364,6 @@ class MainController:
     
     def _on_get_connection_status(self, event: Event):
         return self.ConnectedToGame
-    
-    def _on_get_mic_status(self, event: Event):
-        return self.mic_recognition_active
-    
-    def _on_get_screen_capture_status(self, event: Event):
-        return self.screen_capture_active
-    
-    def _on_get_camera_capture_status(self, event: Event):
-        return self.camera_capture_active
-    
-    def _on_stop_screen_capture(self, event: Event):
-        self.stop_screen_capture_thread()
-    
-    def _on_stop_camera_capture(self, event: Event):
-        self.stop_camera_capture_thread()
     
     def _on_delete_sound_files(self, event: Event):
         self.delete_all_sound_files()
@@ -519,46 +478,6 @@ class MainController:
 
     def _on_set_connected_to_game(self, event: Event):
         self.ConnectedToGame = event.data.get('connected', False)
-
-    @property
-    def bot_handler(self):
-        return self.telegram_controller.bot_handler
-    
-    @bot_handler.setter
-    def bot_handler(self, value):
-        self.telegram_controller.bot_handler = value
-    
-    @property
-    def bot_handler_ready(self):
-        return self.telegram_controller.bot_handler_ready
-    
-    @bot_handler_ready.setter 
-    def bot_handler_ready(self, value):
-        self.telegram_controller.bot_handler_ready = value
-    
-    @property
-    def mic_recognition_active(self):
-        return self.speech_controller.mic_recognition_active
-    
-    @mic_recognition_active.setter
-    def mic_recognition_active(self, value):
-        self.speech_controller.mic_recognition_active = value
-    
-    @property
-    def screen_capture_active(self):
-        return self.capture_controller.screen_capture_active
-    
-    @screen_capture_active.setter
-    def screen_capture_active(self, value):
-        self.capture_controller.screen_capture_active = value
-    
-    @property
-    def camera_capture_active(self):
-        return self.capture_controller.camera_capture_active
-    
-    @camera_capture_active.setter
-    def camera_capture_active(self, value):
-        self.capture_controller.camera_capture_active = value
     
     @property
     def screen_capture_instance(self):

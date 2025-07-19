@@ -5,7 +5,6 @@ from handlers.screen_handler import ScreenCapture
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 
-# Контроллер захвата экрана и камеры
 
 class CaptureController:
     def __init__(self, settings):
@@ -28,7 +27,6 @@ class CaptureController:
         
         self._subscribe_to_events()
         
-        # Запускаем периодическую проверку отправки изображений
         self._start_periodic_check()
         
     def _subscribe_to_events(self):
@@ -42,7 +40,13 @@ class CaptureController:
         self.event_bus.subscribe("update_screen_capture_exclusion", self._on_update_screen_capture_exclusion, weak=False)
         self.event_bus.subscribe("check_image_request_timer_running", self._on_check_image_request_timer_running, weak=False)
         self.event_bus.subscribe("trigger_send_interval_image", self._on_trigger_send_interval_image, weak=False)
+        self.event_bus.subscribe(Events.GET_SCREEN_CAPTURE_STATUS, self._on_get_screen_capture_status, weak=False)
+        self.event_bus.subscribe(Events.GET_CAMERA_CAPTURE_STATUS, self._on_get_camera_capture_status, weak=False)
         self.event_bus.subscribe(Events.UPDATE_LAST_IMAGE_REQUEST_TIME, self._on_update_last_image_request_time, weak=False)
+        self.event_bus.subscribe(Events.CAPTURE_SCREEN, self._on_capture_screen, weak=False)
+        self.event_bus.subscribe(Events.GET_CAMERA_FRAMES, self._on_get_camera_frames, weak=False)
+        self.event_bus.subscribe(Events.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
+        self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
 
     def _on_capture_settings_loaded(self, event: Event):
         if self.settings:
@@ -95,6 +99,29 @@ class CaptureController:
     def _on_update_last_image_request_time(self, event: Event):
         self.last_image_request_time = time.time()
         logger.debug(f"Обновлено время последнего запроса изображения: {self.last_image_request_time}")
+
+    def _on_get_screen_capture_status(self, event: Event):
+        return self.screen_capture_active
+    
+    def _on_get_camera_capture_status(self, event: Event):
+        return self.camera_capture_active
+    
+    def _on_capture_screen(self, event: Event):
+        history_limit = event.data.get('limit', 1) if event.data else 1
+        
+        if self.screen_capture_instance:
+            frames = self.screen_capture_instance.get_recent_frames(history_limit)
+            return frames
+        return []
+    
+    def _on_get_camera_frames(self, event: Event):
+        history_limit = event.data.get('limit', 1) if event.data else 1
+        
+        if (self.camera_capture is not None and 
+            self.camera_capture.is_running()):
+            frames = self.camera_capture.get_recent_frames(history_limit)
+            return frames
+        return []
             
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:
@@ -175,7 +202,6 @@ class CaptureController:
             logger.info("Таймер периодической отправки изображений остановлен.")
             
     def _start_periodic_check(self):
-        """Запускает поток для периодической проверки отправки изображений"""
         def check_loop():
             while True:
                 try:

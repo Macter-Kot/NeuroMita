@@ -26,6 +26,7 @@ class SpeechController:
         self.events_bus.subscribe(Events.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
         self.events_bus.subscribe(Events.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
         self.events_bus.subscribe(Events.SEND_MESSAGE, self._on_sent_message, weak=False)
+        self.events_bus.subscribe(Events.GET_MIC_STATUS, self._on_get_mic_status, weak=False)
         
         self.events_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
 
@@ -78,6 +79,9 @@ class SpeechController:
                 self.recognized_text += text
             else:    
                 self._insert_text_to_input(text)
+
+    def _on_get_mic_status(self, event: Event):
+        return self.mic_recognition_active
             
     def update_speech_settings(self, key, value):
         if key == "MIC_ACTIVE":

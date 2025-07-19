@@ -9,8 +9,7 @@ from core.events import get_event_bus, Events, Event
 # Контроллер для работы с озвучкой в Telegram
 
 class TelegramController:
-    def __init__(self, main_controller):
-        self.main = main_controller
+    def __init__(self):
         self.settings = None
         self.event_bus = get_event_bus()
         self.bot_handler = None

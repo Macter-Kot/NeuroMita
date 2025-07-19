@@ -6,6 +6,7 @@ import importlib
 import glob
 import asyncio
 import functools
+import threading
 from handlers.audio_handler import AudioHandler
 from main_logger import logger
 from handlers.local_voice_handler import LocalVoice
@@ -15,6 +16,7 @@ from core.events import get_event_bus, Events, Event
 
 class AudioController:
     def __init__(self, main_controller):
+        self.main_controller = main_controller
         self.settings = main_controller.settings
         self.event_bus = get_event_bus()
         self.local_voice = LocalVoice(main_controller)
@@ -38,6 +40,13 @@ class AudioController:
 
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.VOICEOVER_REQUESTED, self._on_voiceover_requested, weak=False)
+        self.event_bus.subscribe(Events.SELECT_VOICE_MODEL, self._on_select_voice_model, weak=False)
+        self.event_bus.subscribe(Events.INIT_VOICE_MODEL, self._on_init_voice_model, weak=False)
+        self.event_bus.subscribe(Events.CHECK_MODEL_INSTALLED, self._on_check_model_installed, weak=False)
+        self.event_bus.subscribe(Events.CHECK_MODEL_INITIALIZED, self._on_check_model_initialized, weak=False)
+        self.event_bus.subscribe(Events.CHANGE_VOICE_LANGUAGE, self._on_change_voice_language, weak=False)
+        self.event_bus.subscribe(Events.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
+        self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
 
     def _on_voiceover_requested(self, event: Event):
         data = event.data
@@ -83,6 +92,82 @@ class AudioController:
                 logger.error(f"Ошибка при отправке текста на озвучку: {e}")
         else:
             logger.error("Ошибка: Цикл событий не готов.")
+    
+    def _on_select_voice_model(self, event: Event):
+        model_id = event.data.get('model_id')
+        if model_id and self.local_voice:
+            try:
+                self.local_voice.select_model(model_id)
+                self.settings.set("NM_CURRENT_VOICEOVER", model_id)
+                self.settings.save_settings()
+                self.current_local_voice_id = model_id
+                return True
+            except Exception as e:
+                logger.error(f'Не удалось активировать модель {model_id}: {e}')
+                return False
+        return False
+    
+    def _on_init_voice_model(self, event: Event):
+        model_id = event.data.get('model_id')
+        progress_callback = event.data.get('progress_callback')
+        
+        if model_id:
+            thread = threading.Thread(
+                target=self._init_model_thread,
+                args=(model_id, progress_callback),
+                daemon=True
+            )
+            thread.start()
+    
+    def _init_model_thread(self, model_id: str, progress_callback=None):
+        try:
+            if progress_callback:
+                progress_callback("status", "Инициализация модели...")
+            
+            success = self.local_voice.init_model(model_id)
+            
+            if success and not self.model_loading_cancelled:
+                self.event_bus.emit("model_initialized", {'model_id': model_id})
+            elif self.model_loading_cancelled:
+                self.event_bus.emit("model_init_cancelled", {'model_id': model_id})
+            else:
+                self.event_bus.emit("model_init_failed", {'model_id': model_id})
+                
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации модели {model_id}: {e}")
+            self.event_bus.emit("model_init_failed", {
+                'model_id': model_id, 
+                'error': str(e)
+            })
+    
+    def _on_check_model_installed(self, event: Event):
+        model_id = event.data.get('model_id')
+        if model_id and self.local_voice:
+            return self.local_voice.is_model_installed(model_id)
+        return False
+    
+    def _on_check_model_initialized(self, event: Event):
+        model_id = event.data.get('model_id')
+        if model_id and self.local_voice:
+            return self.local_voice.is_model_initialized(model_id)
+        return False
+    
+    def _on_change_voice_language(self, event: Event):
+        language = event.data.get('language')
+        if language and hasattr(self.local_voice, 'change_voice_language'):
+            try:
+                self.local_voice.change_voice_language(language)
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка при изменении языка озвучки: {e}")
+                return False
+        return False
+    
+    def _on_refresh_voice_modules(self, event: Event):
+        self.refresh_local_voice_modules()
+    
+    def _on_delete_sound_files(self, event: Event):
+        self.delete_all_sound_files()
         
     def get_speaker_text(self):
         if self.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":

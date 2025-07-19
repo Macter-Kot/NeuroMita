@@ -73,7 +73,7 @@ def _call_in_main_thread(fn, *args, **kwargs):
 
 class LocalVoice:
     def __init__(self, parent=None):
-        self.parent = parent
+        self.parent = parent.view
         self.settings = parent.settings if parent else SettingsManager()
         
         self.first_compiled: Optional[bool] = None

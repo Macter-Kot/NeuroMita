@@ -124,16 +124,7 @@ class MainController:
         self.event_bus.subscribe(Events.STAGE_IMAGE, self._on_stage_image, weak=False)
         self.event_bus.subscribe(Events.CLEAR_STAGED_IMAGES, self._on_clear_staged_images, weak=False)
         
-        self.event_bus.subscribe(Events.SELECT_VOICE_MODEL, self._on_select_voice_model, weak=False)
-        self.event_bus.subscribe(Events.INIT_VOICE_MODEL, self._on_init_voice_model, weak=False)
-        self.event_bus.subscribe(Events.CHECK_MODEL_INSTALLED, self._on_check_model_installed, weak=False)
-        self.event_bus.subscribe(Events.CHECK_MODEL_INITIALIZED, self._on_check_model_initialized, weak=False)
-        self.event_bus.subscribe(Events.CHANGE_VOICE_LANGUAGE, self._on_change_voice_language, weak=False)
-        self.event_bus.subscribe(Events.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
-        
         self.event_bus.subscribe(Events.GET_CONNECTION_STATUS, self._on_get_connection_status, weak=False)
-        
-        self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
         
         self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
         
@@ -287,87 +278,8 @@ class MainController:
     def _on_clear_staged_images(self, event: Event):
         self.clear_staged_images()
     
-    def _on_select_voice_model(self, event: Event):
-        model_id = event.data.get('model_id')
-        if model_id and hasattr(self, 'local_voice'):
-            try:
-                self.local_voice.select_model(model_id)
-                self.settings.set("NM_CURRENT_VOICEOVER", model_id)
-                self.settings.save_settings()
-                self.current_local_voice_id = model_id
-                return True
-            except Exception as e:
-                logger.error(f'Не удалось активировать модель {model_id}: {e}')
-                return False
-        return False
-    
-    def _on_init_voice_model(self, event: Event):
-        model_id = event.data.get('model_id')
-        progress_callback = event.data.get('progress_callback')
-        
-        if model_id:
-            import threading
-            thread = threading.Thread(
-                target=self._init_model_thread,
-                args=(model_id, progress_callback),
-                daemon=True
-            )
-            thread.start()
-    
-    def _init_model_thread(self, model_id: str, progress_callback=None):
-        try:
-            if progress_callback:
-                progress_callback("status", "Инициализация модели...")
-            
-            success = self.local_voice.init_model(model_id)
-            
-            if success and not self.model_loading_cancelled:
-                self.event_bus.emit("model_initialized", {'model_id': model_id})
-            elif self.model_loading_cancelled:
-                self.event_bus.emit("model_init_cancelled", {'model_id': model_id})
-            else:
-                self.event_bus.emit("model_init_failed", {'model_id': model_id})
-                
-        except Exception as e:
-            logger.error(f"Ошибка при инициализации модели {model_id}: {e}")
-            self.event_bus.emit("model_init_failed", {
-                'model_id': model_id, 
-                'error': str(e)
-            })
-    
-    def _on_check_model_installed(self, event: Event):
-        model_id = event.data.get('model_id')
-        if model_id and hasattr(self, 'local_voice'):
-            return self.local_voice.is_model_installed(model_id)
-        return False
-    
-    def _on_check_model_initialized(self, event: Event):
-        model_id = event.data.get('model_id')
-        if model_id and hasattr(self, 'local_voice'):
-            return self.local_voice.is_model_initialized(model_id)
-        return False
-    
-    def _on_change_voice_language(self, event: Event):
-        language = event.data.get('language')
-        if language and hasattr(self.local_voice, 'change_voice_language'):
-            try:
-                self.local_voice.change_voice_language(language)
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка при изменении языка озвучки: {e}")
-                return False
-        return False
-    
-    def _on_refresh_voice_modules(self, event: Event):
-        if hasattr(self, 'refresh_local_voice_modules'):
-            self.refresh_local_voice_modules()
-    
     def _on_get_connection_status(self, event: Event):
         return self.ConnectedToGame
-    
-    def _on_delete_sound_files(self, event: Event):
-        self.delete_all_sound_files()
-    
     
     def _on_schedule_g4f_update(self, event: Event):
         version = event.data.get('version', 'latest')
@@ -478,6 +390,23 @@ class MainController:
 
     def _on_set_connected_to_game(self, event: Event):
         self.ConnectedToGame = event.data.get('connected', False)
+
+    @property
+    def bot_handler(self):
+        return self.telegram_controller.bot_handler
+    
+    @bot_handler.setter
+    def bot_handler(self, value):
+        self.telegram_controller.bot_handler = value
+    
+    @property
+    def bot_handler_ready(self):
+        return self.telegram_controller.bot_handler_ready
+    
+    @bot_handler_ready.setter 
+    def bot_handler_ready(self, value):
+        self.telegram_controller.bot_handler_ready = value
+    
     
     @property
     def screen_capture_instance(self):

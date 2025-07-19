@@ -147,9 +147,6 @@ class MainController:
         self.ConnectedToGame = is_connected
         self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
 
-    def load_api_settings(self, update_model):
-        self.settings_controller.load_api_settings(update_model)
-
     def clear_user_input(self):
         self.user_input = ""
         self.event_bus.emit(Events.CLEAR_USER_INPUT_UI)
@@ -166,19 +163,6 @@ class MainController:
 
     def clear_staged_images(self):
         self.staged_images.clear()
-
-    def init_model_thread(self, model_id, loading_window, status_label, progress):
-        self.audio_controller.init_model_thread(model_id, loading_window, status_label, progress)
-
-    def refresh_local_voice_modules(self):
-        self.audio_controller.refresh_local_voice_modules()
-
-    def check_module_installed(self, module_name):
-        return self.audio_controller.check_module_installed(module_name)
-
-    def check_available_vram(self):
-        return self.audio_controller.check_available_vram()
-
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")
@@ -303,9 +287,6 @@ class MainController:
     
     def _on_close_loading_popup(self, event: Event):
         self.event_bus.emit("hide_loading_popup")
-
-    def _on_get_user_input(self, event: Event):
-        return self.gui_controller.get_user_input()
 
     def _on_update_game_connection(self, event: Event):
         is_connected = event.data.get('is_connected', False)

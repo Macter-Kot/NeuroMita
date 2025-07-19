@@ -173,7 +173,7 @@ class ChatServer:
             message_data.update({
                 "response": str(response),
                 "silero": bool(server_data.get('silero_connected', False) and bool(settings.get("SILERO_USE"))),
-                "id_sound": int(server_data.get('id_sound', 0)),
+                "id_sound": message_id,
                 "patch_to_sound_file": str(server_data.get('patch_to_sound_file', '')),
                 "user_input": str(user_input),
 

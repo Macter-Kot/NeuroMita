@@ -87,8 +87,9 @@ class ServerController:
             return False
     
     def _on_reset_server_data(self, event: Event):
-        self.main.instant_send = False
+        self.instant_send = False
         self.patch_to_sound_file = ""
+        self.id_sound = None
     
     def _on_stop_server(self, event: Event):
         self.stop_server()

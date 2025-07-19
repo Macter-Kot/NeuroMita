@@ -16,10 +16,9 @@ from core.events import get_event_bus, Events, Event
 
 class AudioController:
     def __init__(self, main_controller):
-        self.main = main_controller
         self.settings = main_controller.settings
         self.event_bus = get_event_bus()
-        self.local_voice = LocalVoice(self.main)
+        self.local_voice = LocalVoice(main_controller)
         self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
         self.current_local_voice_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
         self.last_voice_model_selected = None

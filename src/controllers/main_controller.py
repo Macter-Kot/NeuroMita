@@ -129,11 +129,6 @@ class MainController:
         self.event_bus.subscribe(Events.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
         self.event_bus.subscribe(Events.REQUEST_TG_PASSWORD, self._on_request_tg_password, weak=False)
         
-        self.event_bus.subscribe(Events.SET_MICROPHONE, self._on_set_microphone, weak=False)
-        self.event_bus.subscribe(Events.START_SPEECH_RECOGNITION, self._on_start_speech_recognition, weak=False)
-        self.event_bus.subscribe(Events.STOP_SPEECH_RECOGNITION, self._on_stop_speech_recognition, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_SPEECH_SETTINGS, self._on_update_speech_settings, weak=False)
-        
         self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
         self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
@@ -197,8 +192,7 @@ class MainController:
         except Exception as e:
             logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
         
-        from handlers.asr_handler import SpeechRecognition
-        SpeechRecognition.speech_recognition_stop()
+        self.event_bus.emit(Events.STOP_SPEECH_RECOGNITION)
         time.sleep(2)
         
         self.loop_controller.stop_loop()
@@ -302,47 +296,6 @@ class MainController:
         password_future = event.data.get('future')
         if password_future:
             self.event_bus.emit("show_tg_password_dialog", {'future': password_future})
-    
-    def _on_set_microphone(self, event: Event):
-        microphone_name = event.data.get('name')
-        device_id = event.data.get('device_id')
-        
-        if microphone_name and device_id is not None:
-            if hasattr(self, 'speech_controller'):
-                self.speech_controller.selected_microphone = microphone_name
-                self.speech_controller.device_id = device_id
-            
-            self.settings.set("NM_MICROPHONE_ID", device_id)
-            self.settings.set("NM_MICROPHONE_NAME", microphone_name)
-            self.settings.save_settings()
-            
-            logger.info(f"Выбран микрофон: {microphone_name} (ID: {device_id})")
-    
-    def _on_start_speech_recognition(self, event: Event):
-        device_id = event.data.get('device_id', 0)
-        
-        try:
-            from handlers.asr_handler import SpeechRecognition
-            if hasattr(self, 'loop_controller') and self.loop_controller.loop:
-                SpeechRecognition.speech_recognition_start(device_id, self.loop_controller.loop)
-                logger.info("Распознавание речи запущено")
-        except Exception as e:
-            logger.error(f"Ошибка запуска распознавания речи: {e}")
-    
-    def _on_stop_speech_recognition(self, event: Event):
-        try:
-            from handlers.asr_handler import SpeechRecognition
-            SpeechRecognition.speech_recognition_stop()
-            logger.info("Распознавание речи остановлено")
-        except Exception as e:
-            logger.error(f"Ошибка остановки распознавания речи: {e}")
-    
-    def _on_update_speech_settings(self, event: Event):
-        key = event.data.get('key')
-        value = event.data.get('value')
-        
-        if key and hasattr(self, 'speech_controller'):
-            self.speech_controller.update_speech_settings(key, value)
     
     def _on_show_loading_popup(self, event: Event):
         message = event.data.get('message', 'Loading...')

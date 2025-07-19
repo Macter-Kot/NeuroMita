@@ -4,7 +4,6 @@ from handlers.asr_handler import SpeechRecognition
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 
-# Контроллер для управления распознаванием речи
 
 class SpeechController:
     def __init__(self, main_controller):
@@ -27,14 +26,17 @@ class SpeechController:
         self.events_bus.subscribe(Events.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
         self.events_bus.subscribe(Events.SEND_MESSAGE, self._on_sent_message, weak=False)
         self.events_bus.subscribe(Events.GET_MIC_STATUS, self._on_get_mic_status, weak=False)
-        
         self.events_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
+        
+        self.events_bus.subscribe(Events.SET_MICROPHONE, self._on_set_microphone, weak=False)
+        self.events_bus.subscribe(Events.START_SPEECH_RECOGNITION, self._on_start_speech_recognition, weak=False)
+        self.events_bus.subscribe(Events.STOP_SPEECH_RECOGNITION, self._on_stop_speech_recognition, weak=False)
+        self.events_bus.subscribe(Events.UPDATE_SPEECH_SETTINGS, self._on_update_speech_settings, weak=False)
 
     def _on_sent_message(self, event: Event):
         self.recognized_text = ""
 
     def _on_get_user_input(self, event: Event):
-        # тут я хотел логику получения рекогнайза
         return self.recognized_text
         
     def _on_speech_settings_loaded(self, event: Event):
@@ -82,6 +84,50 @@ class SpeechController:
 
     def _on_get_mic_status(self, event: Event):
         return self.mic_recognition_active
+    
+    def _on_set_microphone(self, event: Event):
+        microphone_name = event.data.get('name')
+        device_id = event.data.get('device_id')
+        
+        if microphone_name and device_id is not None:
+            self.selected_microphone = microphone_name
+            self.device_id = device_id
+            
+            if self.main.settings:
+                self.main.settings.set("NM_MICROPHONE_ID", device_id)
+                self.main.settings.set("NM_MICROPHONE_NAME", microphone_name)
+                self.main.settings.save_settings()
+            
+            logger.info(f"Выбран микрофон: {microphone_name} (ID: {device_id})")
+    
+    def _on_start_speech_recognition(self, event: Event):
+        device_id = event.data.get('device_id', self.device_id)
+        
+        try:
+            loop_result = self.events_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
+            loop = loop_result[0] if loop_result else None
+            
+            if loop:
+                SpeechRecognition.speech_recognition_start(device_id, loop)
+                logger.info("Распознавание речи запущено")
+            else:
+                logger.error("Не удалось получить event loop для запуска распознавания речи")
+        except Exception as e:
+            logger.error(f"Ошибка запуска распознавания речи: {e}")
+    
+    def _on_stop_speech_recognition(self, event: Event):
+        try:
+            SpeechRecognition.speech_recognition_stop()
+            logger.info("Распознавание речи остановлено")
+        except Exception as e:
+            logger.error(f"Ошибка остановки распознавания речи: {e}")
+    
+    def _on_update_speech_settings(self, event: Event):
+        key = event.data.get('key')
+        value = event.data.get('value')
+        
+        if key:
+            self.update_speech_settings(key, value)
             
     def update_speech_settings(self, key, value):
         if key == "MIC_ACTIVE":

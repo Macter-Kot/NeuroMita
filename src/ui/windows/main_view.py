@@ -1566,7 +1566,7 @@ class ChatGUI(QMainWindow):
         if selected_method is not None:
             self._save_setting("VOICEOVER_METHOD", selected_method)
 
-        use_voice        = bool(self._get_setting("SILERO_USE",  True))
+        use_voice        = bool(self._get_setting("USE_VOICEOVER",  True))
         current_method   =      self._get_setting("VOICEOVER_METHOD", "TG")
 
         if not hasattr(self, "voiceover_section"):
@@ -1986,8 +1986,6 @@ class ChatGUI(QMainWindow):
         except Exception as e:
             logger.error(f"Ошибка при показе изображения: {e}")
 
-    def prompt_for_code(self, code_future):
-        self.event_bus.emit(Events.REQUEST_TG_CODE, {'future': code_future})
 
     def _on_show_tg_code_dialog(self, data: dict):
         code_future = data.get('future')
@@ -2011,7 +2009,7 @@ class ChatGUI(QMainWindow):
             code = code_entry.text().strip()
             if code:
                 if code_future and not code_future.done():
-                    loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
+                    loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
                     if loop and loop[0] and loop[0].is_running():
                         loop[0].call_soon_threadsafe(code_future.set_result, code)
                 dialog.accept()
@@ -2020,7 +2018,7 @@ class ChatGUI(QMainWindow):
         
         def on_reject():
             if code_future and not code_future.done():
-                loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
+                loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
                 if loop and loop[0] and loop[0].is_running():
                     import asyncio
                     loop[0].call_soon_threadsafe(code_future.set_exception, asyncio.CancelledError("Ввод кода отменен"))
@@ -2033,8 +2031,6 @@ class ChatGUI(QMainWindow):
         dialog.rejected.connect(on_reject)
         dialog.exec()
 
-    def prompt_for_password(self, password_future):
-        self.event_bus.emit(Events.REQUEST_TG_PASSWORD, {'future': password_future})
 
     def _on_show_tg_password_dialog(self, data: dict):
         password_future = data.get('future')
@@ -2058,7 +2054,7 @@ class ChatGUI(QMainWindow):
             pwd = password_entry.text().strip()
             if pwd:
                 if password_future and not password_future.done():
-                    loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
+                    loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
                     if loop and loop[0] and loop[0].is_running():
                         loop[0].call_soon_threadsafe(password_future.set_result, pwd)
                 dialog.accept()
@@ -2067,7 +2063,7 @@ class ChatGUI(QMainWindow):
                 
         def on_reject():
             if password_future and not password_future.done():
-                loop = self.event_bus.emit_and_wait("get_event_loop", timeout=0.5)
+                loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
                 if loop and loop[0] and loop[0].is_running():
                     import asyncio
                     loop[0].call_soon_threadsafe(password_future.set_exception, asyncio.CancelledError("Ввод пароля отменен"))

@@ -8,7 +8,6 @@ import asyncio
 import functools
 from handlers.audio_handler import AudioHandler
 from main_logger import logger
-from utils import process_text_to_voice
 from handlers.local_voice_handler import LocalVoice
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
 from utils import _

@@ -113,10 +113,8 @@ class MainController:
             self.gui_controller = GuiController(self, view)
             logger.warning("GuiController успешно инициализирован.")
             self.settings_controller.load_api_settings(False)
-            self.telegram_controller.start_silero_async()
-
-    def connect_view_signals(self):
-        self.gui_controller.connect_view_signals()
+            if self.settings.get('VOICEOVER_METHOD') == 'TG' and self.settings.get('USE_VOICEOVER', False):
+                self.telegram_controller.start_silero_async()
     
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.CLEAR_CHAT, self._on_clear_chat, weak=False)

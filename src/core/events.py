@@ -402,7 +402,6 @@ class Events:
 
     # От telegram_handler.py
     SET_SOUND_FILE_DATA = "set_sound_file_data"
-    GET_TG_AUTH_DATA = "get_tg_auth_data"
     SET_SILERO_CONNECTED = "set_silero_connected"
 
     # GUI события

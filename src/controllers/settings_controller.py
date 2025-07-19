@@ -70,7 +70,7 @@ class SettingsController:
         self.settings.set(key, value)
         self.settings.save_settings()
         
-        if key in ["SILERO_USE", "VOICEOVER_METHOD", "AUDIO_BOT"]:
+        if key in ["USE_VOICEOVER", "VOICEOVER_METHOD", "AUDIO_BOT"]:
             self.event_bus.emit(Events.SWITCH_VOICEOVER_SETTINGS)
 
         if key in ["SILERO_TIME", "AUDIO_BOT"]:

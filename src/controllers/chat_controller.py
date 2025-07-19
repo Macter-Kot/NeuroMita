@@ -46,7 +46,7 @@ class ChatController:
             
             response = response_result[0] if response_result else None
 
-            if response and self.settings.get("SILERO_USE"):
+            if response and self.settings.get("USE_VOICEOVER"):
                 character_result = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=3.0)
                 current_character = character_result[0] if character_result else None
                 

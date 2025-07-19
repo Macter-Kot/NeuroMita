@@ -33,13 +33,6 @@ class GuiController:
         logger.info("GuiController подписался на события")
 
         QTimer.singleShot(100, self.check_and_install_ffmpeg)
-
-        if self.view is not None:
-            self.view.auth_signals = getattr(
-                self.main_controller.telegram_controller,
-                "auth_signals",
-                None
-            )
         
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.UPDATE_STATUS_COLORS, self._on_update_status_colors, weak=False)
@@ -53,7 +46,6 @@ class GuiController:
         self.event_bus.subscribe(Events.UPDATE_DEBUG_INFO, self._on_update_debug_info, weak=False)
         self.event_bus.subscribe(Events.UPDATE_TOKEN_COUNT, self._on_update_token_count, weak=False)
         self.event_bus.subscribe(Events.CHECK_AND_INSTALL_FFMPEG, self._on_check_and_install_ffmpeg, weak=False)
-        self.event_bus.subscribe(Events.GET_TG_AUTH_DATA, self._on_get_tg_auth_data, weak=False)
         
         self.event_bus.subscribe(Events.ON_STARTED_RESPONSE_GENERATION, self._on_started_response, weak=False)
         self.event_bus.subscribe(Events.ON_SUCCESSFUL_RESPONSE, self._on_successful_response, weak=False)
@@ -243,13 +235,6 @@ class GuiController:
             QTimer.singleShot(0, self.view.update_token_count)
         else:
             logger.error("GuiController: view не найден!")
-            
-    def get_auth_signals(self):
-        tg_ctrl = getattr(self.main_controller, "telegram_controller", None)
-        if tg_ctrl and hasattr(tg_ctrl, "auth_signals"):
-            return tg_ctrl.auth_signals
-        logger.warning("GuiController: auth_signals ещё не готовы")
-        return None
         
     def _on_update_status_colors(self, event: Event):
         logger.debug("GuiController: получено событие UPDATE_STATUS_COLORS")
@@ -304,14 +289,6 @@ class GuiController:
         logger.debug("GuiController: получено событие CHECK_AND_INSTALL_FFMPEG")
         self.check_and_install_ffmpeg()
         
-    def _on_get_tg_auth_data(self, event: Event):
-        logger.debug("GuiController: получено событие GET_TG_AUTH_DATA")
-        results = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
-        loop = results[0] if results else None
-        return {
-            'loop': loop,
-            'auth_signals': self.get_auth_signals()
-        }
         
     def _on_started_response(self, event: Event):
         logger.info("GuiController: получено событие ON_STARTED_RESPONSE_GENERATION")
@@ -419,19 +396,12 @@ class GuiController:
             QTimer.singleShot(0, lambda: self.view.cancel_model_loading(self.view.loading_dialog))
     
     def _on_prompt_for_tg_code(self, event: Event):
-        code_future = event.data.get('future')
-        if self.view and hasattr(self.view, 'show_tg_code_dialog_signal'):
-            self.view.show_tg_code_dialog_signal.emit({'future': code_future})
-        elif self.view and hasattr(self.view, 'prompt_for_code'):
-            self.view.prompt_for_code(code_future)
+        code_future = event.data.get('future')    
+        self.view.show_tg_code_dialog_signal.emit({'future': code_future})
 
     def _on_prompt_for_tg_password(self, event: Event):
         password_future = event.data.get('future')
-        if self.view and hasattr(self.view, 'show_tg_password_dialog_signal'):
-            self.view.show_tg_password_dialog_signal.emit({'future': password_future})
-        elif self.view and hasattr(self.view, 'prompt_for_password'):
-            self.view.prompt_for_password(password_future)
-
+        self.view.show_tg_password_dialog_signal.emit({'future': password_future})
     def _on_history_loaded_event(self, event: Event):
         logger.debug("GuiController: получено ghost событие history_loaded, транслируем в view")
         if self.view:

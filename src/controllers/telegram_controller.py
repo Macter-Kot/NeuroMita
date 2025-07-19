@@ -6,10 +6,6 @@ from main_logger import logger
 from utils import SH
 from core.events import get_event_bus, Events, Event
 
-class TelegramAuthSignals(QObject):
-    code_required = pyqtSignal(object)
-    password_required = pyqtSignal(object)
-
 # Контроллер для работы с озвучкой в Telegram
 
 class TelegramController:
@@ -28,7 +24,6 @@ class TelegramController:
         self._loop = None
         self._waiting_for_loop = False
         
-        self.auth_signals = TelegramAuthSignals()
         self._subscribe_to_events()
         
     def _subscribe_to_events(self):
@@ -73,15 +68,6 @@ class TelegramController:
             self._waiting_for_loop = False
             self._start_silero_with_loop()
         
-    def connect_view_signals(self):
-        self.auth_signals.code_required.connect(self._on_code_required)
-        self.auth_signals.password_required.connect(self._on_password_required)
-        
-    def _on_code_required(self, code_future):
-        self.event_bus.emit(Events.PROMPT_FOR_TG_CODE, {'future': code_future})
-        
-    def _on_password_required(self, password_future):
-        self.event_bus.emit(Events.PROMPT_FOR_TG_PASSWORD, {'future': password_future})
         
     def start_silero_async(self):
         logger.info("Запрос на запуск Silero...")

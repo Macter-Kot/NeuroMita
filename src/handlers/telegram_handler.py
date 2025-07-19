@@ -184,30 +184,28 @@ class TelegramBotHandler:
             await self.client.connect()
 
             # Получаем event loop и auth_signals через событие
-            auth_data_result = await asyncio.get_event_loop().run_in_executor(
+            loop_results = await asyncio.get_event_loop().run_in_executor(
                 None,
                 self.event_bus.emit_and_wait,
-                Events.GET_TG_AUTH_DATA,
+                Events.GET_EVENT_LOOP,
                 {},
                 1.0
             )
-            auth_data = auth_data_result[0] if auth_data_result else {}
-            loop = auth_data.get('loop')
-            auth_signals = auth_data.get('auth_signals')
+            loop = loop_results[0] if loop_results else asyncio.get_event_loop()
 
             if not await self.client.is_user_authorized():
                 try:
                     await self.client.send_code_request(self.phone)
                     
                     code_future = loop.create_future()
-                    auth_signals.code_required.emit(code_future)
+                    self.event_bus.emit(Events.PROMPT_FOR_TG_CODE, {'future': code_future})
                     verification_code = await code_future
                     
                     try:
                         await self.client.sign_in(phone=self.phone, code=verification_code)
                     except SessionPasswordNeededError:
                         password_future = loop.create_future()
-                        auth_signals.password_required.emit(password_future)
+                        self.event_bus.emit(Events.PROMPT_FOR_TG_PASSWORD, {'future': password_future})
                         password = await password_future
                         await self.client.sign_in(password=password)
 

@@ -135,7 +135,7 @@ class ChatServer:
                 self.event_bus.emit(Events.SET_ID_SOUND, {'id': message_id})
                 self.event_bus.emit(Events.UPDATE_CHAT_UI, {
                     'role': 'user',
-                    'content': message,
+                    'response': message,
                     'is_initial': False,
                     'emotion': ''
                 })
@@ -224,7 +224,7 @@ class ChatServer:
                 'system_input': system_input_text,
                 'image_data': image_data,
                 'message_id': message_id  # Передаем message_id через событие
-            }, timeout=120.0)
+            }, timeout=300.0)
             
             response = response_result[0] if response_result else None
             

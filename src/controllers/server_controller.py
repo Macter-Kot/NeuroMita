@@ -26,6 +26,7 @@ class ServerController:
         self.event_bus.subscribe(Events.STOP_SERVER, self._on_stop_server, weak=False)
         self.event_bus.subscribe(Events.GET_CHAT_SERVER, self._on_get_chat_server, weak=False)
         self.event_bus.subscribe(Events.SET_PATCH_TO_SOUND_FILE, self._on_set_patch_to_sound_file, weak=False)
+        self.event_bus.subscribe(Events.SET_ID_SOUND, self._on_set_id_sound, weak=False)
         
     def start_server(self):
         if not self.running:
@@ -72,10 +73,13 @@ class ServerController:
     def _on_get_server_data(self, event: Event):
         return {
             'patch_to_sound_file': self.patch_to_sound_file,
-            'id_sound': self.main.id_sound,
-            'instant_send': self.main.instant_send,
-            'silero_connected': self.main.silero_connected
+            'id_sound': self.id_sound,
+            'instant_send': self.event_bus.emit_and_wait(Events.GET_INSTANT_SEND_STATUS),
+            'silero_connected': self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS)
         }
+    
+    def _on_set_id_sound(self, event: Event):
+        self.id_sound = event.data.get("id")
     
     def _on_reset_server_data(self, event: Event):
         self.main.instant_send = False

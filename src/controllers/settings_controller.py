@@ -27,11 +27,11 @@ class SettingsController:
             logger.info("Настройки пустые (файл не найден или повреждён), используем дефолты")
             return
 
-        self.main.api_key = settings_dict.get("NM_API_KEY", "")
-        self.main.api_key_res = settings_dict.get("NM_API_KEY_RES", "")
-        self.main.api_url = settings_dict.get("NM_API_URL", "")
-        self.main.api_model = settings_dict.get("NM_API_MODEL", "")
-        self.main.makeRequest = settings_dict.get("NM_API_REQ", False)
+        api_key = settings_dict.get("NM_API_KEY", "")
+        api_key_res = settings_dict.get("NM_API_KEY_RES", "")
+        api_url = settings_dict.get("NM_API_URL", "")
+        api_model = settings_dict.get("NM_API_MODEL", "")
+        makeRequest = settings_dict.get("NM_API_REQ", False)
 
         telegram_settings = {
             "api_id": settings_dict.get("NM_TELEGRAM_API_ID", ""),
@@ -51,15 +51,16 @@ class SettingsController:
         }
         self.event_bus.emit("speech_settings_loaded", speech_settings)
 
-        logger.info(f"Итого загружено {SH(self.main.api_key)},{SH(self.main.api_key_res)},{self.main.api_url},{self.main.api_model},{self.main.makeRequest} (Должно быть не пусто)")
+        logger.info(f"Итого загружено {SH(api_key)},{SH(api_key_res)},{api_url},{api_model},{makeRequest} (Должно быть не пусто)")
         logger.info(f"По тг {SH(telegram_settings['api_id'])},{SH(telegram_settings['api_hash'])},{SH(telegram_settings['phone'])} (Должно быть не пусто если тг)")
         
         if update_model:
             model_settings = {
-                'api_key': self.main.api_key,
-                'api_url': self.main.api_url,
-                'api_model': self.main.api_model,
-                'makeRequest': self.main.makeRequest
+                'api_key': api_key,
+                'api_key_res': api_key_res,
+                'api_url': api_url,
+                'api_model': api_model,
+                'makeRequest': makeRequest
             }
             self.event_bus.emit("model_settings_loaded", model_settings)
 
@@ -69,7 +70,7 @@ class SettingsController:
         self.settings.set(key, value)
         self.settings.save_settings()
         
-        self.event_bus.emit("setting_changed", {"key": key, "value": value})
+        self.event_bus.emit(Events.SETTING_CHANGED, {"key": key, "value": value})
         
         logger.debug(f"Настройка '{key}' успешно применена со значением: {value}")
 

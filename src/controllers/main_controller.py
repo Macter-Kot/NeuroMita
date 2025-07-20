@@ -31,13 +31,6 @@ class MainController:
 
         self.ConnectedToGame = False
 
-
-        self.api_key = ""
-        self.api_key_res = ""
-        self.api_url = ""
-        self.api_model = ""
-        self.makeRequest = False
-
         self.dialog_active = False
 
         self.lazy_load_batch_size = 50
@@ -83,8 +76,7 @@ class MainController:
         
         self.audio_controller = AudioController(self)
         logger.warning("AudioController успешно инициализирован.")
-        self.model_controller = ModelController(self, self.api_key, self.api_key_res, self.api_url, 
-                                               self.api_model, self.makeRequest, self.pip_installer)
+        self.model_controller = ModelController(self, "", "", "", "", False, self.pip_installer)
         logger.warning("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self.settings)
         logger.warning("CaptureController успешно инициализирован.")
@@ -134,12 +126,10 @@ class MainController:
 
         self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
         self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_CHAT, self._on_update_chat, weak=False)
         self.event_bus.subscribe(Events.GET_SETTINGS, self._on_get_settings, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input, weak=False)
         self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
-        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
 
     def all_settings_actions(self, key, value):
         self.settings_controller.all_settings_actions(key, value)
@@ -147,10 +137,6 @@ class MainController:
     def update_game_connection(self, is_connected):
         self.ConnectedToGame = is_connected
         self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
-
-    def clear_user_input(self):
-        self.user_input = ""
-        self.event_bus.emit(Events.CLEAR_USER_INPUT_UI)
 
     def stage_image_bytes(self, img_bytes: bytes) -> int:
         fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="nm_clip_")
@@ -296,25 +282,9 @@ class MainController:
     def _on_set_dialog_active(self, event: Event):
         self.dialog_active = event.data.get('active', False)
 
-    def _on_update_chat(self, event: Event):
-        role = event.data.get('role', '')
-        content = event.data.get('content', '')
-        is_initial = event.data.get('is_initial', False)
-        emotion = event.data.get('emotion', '')
-        
-        self.event_bus.emit(Events.UPDATE_CHAT_UI, {
-            'role': role,
-            'response': content,
-            'is_initial': is_initial,
-            'emotion': emotion
-        })
-
     def _on_get_settings(self, event: Event):
         return self.settings.settings
-
-    def _on_clear_user_input(self, event: Event):
-        self.clear_user_input()
-
+    
     def _on_set_waiting_answer(self, event: Event):
         self.audio_controller.waiting_answer = event.data.get('waiting', False)
 

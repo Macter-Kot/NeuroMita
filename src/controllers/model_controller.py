@@ -15,7 +15,7 @@ class ModelController:
     def _subscribe_to_events(self):
         # Существующие события
         self.event_bus.subscribe("model_settings_loaded", self._on_model_settings_loaded, weak=False)
-        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
         
         # События персонажей
         self.event_bus.subscribe(Events.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)

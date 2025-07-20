@@ -37,7 +37,7 @@ class GuiController:
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.UPDATE_STATUS_COLORS, self._on_update_status_colors, weak=False)
         self.event_bus.subscribe(Events.CLEAR_USER_INPUT_UI, self._on_clear_user_input_ui, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_CHAT, self._on_update_chat, weak=False)
+        self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input_ui, weak=False)
         self.event_bus.subscribe(Events.UPDATE_CHAT_UI, self._on_update_chat_ui, weak=False)
         self.event_bus.subscribe(Events.PREPARE_STREAM_UI, self._on_prepare_stream_ui, weak=False)
         self.event_bus.subscribe(Events.APPEND_STREAM_CHUNK_UI, self._on_append_stream_chunk_ui, weak=False)
@@ -80,7 +80,7 @@ class GuiController:
         self.event_bus.subscribe("reload_prompts_failed", self._on_reload_prompts_failed_event, weak=False)
         self.event_bus.subscribe("display_loading_popup", self._on_display_loading_popup_event, weak=False)
         self.event_bus.subscribe("hide_loading_popup", self._on_hide_loading_popup_event, weak=False)
-        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
                 
     def _connect_view_signals(self):
         if self.view:
@@ -245,14 +245,6 @@ class GuiController:
         logger.debug("GuiController: получено событие CLEAR_USER_INPUT_UI")
         self.clear_user_input()
 
-    # ДУБЛИКАТ НАВЕРНОЕ    
-    def _on_update_chat(self, event: Event):
-        logger.info(f"GuiController: получено событие UPDATE_CHAT с данными: {event.data}")
-        role = event.data.get('role', '')
-        content = event.data.get('content', '')
-        is_initial = event.data.get('is_initial', False)
-        emotion = event.data.get('emotion', '')
-        self.update_chat(role, content, is_initial, emotion)
     
 
     def _on_update_chat_ui(self, event: Event):

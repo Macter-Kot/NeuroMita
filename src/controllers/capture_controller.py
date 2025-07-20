@@ -47,7 +47,7 @@ class CaptureController:
         self.event_bus.subscribe(Events.GET_CAMERA_FRAMES, self._on_get_camera_frames, weak=False)
         self.event_bus.subscribe(Events.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
         self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
-        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
 
     def _on_capture_settings_loaded(self, event: Event):
         if self.settings:

@@ -391,7 +391,6 @@ class Events:
     SET_DIALOG_ACTIVE = "set_dialog_active"
     ADD_TEMPORARY_SYSTEM_INFO = "add_temporary_system_info"
     SET_ID_SOUND = "set_id_sound"
-    UPDATE_CHAT = "update_chat"
     GET_SERVER_DATA = "get_server_data"
     GET_SETTINGS = "get_settings"
     RESET_SERVER_DATA = "reset_server_data"
@@ -478,5 +477,7 @@ class Events:
     REFRESH_MICROPHONE_LIST = "refresh_microphone_list"
     SET_GIGAAM_OPTIONS = "set_gigaam_options"
     RESTART_SPEECH_RECOGNITION = "restart_speech_recognition"
+
+    SETTING_CHANGED = "setting_changed"
 
 

@@ -16,7 +16,6 @@ class ModelController:
         # Существующие события
         self.event_bus.subscribe("model_settings_loaded", self._on_model_settings_loaded, weak=False)
         self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
-        self.event_bus.subscribe("model_character_change", self._on_character_change, weak=False)
         
         # События персонажей
         self.event_bus.subscribe(Events.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)
@@ -67,7 +66,9 @@ class ModelController:
         key = event.data.get('key')
         value = event.data.get('value')
         
-        if key == "NM_API_MODEL":
+        if key == "CHARACTER":
+            self.change_character(value)
+        elif key == "NM_API_MODEL":
             self.model.api_model = value.strip()
         elif key == "NM_API_KEY":
             self.model.api_key = value.strip()
@@ -128,8 +129,7 @@ class ModelController:
         elif key == "MAX_MODEL_TOKENS":
             self.model.max_model_tokens = int(value)
             
-    def _on_character_change(self, event: Event):
-        character = event.data.get('character')
+    def change_character(self, character):
         if character:
             self.model.current_character_to_change = character
             self.model.check_change_current_character()

@@ -54,6 +54,15 @@ class SpeechController:
             SpeechRecognition.set_recognizer_type(initial_recognizer_type)
             SpeechRecognition.vosk_model = initial_vosk_model
             logger.info(f"Тип распознавателя установлен на: {initial_recognizer_type}")
+            
+            # Инициализируем микрофон из настроек
+            device_id = self.settings.get("NM_MICROPHONE_ID", 0)
+            device_name = self.settings.get("NM_MICROPHONE_NAME", "")
+            
+            if device_name:
+                self.selected_microphone = device_name
+                self.device_id = device_id
+                logger.info(f"Загружен микрофон из настроек: {device_name} (ID: {device_id})")
         
     def _on_setting_changed(self, event: Event):
         key = event.data.get('key')
@@ -61,6 +70,9 @@ class SpeechController:
         
         if key == "MIC_ACTIVE":
             if bool(value):
+                # Убедимся, что у нас есть правильный device_id
+                if self.device_id is None:
+                    self.device_id = 0
                 SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
                 self.mic_recognition_active = True
             else:
@@ -68,14 +80,16 @@ class SpeechController:
                 self.mic_recognition_active = False
             self.events_bus.emit(Events.UPDATE_STATUS_COLORS)
         elif key == "RECOGNIZER_TYPE":
-            SpeechRecognition.active = False
-            time.sleep(0.1)
+            # Останавливаем текущее распознавание
+            if self.mic_recognition_active:
+                SpeechRecognition.speech_recognition_stop()
+                time.sleep(0.1)
 
             SpeechRecognition.set_recognizer_type(value)
             logger.info(f"Тип распознавателя установлен на: {value}")
 
-            if self.settings and self.settings.get("MIC_ACTIVE", False):
-                SpeechRecognition.active = True
+            # Перезапускаем только если было активно
+            if self.settings and self.settings.get("MIC_ACTIVE", False) and self.mic_recognition_active:
                 SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
         elif key == "VOSK_MODEL":
             SpeechRecognition.vosk_model = value

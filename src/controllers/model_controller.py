@@ -15,7 +15,7 @@ class ModelController:
     def _subscribe_to_events(self):
         # Существующие события
         self.event_bus.subscribe("model_settings_loaded", self._on_model_settings_loaded, weak=False)
-        self.event_bus.subscribe("model_setting_changed", self._on_model_setting_changed, weak=False)
+        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
         self.event_bus.subscribe("model_character_change", self._on_character_change, weak=False)
         
         # События персонажей
@@ -63,7 +63,7 @@ class ModelController:
         if self.model.api_key or self.model.api_url:
             self.model.update_openai_client()
             
-    def _on_model_setting_changed(self, event: Event):
+    def _on_setting_changed(self, event: Event):
         key = event.data.get('key')
         value = event.data.get('value')
         

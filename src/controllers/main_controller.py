@@ -139,6 +139,7 @@ class MainController:
         self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input, weak=False)
         self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
+        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
 
     def all_settings_actions(self, key, value):
         self.settings_controller.all_settings_actions(key, value)
@@ -319,6 +320,13 @@ class MainController:
 
     def _on_set_connected_to_game(self, event: Event):
         self.ConnectedToGame = event.data.get('connected', False)
+
+    def _on_setting_changed(self, event: Event):
+        key = event.data.get('key')
+        value = event.data.get('value')
+        
+        # MainController не обрабатывает никакие специфичные настройки
+        pass
 
     @property
     def loop(self):

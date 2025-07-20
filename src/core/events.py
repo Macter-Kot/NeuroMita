@@ -473,4 +473,10 @@ class Events:
     
     VOICEOVER_REQUESTED = "voiceover_requested"
 
+    # Микрофон UI
+    GET_MICROPHONE_LIST = "get_microphone_list"
+    REFRESH_MICROPHONE_LIST = "refresh_microphone_list"
+    SET_GIGAAM_OPTIONS = "set_gigaam_options"
+    RESTART_SPEECH_RECOGNITION = "restart_speech_recognition"
+
 

@@ -1,5 +1,6 @@
 import sounddevice as sd
 import time
+import threading
 from handlers.asr_handler import SpeechRecognition
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
@@ -20,7 +21,7 @@ class SpeechController:
         
     def _subscribe_to_events(self):
         self.events_bus.subscribe("speech_settings_loaded", self._on_speech_settings_loaded, weak=False)
-        self.events_bus.subscribe("speech_setting_changed", self._on_speech_setting_changed, weak=False)
+        self.events_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
         self.events_bus.subscribe(Events.GET_INSTANT_SEND_STATUS, self._on_get_instant_send_status, weak=False)
         self.events_bus.subscribe(Events.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
         self.events_bus.subscribe(Events.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
@@ -31,7 +32,11 @@ class SpeechController:
         self.events_bus.subscribe(Events.SET_MICROPHONE, self._on_set_microphone, weak=False)
         self.events_bus.subscribe(Events.START_SPEECH_RECOGNITION, self._on_start_speech_recognition, weak=False)
         self.events_bus.subscribe(Events.STOP_SPEECH_RECOGNITION, self._on_stop_speech_recognition, weak=False)
-        self.events_bus.subscribe(Events.UPDATE_SPEECH_SETTINGS, self._on_update_speech_settings, weak=False)
+        
+        self.events_bus.subscribe(Events.GET_MICROPHONE_LIST, self._on_get_microphone_list, weak=False)
+        self.events_bus.subscribe(Events.REFRESH_MICROPHONE_LIST, self._on_refresh_microphone_list, weak=False)
+        self.events_bus.subscribe(Events.SET_GIGAAM_OPTIONS, self._on_set_gigaam_options, weak=False)
+        self.events_bus.subscribe(Events.RESTART_SPEECH_RECOGNITION, self._on_restart_speech_recognition, weak=False)
 
     def _on_sent_message(self, event: Event):
         self.recognized_text = ""
@@ -50,10 +55,38 @@ class SpeechController:
             SpeechRecognition.vosk_model = initial_vosk_model
             logger.info(f"Тип распознавателя установлен на: {initial_recognizer_type}")
         
-    def _on_speech_setting_changed(self, event: Event):
+    def _on_setting_changed(self, event: Event):
         key = event.data.get('key')
         value = event.data.get('value')
-        self.update_speech_settings(key, value)
+        
+        if key == "MIC_ACTIVE":
+            if bool(value):
+                SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
+                self.mic_recognition_active = True
+            else:
+                SpeechRecognition.speech_recognition_stop()
+                self.mic_recognition_active = False
+            self.events_bus.emit(Events.UPDATE_STATUS_COLORS)
+        elif key == "RECOGNIZER_TYPE":
+            SpeechRecognition.active = False
+            time.sleep(0.1)
+
+            SpeechRecognition.set_recognizer_type(value)
+            logger.info(f"Тип распознавателя установлен на: {value}")
+
+            if self.settings and self.settings.get("MIC_ACTIVE", False):
+                SpeechRecognition.active = True
+                SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
+        elif key == "VOSK_MODEL":
+            SpeechRecognition.vosk_model = value
+        elif key == "SILENCE_THRESHOLD":
+            SpeechRecognition.SILENCE_THRESHOLD = float(value)
+        elif key == "SILENCE_DURATION":
+            SpeechRecognition.SILENCE_DURATION = float(value)
+        elif key == "VOSK_PROCESS_INTERVAL":
+            SpeechRecognition.VOSK_PROCESS_INTERVAL = float(value)
+        elif key == "GIGAAM_DEVICE":
+            SpeechRecognition.set_gigaam_options(device=value)
     
     def _on_get_instant_send_status(self, event: Event):
         logger.warning("Настройка MIC_INSTANT_SENT: " + str(bool(self.settings.get("MIC_INSTANT_SENT"))))
@@ -122,40 +155,44 @@ class SpeechController:
         except Exception as e:
             logger.error(f"Ошибка остановки распознавания речи: {e}")
     
-    def _on_update_speech_settings(self, event: Event):
-        key = event.data.get('key')
-        value = event.data.get('value')
+    def _on_get_microphone_list(self, event: Event):
+        try:
+            devices = sd.query_devices()
+            input_devices = []
+            for i, d in enumerate(devices):
+                if d['max_input_channels'] > 0:
+                    device_name = f"{d['name']} ({i})"
+                    input_devices.append(device_name)
+            return input_devices or ["Микрофоны не найдены"]
+        except Exception as e:
+            logger.error(f"Ошибка получения списка микрофонов: {e}")
+            return ["Ошибка загрузки"]
+    
+    def _on_refresh_microphone_list(self, event: Event):
+        return self._on_get_microphone_list(event)
+    
+    def _on_set_gigaam_options(self, event: Event):
+        device = event.data.get('device', 'auto')
+        SpeechRecognition.set_gigaam_options(device=device)
+        logger.info(f"Выбрано устройство для GigaAM: {device}")
+    
+    def _on_restart_speech_recognition(self, event: Event):
+        device_id = event.data.get('device_id', self.device_id)
         
-        if key:
-            self.update_speech_settings(key, value)
-            
-    def update_speech_settings(self, key, value):
-        if key == "MIC_ACTIVE":
-            if bool(value):
-                SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
-                self.mic_recognition_active = True
-            else:
-                SpeechRecognition.speech_recognition_stop()
-                self.mic_recognition_active = False
-            self.events_bus.emit(Events.UPDATE_STATUS_COLORS)
-        elif key == "RECOGNIZER_TYPE":
-            SpeechRecognition.active = False
-            time.sleep(0.1)
-
-            SpeechRecognition.set_recognizer_type(value)
-            logger.info(f"Тип распознавателя установлен на: {value}")
-
-            if self.settings and self.settings.get("MIC_ACTIVE", False):
-                SpeechRecognition.active = True
-                SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
-        elif key == "VOSK_MODEL":
-            SpeechRecognition.vosk_model = value
-        elif key == "SILENCE_THRESHOLD":
-            SpeechRecognition.SILENCE_THRESHOLD = float(value)
-        elif key == "SILENCE_DURATION":
-            SpeechRecognition.SILENCE_DURATION = float(value)
-        elif key == "VOSK_PROCESS_INTERVAL":
-            SpeechRecognition.VOSK_PROCESS_INTERVAL = float(value)
+        def restart_recognition():
+            try:
+                self.events_bus.emit(Events.STOP_SPEECH_RECOGNITION)
+                start_time = time.time()
+                while SpeechRecognition._is_running and time.time() - start_time < 5:
+                    time.sleep(0.1)
+                if SpeechRecognition._is_running:
+                    logger.warning("Предыдущее распознавание не остановилось вовремя, принудительная остановка.")
+                self.events_bus.emit(Events.START_SPEECH_RECOGNITION, {'device_id': device_id})
+                logger.info("Распознавание перезапущено с новым микрофоном")
+            except Exception as e:
+                logger.error(f"Ошибка перезапуска распознавания: {e}")
+        
+        threading.Thread(target=restart_recognition, daemon=True).start()
     
     def send_instantly(self, text_to_send):
         try:

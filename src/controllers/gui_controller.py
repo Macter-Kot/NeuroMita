@@ -80,6 +80,7 @@ class GuiController:
         self.event_bus.subscribe("reload_prompts_failed", self._on_reload_prompts_failed_event, weak=False)
         self.event_bus.subscribe("display_loading_popup", self._on_display_loading_popup_event, weak=False)
         self.event_bus.subscribe("hide_loading_popup", self._on_hide_loading_popup_event, weak=False)
+        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
                 
     def _connect_view_signals(self):
         if self.view:
@@ -448,3 +449,38 @@ class GuiController:
         logger.debug("GuiController: получено событие hide_loading_popup, транслируем в view")
         if self.view:
             self.view.hide_loading_popup_signal.emit()
+
+    def _on_setting_changed(self, event: Event):
+        key = event.data.get('key')
+        value = event.data.get('value')
+        
+        if key in ["USE_VOICEOVER", "VOICEOVER_METHOD", "AUDIO_BOT"]:
+            self.event_bus.emit(Events.SWITCH_VOICEOVER_SETTINGS)
+            
+        if key == "AUDIO_BOT":
+            if value.startswith("@CrazyMitaAIbot"):
+                self.event_bus.emit(Events.SHOW_INFO_MESSAGE, {
+                    "title": "Информация",
+                    "message": "VinerX: наши товарищи из CrazyMitaAIbot предоставляет озвучку бесплатно буквально со своих пк, будет время - загляните к ним в тг, скажите спасибо)"
+                })
+                
+        elif key == "CHAT_FONT_SIZE":
+            try:
+                font_size = int(value)
+                self.event_bus.emit(Events.UPDATE_CHAT_FONT_SIZE, {"font_size": font_size})
+                self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+                logger.info(f"Размер шрифта чата изменен на: {font_size}")
+            except ValueError:
+                logger.warning(f"Неверное значение для размера шрифта: {value}")
+            except Exception as e:
+                logger.error(f"Ошибка при изменении размера шрифта: {e}")
+                
+        elif key in ["SHOW_CHAT_TIMESTAMPS", "MAX_CHAT_HISTORY_DISPLAY", "HIDE_CHAT_TAGS"]:
+            self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+            logger.info(f"Настройка '{key}' изменена на: {value}. История чата перезагружена.")
+            
+        elif key == "SHOW_TOKEN_INFO":
+            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
+            
+        if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:
+            self.event_bus.emit(Events.UPDATE_STATUS_COLORS)

@@ -27,7 +27,7 @@ class TelegramController:
         
     def _subscribe_to_events(self):
         self.event_bus.subscribe("telegram_settings_loaded", self._on_telegram_settings_loaded, weak=False)
-        self.event_bus.subscribe("telegram_settings_changed", self._on_telegram_settings_changed, weak=False)
+        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
         self.event_bus.subscribe("telegram_send_voice_request", self._on_send_voice_request, weak=False)
         self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
         self.event_bus.subscribe(Events.GET_SILERO_STATUS, self._on_get_silero_status, weak=False)
@@ -41,7 +41,7 @@ class TelegramController:
         self.settings = data.get("settings")
         logger.info(f"Telegram настройки загружены: api_id={SH(self.api_id)}, api_hash={SH(self.api_hash)}, phone={SH(self.phone)}")
     
-    def _on_telegram_settings_changed(self, event: Event):
+    def _on_setting_changed(self, event: Event):
         key = event.data.get('key')
         value = event.data.get('value')
         

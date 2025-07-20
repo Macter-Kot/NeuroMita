@@ -47,6 +47,7 @@ class CaptureController:
         self.event_bus.subscribe(Events.GET_CAMERA_FRAMES, self._on_get_camera_frames, weak=False)
         self.event_bus.subscribe(Events.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
         self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
+        self.event_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
 
     def _on_capture_settings_loaded(self, event: Event):
         if self.settings:
@@ -123,6 +124,60 @@ class CaptureController:
             return frames
         return []
             
+    def _on_setting_changed(self, event: Event):
+        key = event.data.get('key')
+        value = event.data.get('value')
+        
+        if key == "ENABLE_SCREEN_ANALYSIS":
+            if bool(value):
+                self.start_screen_capture_thread()
+            else:
+                self.stop_screen_capture_thread()
+        elif key in ["SCREEN_CAPTURE_INTERVAL", "SCREEN_CAPTURE_QUALITY", "SCREEN_CAPTURE_FPS",
+                    "SCREEN_CAPTURE_HISTORY_LIMIT", "SCREEN_CAPTURE_TRANSFER_LIMIT", 
+                    "SCREEN_CAPTURE_WIDTH", "SCREEN_CAPTURE_HEIGHT"]:
+            logger.info(f"Настройка захвата экрана '{key}' изменена на '{value}'. Перезапускаю поток захвата.")
+            self.stop_screen_capture_thread()
+            self.start_screen_capture_thread()
+        elif key == "ENABLE_CAMERA_CAPTURE":
+            if bool(value):
+                self.start_camera_capture_thread()
+            else:
+                self.stop_camera_capture_thread()
+        elif key in ["EXCLUDE_GUI_WINDOW", "EXCLUDE_WINDOW_TITLE"]:
+            exclude_gui = self.settings.get("EXCLUDE_GUI_WINDOW", False)
+            exclude_title = self.settings.get("EXCLUDE_WINDOW_TITLE", "")
+
+            hwnd_to_pass = None
+            if exclude_gui:
+                hwnd_to_pass = self.event_bus.emit_and_wait(Events.GET_GUI_WINDOW_ID, timeout=0.5)
+                hwnd_to_pass = hwnd_to_pass[0] if hwnd_to_pass else None
+                logger.info(f"Получен HWND окна GUI для исключения: {hwnd_to_pass}")
+            elif exclude_title:
+                try:
+                    from win32 import win32gui
+                    hwnd_to_pass = win32gui.FindWindow(None, exclude_title)
+                    if hwnd_to_pass:
+                        logger.info(f"Найден HWND для заголовка '{exclude_title}': {hwnd_to_pass}")
+                    else:
+                        logger.warning(f"Окно с заголовком '{exclude_title}' не найдено.")
+                except Exception as e:
+                    logger.error(f"Ошибка при поиске окна по заголовку '{exclude_title}': {e}")
+
+            self.event_bus.emit("update_screen_capture_exclusion", {
+                'hwnd': hwnd_to_pass,
+                'exclude_title': exclude_title,
+                'exclude_enabled': exclude_gui or bool(exclude_title)
+            })
+        elif key == "SEND_IMAGE_REQUESTS":
+            if bool(value):
+                self.start_image_request_timer()
+            else:
+                self.stop_image_request_timer()
+        elif key == "IMAGE_REQUEST_INTERVAL":
+            self.stop_image_request_timer()
+            self.start_image_request_timer()
+    
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:
             if not self.settings:

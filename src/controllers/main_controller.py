@@ -28,7 +28,7 @@ class MainController:
         self.dialog_active = False
 
 
-        self.loop_controller = LoopController(self)
+        self.loop_controller = LoopController()
         logger.warning("LoopController успешно инициализирован.")
 
         self.gui_controller = None
@@ -95,8 +95,6 @@ class MainController:
                 self.telegram_controller.start_silero_async()
     
     def _subscribe_to_events(self):
-        
-        
         self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
         
         self.event_bus.subscribe(Events.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
@@ -201,14 +199,6 @@ class MainController:
     def _on_close_loading_popup(self, event: Event):
         self.event_bus.emit("hide_loading_popup")
 
-    
-
     def _on_set_dialog_active(self, event: Event):
         self.dialog_active = event.data.get('active', False)
     
-    
-
-
-    @property
-    def loop(self):
-        return self.loop_controller.loop

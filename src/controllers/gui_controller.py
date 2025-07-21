@@ -475,5 +475,4 @@ class GuiController:
         elif key == "SHOW_TOKEN_INFO":
             self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
             
-        if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:
-            self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+        

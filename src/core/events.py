@@ -281,203 +281,180 @@ def emit_and_wait(event_name: str, data: Any = None, timeout: float = 5.0) -> Li
 
 
 # Определение имен событий для типобезопасности
+
+# src/core/events.py
+
 class Events:
-    """Константы с именами событий"""
-    
-    # UI события
-    SEND_MESSAGE = "send_message"
-    CLEAR_CHAT = "clear_chat"
-    LOAD_HISTORY = "load_history"
-    UPDATE_TOKEN_COUNT = "update_token_count"
-    UPDATE_STATUS = "update_status"
-    UPDATE_DEBUG_INFO = "update_debug_info"
-    
-    # Настройки
-    SAVE_SETTING = "save_setting"
-    GET_SETTING = "get_setting"
-    LOAD_SETTINGS = "load_settings"
-    
-    # Работа с изображениями
-    ATTACH_IMAGES = "attach_images"
-    STAGE_IMAGE = "stage_image"
-    CLEAR_STAGED_IMAGES = "clear_staged_images"
-    CAPTURE_SCREEN = "capture_screen"
-    GET_CAMERA_FRAMES = "get_camera_frames"
-    
-    # Голосовые модели
-    SELECT_VOICE_MODEL = "select_voice_model"
-    INIT_VOICE_MODEL = "init_voice_model"
-    CHECK_MODEL_INSTALLED = "check_model_installed"
-    CHECK_MODEL_INITIALIZED = "check_model_initialized"
-    CHANGE_VOICE_LANGUAGE = "change_voice_language"
-    REFRESH_VOICE_MODULES = "refresh_voice_modules"
-    
-    # Статусы
-    GET_GAME_CONNECTION = "get_connection_status"
-    GET_SILERO_STATUS = "get_silero_status"
-    GET_MIC_STATUS = "get_mic_status"
-    GET_SCREEN_CAPTURE_STATUS = "get_screen_capture_status"
-    GET_CAMERA_CAPTURE_STATUS = "get_camera_capture_status"
-    
-    # Управление потоками
-    STOP_SCREEN_CAPTURE = "stop_screen_capture"
-    STOP_CAMERA_CAPTURE = "stop_camera_capture"
-    DELETE_SOUND_FILES = "delete_sound_files"
-    STOP_SERVER = "stop_server"
-    
-    # История чата
-    GET_CHAT_HISTORY = "get_chat_history"
-    LOAD_MORE_HISTORY = "load_more_history"
-    
-    # Mita статус
-    SHOW_MITA_THINKING = "show_mita_thinking"
-    SHOW_MITA_ERROR = "show_mita_error"
-    HIDE_MITA_STATUS = "hide_mita_status"
-    PULSE_MITA_ERROR = "pulse_mita_error"
-    
-    # Telegram
-    REQUEST_TG_CODE = "request_tg_code"
-    REQUEST_TG_PASSWORD = "request_tg_password"
-    
-    # G4F
-    SCHEDULE_G4F_UPDATE = "schedule_g4f_update"
-    
-    # Разное
-    GET_CHARACTER_NAME = "get_character_name"
-    GET_CURRENT_CONTEXT_TOKENS = "get_current_context_tokens"
-    CALCULATE_COST = "calculate_cost"
+    """
+    Константы с именами событий, сгруппированные по логическим модулям.
+    Доступ возможен как Events.EVENT_NAME, так и Events.GROUP.EVENT_NAME.
+    """
 
-        # Персонажи
-    GET_ALL_CHARACTERS = "get_all_characters"
-    GET_CURRENT_CHARACTER = "get_current_character"
-    SET_CHARACTER_TO_CHANGE = "set_character_to_change"
-    CHECK_CHANGE_CHARACTER = "check_change_character"
-    GET_CHARACTER = "get_character"
-    RELOAD_CHARACTER_DATA = "reload_character_data"
-    RELOAD_CHARACTER_PROMPTS = "reload_character_prompts"
-    CLEAR_CHARACTER_HISTORY = "clear_character_history"
-    CLEAR_ALL_HISTORIES = "clear_all_histories"
-    
-    # Микрофон и речь
-    SET_MICROPHONE = "set_microphone"
-    START_SPEECH_RECOGNITION = "start_speech_recognition"
-    STOP_SPEECH_RECOGNITION = "stop_speech_recognition"
-    UPDATE_SPEECH_SETTINGS = "update_speech_settings"
-    
-    # Асинхронные операции
-    GET_EVENT_LOOP = "get_event_loop"
-    RELOAD_PROMPTS_ASYNC = "reload_prompts_async"
-    
-    # Загрузка
-    SHOW_LOADING_POPUP = "show_loading_popup"
-    CLOSE_LOADING_POPUP = "close_loading_popup"
+    class Core:
+        """Системные и межкомпонентные события"""
+        GET_EVENT_LOOP = "get_event_loop"
+        LOOP_READY = "loop_ready"
+        RUN_IN_LOOP = "run_in_loop"
+        SETTING_CHANGED = "setting_changed"
 
-    # Отладка
-    GET_DEBUG_INFO = "get_debug_info"
+    class GUI:
+        """События, предназначенные для GuiController и его суб-контроллеров"""
+        UPDATE_TOKEN_COUNT = "update_token_count"
+        UPDATE_STATUS = "update_status"
+        UPDATE_DEBUG_INFO = "update_debug_info"
+        SHOW_MITA_THINKING = "show_mita_thinking"
+        SHOW_MITA_ERROR = "show_mita_error"
+        HIDE_MITA_STATUS = "hide_mita_status"
+        PULSE_MITA_ERROR = "pulse_mita_error"
+        SHOW_LOADING_POPUP = "show_loading_popup"
+        CLOSE_LOADING_POPUP = "close_loading_popup"
+        CLEAR_USER_INPUT = "clear_user_input"
+        CLEAR_USER_INPUT_UI = "clear_user_input_ui"
+        PREPARE_STREAM_UI = "prepare_stream_ui"
+        APPEND_STREAM_CHUNK_UI = "append_stream_chunk_ui"
+        FINISH_STREAM_UI = "finish_stream_ui"
+        CHECK_AND_INSTALL_FFMPEG = "check_and_install_ffmpeg"
+        UPDATE_STATUS_COLORS = "update_status_colors"
+        UPDATE_CHAT_UI = "update_chat_ui"
+        INSERT_TEXT_TO_INPUT = "insert_text_to_input"
+        CHECK_USER_ENTRY_EXISTS = "check_user_entry_exists"
+        SWITCH_VOICEOVER_SETTINGS = "switch_voiceover_settings"
+        SHOW_INFO_MESSAGE = "show_info_message"
+        UPDATE_CHAT_FONT_SIZE = "update_chat_font_size"
+        RELOAD_CHAT_HISTORY = "reload_chat_history"
+        UPDATE_TOKEN_COUNT_UI = "update_token_count_ui"
+        GET_GUI_WINDOW_ID = "get_gui_window_id"
+        CHECK_TRITON_DEPENDENCIES = "check_triton_dependencies"
+        SHOW_ERROR_MESSAGE = "show_error_message"
 
-    # От chat_handler.py
-    GET_USER_INPUT = "get_user_input"
+    class Model:
+        """События для управления LLM, персонажами и историей"""
+        LOAD_HISTORY = "load_history"
+        GET_CHAT_HISTORY = "get_chat_history"
+        LOAD_MORE_HISTORY = "load_more_history"
+        SCHEDULE_G4F_UPDATE = "schedule_g4f_update"
+        GET_CHARACTER_NAME = "get_character_name"
+        GET_CURRENT_CONTEXT_TOKENS = "get_current_context_tokens"
+        CALCULATE_COST = "calculate_cost"
+        GET_ALL_CHARACTERS = "get_all_characters"
+        GET_CURRENT_CHARACTER = "get_current_character"
+        SET_CHARACTER_TO_CHANGE = "set_character_to_change"
+        CHECK_CHANGE_CHARACTER = "check_change_character"
+        GET_CHARACTER = "get_character"
+        RELOAD_CHARACTER_DATA = "reload_character_data"
+        RELOAD_CHARACTER_PROMPTS = "reload_character_prompts"
+        CLEAR_CHARACTER_HISTORY = "clear_character_history"
+        CLEAR_ALL_HISTORIES = "clear_all_histories"
+        RELOAD_PROMPTS_ASYNC = "reload_prompts_async"
+        GET_DEBUG_INFO = "get_debug_info"
+        ON_STARTED_RESPONSE_GENERATION = "on_started_response_generation"
+        ON_SUCCESSFUL_RESPONSE = "on_successful_response"
+        ON_FAILED_RESPONSE = "on_failed_response"
+        ON_FAILED_RESPONSE_ATTEMPT = "on_failed_attempt_for_response"
+        ADD_TEMPORARY_SYSTEM_INFO = "add_temporary_system_info"
+        GENERATE_RESPONSE = "generate_response"
+        GET_LLM_PROCESSING_STATUS = "get_llm_processing_status"
 
-    # События chat_handler.py
-    ON_STARTED_RESPONSE_GENERATION = "on_started_response_generation"
-    ON_SUCCESSFUL_RESPONSE = "on_successful_response"
-    ON_FAILED_RESPONSE = "on_failed_response"
-    ON_FAILED_RESPONSE_ATTEMPT = "on_failed_attempt_for_response"
+    class Chat:
+        """События, управляющие логикой чата и отправкой сообщений"""
+        SEND_MESSAGE = "send_message"
+        CLEAR_CHAT = "clear_chat"
+        ATTACH_IMAGES = "attach_images"
+        STAGE_IMAGE = "stage_image"
+        CLEAR_STAGED_IMAGES = "clear_staged_images"
 
-    # от server.py
-    SET_GAME_CONNECTION = "update_game_connection"
-    SET_CHARACTER_TO_CHANGE = "set_character_to_change"
-    SET_GAME_DATA = "set_game_data"
-    SET_DIALOG_ACTIVE = "set_dialog_active"
-    ADD_TEMPORARY_SYSTEM_INFO = "add_temporary_system_info"
-    SET_ID_SOUND = "set_id_sound"
-    GET_SERVER_DATA = "get_server_data"
-    GET_SETTINGS = "get_settings"
-    RESET_SERVER_DATA = "reset_server_data"
-    CLEAR_USER_INPUT = "clear_user_input"
-    SET_WAITING_ANSWER = "set_waiting_answer"
-    GENERATE_RESPONSE = "generate_response"
+    class Audio:
+        """События для управления озвучкой и аудиофайлами"""
+        SELECT_VOICE_MODEL = "select_voice_model"
+        INIT_VOICE_MODEL = "init_voice_model"
+        CHECK_MODEL_INSTALLED = "check_model_installed"
+        CHECK_MODEL_INITIALIZED = "check_model_initialized"
+        CHANGE_VOICE_LANGUAGE = "change_voice_language"
+        REFRESH_VOICE_MODULES = "refresh_voice_modules"
+        DELETE_SOUND_FILES = "delete_sound_files"
+        SET_WAITING_ANSWER = "set_waiting_answer"
+        UPDATE_MODEL_LOADING_STATUS = "update_model_loading_status"
+        FINISH_MODEL_LOADING = "finish_model_loading"
+        CANCEL_MODEL_LOADING = "cancel_model_loading"
+        GET_WAITING_ANSWER = "get_waiting_answer"
+        VOICEOVER_REQUESTED = "voiceover_requested"
 
-    # От telegram_handler.py
-    SET_SOUND_FILE_DATA = "set_sound_file_data"
-    SET_SILERO_CONNECTED = "set_silero_connected"
+    class Speech:
+        """События для распознавания речи и управления микрофоном"""
+        GET_MIC_STATUS = "get_mic_status"
+        SET_MICROPHONE = "set_microphone"
+        START_SPEECH_RECOGNITION = "start_speech_recognition"
+        STOP_SPEECH_RECOGNITION = "stop_speech_recognition"
+        UPDATE_SPEECH_SETTINGS = "update_speech_settings"
+        GET_USER_INPUT = "get_user_input"
+        GET_INSTANT_SEND_STATUS = "get_instant_send_status"
+        SET_INSTANT_SEND_STATUS = "set_instant_send_status"
+        SPEECH_TEXT_RECOGNIZED = "speech_text_recognized"
+        GET_MICROPHONE_LIST = "get_microphone_list"
+        REFRESH_MICROPHONE_LIST = "refresh_microphone_list"
+        SET_GIGAAM_OPTIONS = "set_gigaam_options"
+        RESTART_SPEECH_RECOGNITION = "restart_speech_recognition"
 
-    # GUI события
-    
-    # От main_controller.py
-    CLEAR_USER_INPUT_UI = "clear_user_input_ui"
-    PREPARE_STREAM_UI = "prepare_stream_ui"
-    APPEND_STREAM_CHUNK_UI = "append_stream_chunk_ui"
-    FINISH_STREAM_UI = "finish_stream_ui"
-    CHECK_AND_INSTALL_FFMPEG = "check_and_install_ffmpeg"
-    UPDATE_STATUS_COLORS = "update_status_colors"
-    UPDATE_CHAT_UI = "update_chat_ui"
-    PREPARE_STREAM_UI = "prepare_stream_ui"
-    APPEND_STREAM_CHUNK_UI = "append_stream_chunk_ui"
-    FINISH_STREAM_UI = "finish_stream_ui"
-    CHECK_AND_INSTALL_FFMPEG = "check_and_install_ffmpeg"
+    class Capture:
+        """События для захвата экрана и камеры"""
+        CAPTURE_SCREEN = "capture_screen"
+        GET_CAMERA_FRAMES = "get_camera_frames"
+        GET_SCREEN_CAPTURE_STATUS = "get_screen_capture_status"
+        GET_CAMERA_CAPTURE_STATUS = "get_camera_capture_status"
+        STOP_SCREEN_CAPTURE = "stop_screen_capture"
+        STOP_CAMERA_CAPTURE = "stop_camera_capture"
+        START_SCREEN_CAPTURE = "start_screen_capture"
+        START_CAMERA_CAPTURE = "start_camera_capture"
+        START_IMAGE_REQUEST_TIMER = "start_image_request_timer"
+        STOP_IMAGE_REQUEST_TIMER = "stop_image_request_timer"
+        UPDATE_SCREEN_CAPTURE_EXCLUSION = "update_screen_capture_exclusion"
+        CAPTURE_SETTINGS_LOADED = "capture_settings_loaded"
+        SEND_PERIODIC_IMAGE_REQUEST = "send_periodic_image_request"
+        UPDATE_LAST_IMAGE_REQUEST_TIME = "update_last_image_request_time"
 
-    # От speech_controller.py
-    INSERT_TEXT_TO_INPUT = "insert_text_to_input"
-    CHECK_USER_ENTRY_EXISTS = "check_user_entry_exists"
+    class Server:
+        """События для взаимодействия с игровым клиентом через TCP сервер"""
+        GET_GAME_CONNECTION = "get_connection_status"
+        STOP_SERVER = "stop_server"
+        SET_GAME_CONNECTION = "update_game_connection"
+        SET_GAME_DATA = "set_game_data"
+        SET_DIALOG_ACTIVE = "set_dialog_active"
+        SET_ID_SOUND = "set_id_sound"
+        GET_SERVER_DATA = "get_server_data"
+        RESET_SERVER_DATA = "reset_server_data"
+        GET_CHAT_SERVER = "get_chat_server"
+        SET_PATCH_TO_SOUND_FILE = "set_patch_to_sound_file"
 
-    # От settings_controller.py
-    SWITCH_VOICEOVER_SETTINGS = "switch_voiceover_settings"
-    SHOW_INFO_MESSAGE = "show_info_message" 
-    UPDATE_CHAT_FONT_SIZE = "update_chat_font_size"
-    RELOAD_CHAT_HISTORY = "reload_chat_history"
-    UPDATE_TOKEN_COUNT_UI = "update_token_count_ui"
-    GET_GUI_WINDOW_ID = "get_gui_window_id"
+    class Telegram:
+        """События для взаимодействия с Telegram"""
+        GET_SILERO_STATUS = "get_silero_status"
+        REQUEST_TG_CODE = "request_tg_code"
+        REQUEST_TG_PASSWORD = "request_tg_password"
+        SET_SOUND_FILE_DATA = "set_sound_file_data"
+        SET_SILERO_CONNECTED = "set_silero_connected"
+        PROMPT_FOR_TG_CODE = "prompt_for_tg_code"
+        PROMPT_FOR_TG_PASSWORD = "prompt_for_tg_password"
+        TELEGRAM_SEND_VOICE_REQUEST = "telegram_send_voice_request"
 
-    # От audio_controller.py
-    CHECK_TRITON_DEPENDENCIES = "check_triton_dependencies"
-    UPDATE_MODEL_LOADING_STATUS = "update_model_loading_status"
-    FINISH_MODEL_LOADING = "finish_model_loading"
-    SHOW_ERROR_MESSAGE = "show_error_message"
-    CANCEL_MODEL_LOADING = "cancel_model_loading"
-    GET_WAITING_ANSWER = "get_waiting_answer"
+    class Settings:
+        """События для управления настройками"""
+        SAVE_SETTING = "save_setting"
+        GET_SETTING = "get_setting"
+        LOAD_SETTINGS = "load_settings"
+        GET_SETTINGS = "get_settings"
+# =========================================================================
+# "Сплющивание" пространства имен для обратной совместимости.
+# =========================================================================
+_groups = [
+    Events.Core, Events.GUI, Events.Model, Events.Chat, Events.Audio, 
+    Events.Speech, Events.Capture, Events.Server, Events.Telegram, Events.Settings
+]
 
-    # От telegram_controller.py
-    PROMPT_FOR_TG_CODE = "prompt_for_tg_code"
-    PROMPT_FOR_TG_PASSWORD = "prompt_for_tg_password"
-    TELEGRAM_SEND_VOICE_REQUEST = "telegram_send_voice_request"
-
-    # От capture_controller.py
-    START_SCREEN_CAPTURE = "start_screen_capture"
-    STOP_SCREEN_CAPTURE = "stop_screen_capture"
-    START_CAMERA_CAPTURE = "start_camera_capture"
-    STOP_CAMERA_CAPTURE = "stop_camera_capture"
-    START_IMAGE_REQUEST_TIMER = "start_image_request_timer"
-    STOP_IMAGE_REQUEST_TIMER = "stop_image_request_timer"
-    UPDATE_SCREEN_CAPTURE_EXCLUSION = "update_screen_capture_exclusion"
-    CAPTURE_SETTINGS_LOADED = "capture_settings_loaded"
-    SEND_PERIODIC_IMAGE_REQUEST = "send_periodic_image_request"
-    UPDATE_LAST_IMAGE_REQUEST_TIME = "update_last_image_request_time"
-
-    # От chat_controller.py
-    GET_LLM_PROCESSING_STATUS = "get_llm_processing_status"
-
-    # От server_controller.py
-    GET_CHAT_SERVER = "get_chat_server"
-    SET_PATCH_TO_SOUND_FILE = "set_patch_to_sound_file"
-
-    GET_INSTANT_SEND_STATUS = "get_instant_send_status"
-    SET_INSTANT_SEND_STATUS = "set_instant_send_status"
-
-    # От loop_controller.py
-    LOOP_READY = "loop_ready"
-    RUN_IN_LOOP = "run_in_loop"
-
-    SPEECH_TEXT_RECOGNIZED = "speech_text_recognized"
-    
-    VOICEOVER_REQUESTED = "voiceover_requested"
-
-    # Микрофон UI
-    GET_MICROPHONE_LIST = "get_microphone_list"
-    REFRESH_MICROPHONE_LIST = "refresh_microphone_list"
-    SET_GIGAAM_OPTIONS = "set_gigaam_options"
-    RESTART_SPEECH_RECOGNITION = "restart_speech_recognition"
-
-    SETTING_CHANGED = "setting_changed"
-
-
+for group in _groups:
+    for attr_name, attr_value in vars(group).items():
+        if not attr_name.startswith('_') and isinstance(attr_value, str):
+            if hasattr(Events, attr_name) and getattr(Events, attr_name) != attr_value:
+                # Эта проверка важна, чтобы выявить случайные дубликаты с одинаковыми именами, но разными значениями,
+                # или просто дубликаты в разных группах.
+                print(f"[WARNING] Event name '{attr_name}' is duplicated in Events groups!") 
+            setattr(Events, attr_name, attr_value)

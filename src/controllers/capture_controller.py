@@ -177,6 +177,9 @@ class CaptureController:
         elif key == "IMAGE_REQUEST_INTERVAL":
             self.stop_image_request_timer()
             self.start_image_request_timer()
+
+        if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:
+            self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
     
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:

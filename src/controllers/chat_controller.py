@@ -16,6 +16,7 @@ class ChatController:
         self.event_bus.subscribe(Events.SEND_MESSAGE, self._on_send_message, weak=False)
         self.event_bus.subscribe(Events.GET_LLM_PROCESSING_STATUS, self._on_get_llm_processing_status, weak=False)
         self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
+        self.event_bus.subscribe(Events.CLEAR_CHAT, self._on_clear_chat, weak=False)
         
     async def async_send_message(
         self,
@@ -163,3 +164,7 @@ class ChatController:
             'coroutine': coro,
             'callback': None
         })
+
+    
+    def _on_clear_chat(self, event: Event):
+        pass

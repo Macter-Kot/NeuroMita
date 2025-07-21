@@ -1209,7 +1209,7 @@ class ChatGUI(QMainWindow):
                   "Failed to save settings for the update. Please check the logs."))
 
     def update_status_colors(self):
-        game_connected = self.event_bus.emit_and_wait(Events.GET_CONNECTION_STATUS, timeout=0.5)
+        game_connected = self.event_bus.emit_and_wait(Events.GET_GAME_CONNECTION, timeout=0.5)
         silero_connected = self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS, timeout=0.5)
         mic_active = self.event_bus.emit_and_wait(Events.GET_MIC_STATUS, timeout=0.5)
         screen_capture_active = self.event_bus.emit_and_wait(Events.GET_SCREEN_CAPTURE_STATUS, timeout=0.5)

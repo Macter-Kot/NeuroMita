@@ -148,7 +148,7 @@ class TelegramBotHandler:
             connection_result = await asyncio.get_event_loop().run_in_executor(
                 None, 
                 self.event_bus.emit_and_wait,
-                Events.GET_CONNECTION_STATUS,
+                Events.GET_GAME_CONNECTION,
                 {},
                 1.0
             )

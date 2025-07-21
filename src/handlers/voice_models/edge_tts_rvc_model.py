@@ -465,8 +465,9 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 except OSError: pass
             else:
                 final_output_path = output_file_rvc
-            
-            if self.parent.parent.ConnectedToGame and TEST_WITH_DONE_AUDIO is None:
+
+            connected_to_game = self.events.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            if connected_to_game and TEST_WITH_DONE_AUDIO is None:
                 self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
             return final_output_path
         except Exception as error:
@@ -601,7 +602,9 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 volume=vol
             )
             
-            if hasattr(self.parent.parent, 'ConnectedToGame') and self.parent.parent.ConnectedToGame:
+            
+            connected_to_game = self.events.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            if connected_to_game:
                 self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
             
             return final_output_path

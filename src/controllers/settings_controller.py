@@ -8,14 +8,21 @@ from main_logger import logger
 from utils import SH
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import QTimer
-from core.events import get_event_bus, Events
+from core.events import get_event_bus, Events, Event
 
 
 class SettingsController:
     def __init__(self, config_path):
         self.config_path = config_path
         self.event_bus = get_event_bus()
+        self._subscribe_to_events()
         self.settings = SettingsManager(self.config_path)
+        
+
+    def _subscribe_to_events(self):
+        self.event_bus.subscribe(Events.GET_SETTINGS, self._on_get_settings, weak=False)
+        self.event_bus.subscribe(Events.GET_SETTING, self._on_get_setting, weak=False)
+        self.event_bus.subscribe(Events.SAVE_SETTING, self._on_save_setting, weak=False)
         
     def load_api_settings(self, update_model):
         logger.info("Начинаю загрузку настроек (из уже загруженного словаря)")
@@ -65,7 +72,25 @@ class SettingsController:
 
         logger.info("Настройки применены из загруженного словаря")
 
-    def all_settings_actions(self, key, value):
+    def _on_get_settings(self, event: Event):
+        return self.settings
+    
+    def _on_save_setting(self, event: Event):
+        key = event.data.get('key')
+        value = event.data.get('value')
+        
+        if key:
+            self.settings.set(key, value)
+            self.settings.save_settings()
+            self.update_setting(key, value)
+    
+    def _on_get_setting(self, event: Event):
+        key = event.data.get('key')
+        default = event.data.get('default', None)
+        
+        return self.settings.get(key, default)
+    
+    def update_setting(self, key, value):
         self.settings.set(key, value)
         self.settings.save_settings()
         

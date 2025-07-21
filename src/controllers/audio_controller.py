@@ -46,6 +46,8 @@ class AudioController:
         self.event_bus.subscribe(Events.CHANGE_VOICE_LANGUAGE, self._on_change_voice_language, weak=False)
         self.event_bus.subscribe(Events.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
         self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
+        self.event_bus.subscribe(Events.GET_WAITING_ANSWER, self._on_get_waiting_answer, weak=False)
+        self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
 
     def _on_voiceover_requested(self, event: Event):
         data = event.data
@@ -63,6 +65,8 @@ class AudioController:
         loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP)[0]
         if loop and loop.is_running():
             try:
+                
+                self.waiting_answer = True
                 self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
 
                 if self.voiceover_method == "TG":
@@ -89,8 +93,15 @@ class AudioController:
                 logger.info("Выполнено")
             except Exception as e:
                 logger.error(f"Ошибка при отправке текста на озвучку: {e}")
+            finally:
+                
+                self.waiting_answer = False
         else:
             logger.error("Ошибка: Цикл событий не готов.")
+
+    def _on_get_waiting_answer(self, event: Event):
+        return self.waiting_answer
+
     
     def _on_select_voice_model(self, event: Event):
         model_id = event.data.get('model_id')
@@ -183,7 +194,6 @@ class AudioController:
             
     async def run_send_and_receive(self, response, speaker_command, id=0):
         logger.info("Попытка получить фразу")
-        self.waiting_answer = True
         
         future = asyncio.Future()
         
@@ -199,12 +209,12 @@ class AudioController:
         except Exception as e:
             logger.error(f"Ошибка при получении озвучки через Telegram: {e}")
         
-        self.waiting_answer = False
         logger.info("Завершение получения фразы")
            
     async def run_local_voiceover(self, text):
         result_path = None
         try:
+            
             current_char_data = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER)[0]
             character = current_char_data['name'] if current_char_data else None
             
@@ -220,7 +230,7 @@ class AudioController:
 
             if result_path:
                 logger.info(f"Локальная озвучка сохранена в: {result_path}")
-                is_connected = self.event_bus.emit_and_wait(Events.GET_CONNECTION_STATUS)[0]
+                is_connected = self.event_bus.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
                 
                 if not is_connected and self.settings.get("VOICEOVER_LOCAL_CHAT"):
                     await AudioHandler.handle_voice_file(result_path, self.settings.get("LOCAL_VOICE_DELETE_AUDIO",
@@ -422,3 +432,6 @@ class AudioController:
                     logger.info(f"Удален файл: {file}")
                 except Exception as e:
                     logger.info(f"Ошибка при удалении файла {file}: {e}")
+
+    def _on_set_waiting_answer(self, event: Event):
+        self.waiting_answer = event.data.get('waiting', False)

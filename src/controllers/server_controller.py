@@ -13,6 +13,8 @@ class ServerController:
         self.server = ChatServer()
         self.server_thread = None
         self.running = False
+        self.ConnectedToGame = False
+
         
         self.patch_to_sound_file = ""
         
@@ -26,6 +28,8 @@ class ServerController:
         self.event_bus.subscribe(Events.GET_CHAT_SERVER, self._on_get_chat_server, weak=False)
         self.event_bus.subscribe(Events.SET_PATCH_TO_SOUND_FILE, self._on_set_patch_to_sound_file, weak=False)
         self.event_bus.subscribe(Events.SET_ID_SOUND, self._on_set_id_sound, weak=False)
+        self.event_bus.subscribe(Events.SET_GAME_CONNECTION, self._on_update_game_connection, weak=False)
+        self.event_bus.subscribe(Events.GET_GAME_CONNECTION, self._on_get_connection_status, weak=False)
         
     def start_server(self):
         if not self.running:
@@ -106,3 +110,16 @@ class ServerController:
     def _on_set_patch_to_sound_file(self, event: Event):
         self.patch_to_sound_file = event.data
         logger.info(f"Установлен путь к звуковому файлу: {self.patch_to_sound_file}")
+
+    ## -> server_controller.py
+    def update_game_connection(self, is_connected):
+        self.ConnectedToGame = is_connected
+        self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+
+    def _on_update_game_connection(self, event: Event):
+        is_connected = event.data.get('is_connected', False)
+        self.update_game_connection(is_connected)
+
+    def _on_get_connection_status(self, event: Event):
+        return self.ConnectedToGame
+    ##

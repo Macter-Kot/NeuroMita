@@ -313,7 +313,7 @@ class Events:
     REFRESH_VOICE_MODULES = "refresh_voice_modules"
     
     # Статусы
-    GET_CONNECTION_STATUS = "get_connection_status"
+    GET_GAME_CONNECTION = "get_connection_status"
     GET_SILERO_STATUS = "get_silero_status"
     GET_MIC_STATUS = "get_mic_status"
     GET_SCREEN_CAPTURE_STATUS = "get_screen_capture_status"
@@ -385,7 +385,7 @@ class Events:
     ON_FAILED_RESPONSE_ATTEMPT = "on_failed_attempt_for_response"
 
     # от server.py
-    UPDATE_GAME_CONNECTION = "update_game_connection"
+    SET_GAME_CONNECTION = "update_game_connection"
     SET_CHARACTER_TO_CHANGE = "set_character_to_change"
     SET_GAME_DATA = "set_game_data"
     SET_DIALOG_ACTIVE = "set_dialog_active"
@@ -436,6 +436,7 @@ class Events:
     FINISH_MODEL_LOADING = "finish_model_loading"
     SHOW_ERROR_MESSAGE = "show_error_message"
     CANCEL_MODEL_LOADING = "cancel_model_loading"
+    GET_WAITING_ANSWER = "get_waiting_voiceover"
 
     # От telegram_controller.py
     PROMPT_FOR_TG_CODE = "prompt_for_tg_code"

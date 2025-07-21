@@ -403,7 +403,8 @@ class F5TTSModel(IVoiceModel):
                 else:
                     logger.warning("Модель 'high+low' требует RVC, но обработчик не был предоставлен.")
             
-            if self.parent.parent and hasattr(self.parent.parent, 'ConnectedToGame') and self.parent.parent.ConnectedToGame:
+            connected_to_game = self.events.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            if connected_to_game:
                 self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
     
 

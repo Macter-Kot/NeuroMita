@@ -58,11 +58,11 @@ class ChatServer:
 
         except socket.error as e:
             logger.error(f"Socket error: {e}")
-            self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
             return False
         except Exception as e:
             logger.error(f"Connection handling error: {e}")
-            self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
             return False
         finally:
             if client_socket:
@@ -225,13 +225,13 @@ class ChatServer:
             
             logger.warning(f"Я сравниваю айдишник из игры {message_id} и айдишник из сервера {server_data.get('id_sound')}: {message_id==server_data.get('id_sound')}")
 
-            self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': True})
+            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': True})
 
             return True
             
         except Exception as e:
             logger.error(f"Ошибка обработки подключения: {e}")
-            self.event_bus.emit(Events.UPDATE_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
             return False
         
     def generate_response(self, input_text, system_input_text, image_data: list[bytes] = None):
@@ -274,4 +274,4 @@ class ChatServer:
         if self.server_socket:
             self.server_socket.close()
             logger.info("Сервер остановлен.")
-            self.event_bus.emit(Events.SET_CONNECTED_TO_GAME, {'connected': False})
+            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})

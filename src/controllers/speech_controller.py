@@ -117,14 +117,19 @@ class SpeechController:
             
         if not bool(self.settings.get("MIC_ACTIVE")):
             return
-            
+        
         if bool(self.settings.get("MIC_INSTANT_SENT")):
-            if not self.main.audio_controller.waiting_answer:
+            
+            waiting_answer = self.events_bus.emit_and_wait(Events.GET_WAITING_ANSWER)[0]
+            if not waiting_answer:
                 logger.warning("Instant send: " + text)
                 self.send_instantly(text)
+            else:
+                self.recognized_text += text
                 
         elif self._check_user_entry_exists():
-            if self.main.ConnectedToGame:
+            connected_to_game = self.events_bus.emit_and_wait(Events.GET_CONNECTED_TO_GAME)[0]
+            if connected_to_game:
                 self.recognized_text += text
             else:    
                 self._insert_text_to_input(text)

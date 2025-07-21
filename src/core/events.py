@@ -442,19 +442,3 @@ class Events:
         GET_SETTING = "get_setting"
         LOAD_SETTINGS = "load_settings"
         GET_SETTINGS = "get_settings"
-# =========================================================================
-# "Сплющивание" пространства имен для обратной совместимости.
-# =========================================================================
-_groups = [
-    Events.Core, Events.GUI, Events.Model, Events.Chat, Events.Audio, 
-    Events.Speech, Events.Capture, Events.Server, Events.Telegram, Events.Settings
-]
-
-for group in _groups:
-    for attr_name, attr_value in vars(group).items():
-        if not attr_name.startswith('_') and isinstance(attr_value, str):
-            if hasattr(Events, attr_name) and getattr(Events, attr_name) != attr_value:
-                # Эта проверка важна, чтобы выявить случайные дубликаты с одинаковыми именами, но разными значениями,
-                # или просто дубликаты в разных группах.
-                print(f"[WARNING] Event name '{attr_name}' is duplicated in Events groups!") 
-            setattr(Events, attr_name, attr_value)

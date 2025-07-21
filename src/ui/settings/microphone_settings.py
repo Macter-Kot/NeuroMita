@@ -28,7 +28,7 @@ def setup_microphone_controls(gui, parent_layout):
     gui.mic_combobox.setMinimumWidth(150)
     gui.mic_combobox.setMaximumWidth(220)
     
-    results = event_bus.emit_and_wait(Events.GET_MICROPHONE_LIST, timeout=1.0)
+    results = event_bus.emit_and_wait(Events.Speech.GET_MICROPHONE_LIST, timeout=1.0)
     mic_list = results[0] if results else [_("Микрофоны не найдены", "No microphones found")]
     
     for mic_name in mic_list:
@@ -145,13 +145,13 @@ def on_mic_selected(gui, full_device_name=None):
             if device_id_match:
                 device_id = int(device_id_match.group(1))
                 
-                event_bus.emit(Events.SET_MICROPHONE, {
+                event_bus.emit(Events.Speech.SET_MICROPHONE, {
                     'name': microphone_name,
                     'device_id': device_id
                 })
                 
                 if gui.settings.get("MIC_ACTIVE", False):
-                    event_bus.emit(Events.RESTART_SPEECH_RECOGNITION, {'device_id': device_id})
+                    event_bus.emit(Events.Speech.RESTART_SPEECH_RECOGNITION, {'device_id': device_id})
                         
         except Exception as e:
             logger.error(f"Ошибка выбора микрофона: {e}")
@@ -161,7 +161,7 @@ def on_gigaam_device_selected(gui):
         return
     device = gui.GIGAAM_DEVICE_combobox.currentText()
     event_bus = get_event_bus()
-    event_bus.emit(Events.SET_GIGAAM_OPTIONS, {'device': device})
+    event_bus.emit(Events.Speech.SET_GIGAAM_OPTIONS, {'device': device})
 
 def update_mic_list(gui):
     if hasattr(gui, 'mic_combobox'):
@@ -174,7 +174,7 @@ def update_mic_list(gui):
         
         gui.mic_combobox.clear()
         
-        results = event_bus.emit_and_wait(Events.REFRESH_MICROPHONE_LIST, timeout=1.0)
+        results = event_bus.emit_and_wait(Events.Speech.REFRESH_MICROPHONE_LIST, timeout=1.0)
         new_list = results[0] if results else [_("Ошибка загрузки", "Loading error")]
         
         for mic_name in new_list:
@@ -215,7 +215,7 @@ def load_mic_settings(gui):
                 gui.mic_combobox.setCurrentIndex(0)
                 gui.mic_combobox.setToolTip(gui.mic_combobox.itemData(0, Qt.ItemDataRole.UserRole))
             
-            event_bus.emit(Events.SET_MICROPHONE, {
+            event_bus.emit(Events.Speech.SET_MICROPHONE, {
                 'name': device_name,
                 'device_id': device_id
             })

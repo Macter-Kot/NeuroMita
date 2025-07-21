@@ -21,38 +21,38 @@ class ModelController:
     def _subscribe_to_events(self):
         # Существующие события
         self.event_bus.subscribe("model_settings_loaded", self._on_model_settings_loaded, weak=False)
-        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.Core.SETTING_CHANGED, self._on_setting_changed, weak=False)
         
         # События персонажей
-        self.event_bus.subscribe(Events.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)
-        self.event_bus.subscribe(Events.GET_CURRENT_CHARACTER, self._on_get_current_character, weak=False)
-        self.event_bus.subscribe(Events.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change, weak=False)
-        self.event_bus.subscribe(Events.CHECK_CHANGE_CHARACTER, self._on_check_change_character, weak=False)
-        self.event_bus.subscribe(Events.GET_CHARACTER, self._on_get_character, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHARACTER_DATA, self._on_reload_character_data, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHARACTER_PROMPTS, self._on_reload_character_prompts, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_CHARACTER_HISTORY, self._on_clear_character_history, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_ALL_HISTORIES, self._on_clear_all_histories, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CURRENT_CHARACTER, self._on_get_current_character, weak=False)
+        self.event_bus.subscribe(Events.Model.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change, weak=False)
+        self.event_bus.subscribe(Events.Model.CHECK_CHANGE_CHARACTER, self._on_check_change_character, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CHARACTER, self._on_get_character, weak=False)
+        self.event_bus.subscribe(Events.Model.RELOAD_CHARACTER_DATA, self._on_reload_character_data, weak=False)
+        self.event_bus.subscribe(Events.Model.RELOAD_CHARACTER_PROMPTS, self._on_reload_character_prompts, weak=False)
+        self.event_bus.subscribe(Events.Model.CLEAR_CHARACTER_HISTORY, self._on_clear_character_history, weak=False)
+        self.event_bus.subscribe(Events.Model.CLEAR_ALL_HISTORIES, self._on_clear_all_histories, weak=False)
         
         # События истории
-        self.event_bus.subscribe(Events.LOAD_HISTORY, self._on_load_history, weak=False)
-        self.event_bus.subscribe(Events.LOAD_MORE_HISTORY, self._on_load_more_history, weak=False)
+        self.event_bus.subscribe(Events.Model.LOAD_HISTORY, self._on_load_history, weak=False)
+        self.event_bus.subscribe(Events.Model.LOAD_MORE_HISTORY, self._on_load_more_history, weak=False)
         
         # События информации
-        self.event_bus.subscribe(Events.GET_CHARACTER_NAME, self._on_get_character_name, weak=False)
-        self.event_bus.subscribe(Events.GET_CURRENT_CONTEXT_TOKENS, self._on_get_current_context_tokens, weak=False)
-        self.event_bus.subscribe(Events.CALCULATE_COST, self._on_calculate_cost, weak=False)
-        self.event_bus.subscribe(Events.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CHARACTER_NAME, self._on_get_character_name, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CURRENT_CONTEXT_TOKENS, self._on_get_current_context_tokens, weak=False)
+        self.event_bus.subscribe(Events.Model.CALCULATE_COST, self._on_calculate_cost, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
         
         # События игры
-        self.event_bus.subscribe(Events.SET_GAME_DATA, self._on_set_game_data, weak=False)
-        self.event_bus.subscribe(Events.ADD_TEMPORARY_SYSTEM_INFO, self._on_add_temporary_system_info, weak=False)
+        self.event_bus.subscribe(Events.Server.SET_GAME_DATA, self._on_set_game_data, weak=False)
+        self.event_bus.subscribe(Events.Model.ADD_TEMPORARY_SYSTEM_INFO, self._on_add_temporary_system_info, weak=False)
         
         # События генерации
-        self.event_bus.subscribe(Events.GENERATE_RESPONSE, self._on_generate_response, weak=False)
+        self.event_bus.subscribe(Events.Model.GENERATE_RESPONSE, self._on_generate_response, weak=False)
         
         # События для обновления промптов
-        self.event_bus.subscribe(Events.RELOAD_PROMPTS_ASYNC, self._on_reload_prompts_async, weak=False)
+        self.event_bus.subscribe(Events.Model.RELOAD_PROMPTS_ASYNC, self._on_reload_prompts_async, weak=False)
         
     def _on_model_settings_loaded(self, event: Event):
         data = event.data
@@ -298,11 +298,11 @@ class ModelController:
     
     def _on_reload_prompts_async(self, event: Event):
         # Получаем главный asyncio-loop через событие
-        loop_res = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
+        loop_res = self.event_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)
         loop = loop_res[0] if loop_res else None
         
         logger.info("Запрос на асинхронное обновление промптов...")
-        self.event_bus.emit(Events.RUN_IN_LOOP, {
+        self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
             'coroutine': self._async_reload_prompts(),
             'callback': None  # Можно добавить callback для обработки результата, если нужно
         })

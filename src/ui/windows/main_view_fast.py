@@ -715,11 +715,11 @@ class ChatGUI(QMainWindow):
         
         has_auto_images = False
         if self._get_setting("ENABLE_SCREEN_ANALYSIS", False):
-            frames = self.event_bus.emit_and_wait(Events.CAPTURE_SCREEN, {'limit': 1}, timeout=0.5)
+            frames = self.event_bus.emit_and_wait(Events.Capture.CAPTURE_SCREEN, {'limit': 1}, timeout=0.5)
             has_auto_images = bool(frames and frames[0])
             
         if self._get_setting("ENABLE_CAMERA_CAPTURE", False):
-            camera_frames = self.event_bus.emit_and_wait(Events.GET_CAMERA_FRAMES, {'limit': 1}, timeout=0.5)
+            camera_frames = self.event_bus.emit_and_wait(Events.Capture.GET_CAMERA_FRAMES, {'limit': 1}, timeout=0.5)
             has_auto_images = has_auto_images or bool(camera_frames and camera_frames[0])
         
         is_enabled = has_text or has_images or has_auto_images
@@ -1074,7 +1074,7 @@ class ChatGUI(QMainWindow):
                                  "UI element for version input not found."))
             return
 
-        success = self.event_bus.emit_and_wait(Events.SCHEDULE_G4F_UPDATE, {'version': target_version}, timeout=1.0)
+        success = self.event_bus.emit_and_wait(Events.Model.SCHEDULE_G4F_UPDATE, {'version': target_version}, timeout=1.0)
         
         if success and success[0]:
             QMessageBox.information(self, _("Запланировано", "Scheduled"),
@@ -1087,11 +1087,11 @@ class ChatGUI(QMainWindow):
                   "Failed to save settings for the update. Please check the logs."))
 
     def update_status_colors(self):
-        game_connected = self.event_bus.emit_and_wait(Events.GET_GAME_CONNECTION, timeout=0.5)
-        silero_connected = self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS, timeout=0.5)
-        mic_active = self.event_bus.emit_and_wait(Events.GET_MIC_STATUS, timeout=0.5)
-        screen_capture_active = self.event_bus.emit_and_wait(Events.GET_SCREEN_CAPTURE_STATUS, timeout=0.5)
-        camera_capture_active = self.event_bus.emit_and_wait(Events.GET_CAMERA_CAPTURE_STATUS, timeout=0.5)
+        game_connected = self.event_bus.emit_and_wait(Events.Server.GET_GAME_CONNECTION, timeout=0.5)
+        silero_connected = self.event_bus.emit_and_wait(Events.Telegram.GET_SILERO_STATUS, timeout=0.5)
+        mic_active = self.event_bus.emit_and_wait(Events.Speech.GET_MIC_STATUS, timeout=0.5)
+        screen_capture_active = self.event_bus.emit_and_wait(Events.Capture.GET_SCREEN_CAPTURE_STATUS, timeout=0.5)
+        camera_capture_active = self.event_bus.emit_and_wait(Events.Capture.GET_CAMERA_CAPTURE_STATUS, timeout=0.5)
         
         if hasattr(self, 'game_status_checkbox'):
             self.game_status_checkbox.setChecked(bool(game_connected and game_connected[0]))
@@ -1111,7 +1111,7 @@ class ChatGUI(QMainWindow):
     def load_chat_history(self):
         self.clear_chat_display()
         
-        self.event_bus.emit(Events.LOAD_HISTORY)
+        self.event_bus.emit(Events.Model.LOAD_HISTORY)
 
     def _on_history_loaded(self, data: dict):
         messages = data.get('messages', [])
@@ -1206,7 +1206,7 @@ class ChatGUI(QMainWindow):
         if hasattr(self, 'debug_window') and self.debug_window:
             self.debug_window.clear()
             
-            debug_info_result = self.event_bus.emit_and_wait(Events.GET_DEBUG_INFO, timeout=0.5)
+            debug_info_result = self.event_bus.emit_and_wait(Events.Model.GET_DEBUG_INFO, timeout=0.5)
             debug_info = debug_info_result[0] if debug_info_result else "Debug info not available"
             
             self.debug_window.insertPlainText(debug_info)
@@ -1215,12 +1215,12 @@ class ChatGUI(QMainWindow):
         show_token_info = self._get_setting("SHOW_TOKEN_INFO", True)
 
         if show_token_info:
-            current_context_tokens = self.event_bus.emit_and_wait(Events.GET_CURRENT_CONTEXT_TOKENS, timeout=0.5)
+            current_context_tokens = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CONTEXT_TOKENS, timeout=0.5)
             current_context_tokens = current_context_tokens[0] if current_context_tokens else 0
             
             max_model_tokens = int(self._get_setting("MAX_MODEL_TOKENS", 32000))
             
-            cost = self.event_bus.emit_and_wait(Events.CALCULATE_COST, timeout=0.5)
+            cost = self.event_bus.emit_and_wait(Events.Model.CALCULATE_COST, timeout=0.5)
             cost = cost[0] if cost else 0.0
 
             self.token_count_label.setText(
@@ -1243,7 +1243,7 @@ class ChatGUI(QMainWindow):
 
     def clear_chat_display(self):
         self.chat_window.clear()
-        self.event_bus.emit(Events.CLEAR_CHAT)
+        self.event_bus.emit(Events.Chat.CLEAR_CHAT)
 
     def send_message(self, system_input: str = "", image_data: list[bytes] = None):
         user_input = self.user_entry.toPlainText().strip()
@@ -1252,7 +1252,7 @@ class ChatGUI(QMainWindow):
 
         if self._get_setting("ENABLE_SCREEN_ANALYSIS", False):
             history_limit = int(self._get_setting("SCREEN_CAPTURE_HISTORY_LIMIT", 1))
-            frames = self.event_bus.emit_and_wait(Events.CAPTURE_SCREEN, {'limit': history_limit}, timeout=0.5)
+            frames = self.event_bus.emit_and_wait(Events.Capture.CAPTURE_SCREEN, {'limit': history_limit}, timeout=0.5)
             if frames and frames[0]:
                 current_image_data.extend(frames[0])
             else:
@@ -1262,7 +1262,7 @@ class ChatGUI(QMainWindow):
 
         if self._get_setting("ENABLE_CAMERA_CAPTURE", False):
             history_limit = int(self._get_setting("CAMERA_CAPTURE_HISTORY_LIMIT", 1))
-            camera_frames = self.event_bus.emit_and_wait(Events.GET_CAMERA_FRAMES, {'limit': history_limit}, timeout=0.5)
+            camera_frames = self.event_bus.emit_and_wait(Events.Capture.GET_CAMERA_FRAMES, {'limit': history_limit}, timeout=0.5)
             if camera_frames and camera_frames[0]:
                 all_image_data.extend(camera_frames[0])
                 logger.info(f"Добавлено {len(camera_frames[0])} кадров с камеры для отправки.")
@@ -1291,21 +1291,21 @@ class ChatGUI(QMainWindow):
 
             self.insert_message("user", image_content_for_display)
 
-        self.event_bus.emit(Events.SEND_MESSAGE, {
+        self.event_bus.emit(Events.Chat.SEND_MESSAGE, {
             'user_input': user_input,
             'system_input': system_input,
             'image_data': all_image_data
         })
 
         if staged_image_data:
-            self.event_bus.emit(Events.CLEAR_STAGED_IMAGES)
+            self.event_bus.emit(Events.Chat.CLEAR_STAGED_IMAGES)
             self.staged_image_data.clear()
             if self.image_preview_bar:
                 self.image_preview_bar.clear()
                 self._hide_image_preview_bar()
 
     def load_more_history(self):
-        self.event_bus.emit(Events.LOAD_MORE_HISTORY)
+        self.event_bus.emit(Events.Model.LOAD_MORE_HISTORY)
 
     def _on_more_history_loaded(self, data: dict):
         messages_to_prepend = data.get('messages', [])
@@ -1328,13 +1328,13 @@ class ChatGUI(QMainWindow):
         logger.info(f"Загружено еще {len(messages_to_prepend)} сообщений.")
 
     def _save_setting(self, key, value):
-        self.event_bus.emit(Events.SAVE_SETTING, {'key': key, 'value': value})
+        self.event_bus.emit(Events.Settings.SAVE_SETTING, {'key': key, 'value': value})
 
     def _get_setting(self, key, default=None):
         return self.settings.get(key, default)
 
     def _get_character_name(self):
-        result = self.event_bus.emit_and_wait(Events.GET_CHARACTER_NAME, timeout=0.5)
+        result = self.event_bus.emit_and_wait(Events.Model.GET_CHARACTER_NAME, timeout=0.5)
         return result[0] if result else "Assistant"
 
     def get_news_content(self):
@@ -1349,10 +1349,10 @@ class ChatGUI(QMainWindow):
             return _('Ошибка при загрузке новостей', 'Error loading news')
 
     def closeEvent(self, event):
-        self.event_bus.emit(Events.STOP_SCREEN_CAPTURE)
-        self.event_bus.emit(Events.STOP_CAMERA_CAPTURE)
-        self.event_bus.emit(Events.DELETE_SOUND_FILES)
-        self.event_bus.emit(Events.STOP_SERVER)
+        self.event_bus.emit(Events.Capture.STOP_SCREEN_CAPTURE)
+        self.event_bus.emit(Events.Capture.STOP_CAMERA_CAPTURE)
+        self.event_bus.emit(Events.Audio.DELETE_SOUND_FILES)
+        self.event_bus.emit(Events.Server.STOP_SERVER)
         logger.info("Закрываемся")
         event.accept()
 
@@ -1391,12 +1391,12 @@ class ChatGUI(QMainWindow):
 
         self.update_local_model_status_indicator()
         
-        is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': selected_model_id}, timeout=0.5)
+        is_initialized = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INITIALIZED, {'model_id': selected_model_id}, timeout=0.5)
         
         if not (is_initialized and is_initialized[0]):
             self.show_model_loading_window(selected_model)
         else:
-            success = self.event_bus.emit_and_wait(Events.SELECT_VOICE_MODEL, {'model_id': selected_model_id}, timeout=1.0)
+            success = self.event_bus.emit_and_wait(Events.Audio.SELECT_VOICE_MODEL, {'model_id': selected_model_id}, timeout=1.0)
             
             if success and success[0]:
                 self.last_voice_model_selected = selected_model
@@ -1452,7 +1452,7 @@ class ChatGUI(QMainWindow):
             if status_type == "status":
                 QTimer.singleShot(0, lambda: self.loading_status_label.setText(message))
         
-        self.event_bus.emit(Events.INIT_VOICE_MODEL, {
+        self.event_bus.emit(Events.Audio.INIT_VOICE_MODEL, {
             'model_id': model_id,
             'progress_callback': progress_callback
         })
@@ -1465,7 +1465,7 @@ class ChatGUI(QMainWindow):
         if hasattr(self, 'loading_dialog') and self.loading_dialog:
             self.loading_dialog.close()
         
-        success = self.event_bus.emit_and_wait(Events.SELECT_VOICE_MODEL, {'model_id': model_id}, timeout=1.0)
+        success = self.event_bus.emit_and_wait(Events.Audio.SELECT_VOICE_MODEL, {'model_id': model_id}, timeout=1.0)
         
         if success and success[0]:
             for model in LOCAL_VOICE_MODELS:
@@ -1529,10 +1529,10 @@ class ChatGUI(QMainWindow):
                         break
 
                 if model_to_load:
-                    is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': last_model_id}, timeout=0.5)
+                    is_installed = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INSTALLED, {'model_id': last_model_id}, timeout=0.5)
                     
                     if is_installed and is_installed[0]:
-                        is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': last_model_id}, timeout=0.5)
+                        is_initialized = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INITIALIZED, {'model_id': last_model_id}, timeout=0.5)
                         
                         if not (is_initialized and is_initialized[0]):
                             logger.info(f"Модель {last_model_id} установлена, но не инициализирована. Запуск инициализации...")
@@ -1556,9 +1556,9 @@ class ChatGUI(QMainWindow):
             current_model_id_combo = self._get_setting("NM_CURRENT_VOICEOVER", None)
 
             if current_model_id_combo:
-                is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': current_model_id_combo}, timeout=0.5)
+                is_installed = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INSTALLED, {'model_id': current_model_id_combo}, timeout=0.5)
                 if is_installed and is_installed[0]:
-                    is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': current_model_id_combo}, timeout=0.5)
+                    is_initialized = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INITIALIZED, {'model_id': current_model_id_combo}, timeout=0.5)
                     if not (is_initialized and is_initialized[0]):
                         show_combobox_indicator = True
                 else:
@@ -1576,9 +1576,9 @@ class ChatGUI(QMainWindow):
             current_model_id_section = self._get_setting("NM_CURRENT_VOICEOVER", None)
 
             if voiceover_method == "Local" and current_model_id_section:
-                is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': current_model_id_section}, timeout=0.5)
+                is_installed = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INSTALLED, {'model_id': current_model_id_section}, timeout=0.5)
                 if is_installed and is_installed[0]:
-                    is_initialized = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INITIALIZED, {'model_id': current_model_id_section}, timeout=0.5)
+                    is_initialized = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INITIALIZED, {'model_id': current_model_id_section}, timeout=0.5)
                     if not (is_initialized and is_initialized[0]):
                         show_section_warning = True
                 else:
@@ -1643,7 +1643,7 @@ class ChatGUI(QMainWindow):
         try:
             installed_models_names = []
             for model in LOCAL_VOICE_MODELS:
-                is_installed = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': model["id"]}, timeout=0.5)
+                is_installed = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INSTALLED, {'model_id': model["id"]}, timeout=0.5)
                 if is_installed and is_installed[0]:
                     installed_models_names.append(model["name"])
             
@@ -1719,7 +1719,7 @@ class ChatGUI(QMainWindow):
                 installed_models_ids = settings_data.get("installed_models", [])
                 logger.info(f"Сохранены установленные модели (из окна установки): {installed_models_ids}")
 
-                self.event_bus.emit(Events.REFRESH_VOICE_MODULES)
+                self.event_bus.emit(Events.Audio.REFRESH_VOICE_MODULES)
                 self.update_local_voice_combobox()
 
                 current_model_id = self._get_setting("NM_CURRENT_VOICEOVER", None)
@@ -1731,7 +1731,7 @@ class ChatGUI(QMainWindow):
                     self.update_local_voice_combobox()
 
             def check_installed_func(model_id):
-                result = self.event_bus.emit_and_wait(Events.CHECK_MODEL_INSTALLED, {'model_id': model_id}, timeout=0.5)
+                result = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INSTALLED, {'model_id': model_id}, timeout=0.5)
                 return result[0] if result else False
 
             class LocalVoiceStub:
@@ -1821,7 +1821,7 @@ class ChatGUI(QMainWindow):
 
         self._save_setting("VOICE_LANGUAGE", selected_language)
 
-        success = self.event_bus.emit_and_wait(Events.CHANGE_VOICE_LANGUAGE, {'language': selected_language}, timeout=1.0)
+        success = self.event_bus.emit_and_wait(Events.Audio.CHANGE_VOICE_LANGUAGE, {'language': selected_language}, timeout=1.0)
         
         if success and success[0]:
             logger.info(f"Язык успешно изменен на {selected_language}.")
@@ -1869,7 +1869,7 @@ class ChatGUI(QMainWindow):
 
         if file_paths:
             for file_path in file_paths:
-                self.event_bus.emit(Events.STAGE_IMAGE, {'image_data': file_path})
+                self.event_bus.emit(Events.Chat.STAGE_IMAGE, {'image_data': file_path})
             
             for file_path in file_paths:
                 try:
@@ -1888,7 +1888,7 @@ class ChatGUI(QMainWindow):
     def send_screen_capture(self):
         logger.info("Запрошена отправка скриншота.")
         
-        frames = self.event_bus.emit_and_wait(Events.CAPTURE_SCREEN, {'limit': 1}, timeout=0.5)
+        frames = self.event_bus.emit_and_wait(Events.Capture.CAPTURE_SCREEN, {'limit': 1}, timeout=0.5)
         
         if not frames or not frames[0]:
             QMessageBox.warning(self, _("Ошибка", "Error"),
@@ -1898,7 +1898,7 @@ class ChatGUI(QMainWindow):
 
         for frame_data in frames[0]:
             self.staged_image_data.append(frame_data)
-            self.event_bus.emit(Events.STAGE_IMAGE, {'image_data': frame_data})
+            self.event_bus.emit(Events.Chat.STAGE_IMAGE, {'image_data': frame_data})
         
         self._show_image_preview_bar()
         for frame_data in frames[0]:
@@ -1907,7 +1907,7 @@ class ChatGUI(QMainWindow):
         self._update_send_button_state()
 
     def _clear_staged_images(self):
-        self.event_bus.emit(Events.CLEAR_STAGED_IMAGES)
+        self.event_bus.emit(Events.Chat.CLEAR_STAGED_IMAGES)
         
         self.staged_image_data.clear()
         if self.image_preview_bar:
@@ -1932,7 +1932,7 @@ class ChatGUI(QMainWindow):
 
         self.staged_image_data.append(img_bytes)
         
-        self.event_bus.emit(Events.STAGE_IMAGE, {'image_data': img_bytes})
+        self.event_bus.emit(Events.Chat.STAGE_IMAGE, {'image_data': img_bytes})
 
         self._show_image_preview_bar()
         self.image_preview_bar.add_image(img_bytes)
@@ -2012,7 +2012,7 @@ class ChatGUI(QMainWindow):
             logger.error(f"Ошибка при показе изображения: {e}")
 
     def prompt_for_code(self, code_future):
-        self.event_bus.emit(Events.REQUEST_TG_CODE, {'future': code_future})
+        self.event_bus.emit(Events.Telegram.REQUEST_TG_CODE, {'future': code_future})
 
     def _on_show_tg_code_dialog(self, data: dict):
         code_future = data.get('future')
@@ -2059,7 +2059,7 @@ class ChatGUI(QMainWindow):
         dialog.exec()
 
     def prompt_for_password(self, password_future):
-        self.event_bus.emit(Events.REQUEST_TG_PASSWORD, {'future': password_future})
+        self.event_bus.emit(Events.Telegram.REQUEST_TG_PASSWORD, {'future': password_future})
 
     def _on_show_tg_password_dialog(self, data: dict):
         password_future = data.get('future')
@@ -2144,7 +2144,7 @@ class ChatGUI(QMainWindow):
 
     def _on_stream_finish(self):
         print("[DEBUG] Стрим завершен, скрываем статус")
-        self.event_bus.emit(Events.HIDE_MITA_STATUS)
+        self.event_bus.emit(Events.GUI.HIDE_MITA_STATUS)
 
     def _on_reload_prompts_success(self):
         QMessageBox.information(self, _("Успешно", "Success"), 
@@ -2161,7 +2161,7 @@ class ChatGUI(QMainWindow):
                   "Failed to download prompts from GitHub. Check your internet connection."))
     
     def _show_loading_popup(self, message):
-        self.event_bus.emit(Events.SHOW_LOADING_POPUP, {"message": message})
+        self.event_bus.emit(Events.GUI.SHOW_LOADING_POPUP, {"message": message})
     
     def _on_display_loading_popup(self, data: dict):
         message = data.get('message', 'Loading...')
@@ -2179,7 +2179,7 @@ class ChatGUI(QMainWindow):
         self.loading_popup.show()
     
     def _close_loading_popup(self):
-        self.event_bus.emit(Events.CLOSE_LOADING_POPUP)
+        self.event_bus.emit(Events.GUI.CLOSE_LOADING_POPUP)
     
     def _on_hide_loading_popup(self):
         if hasattr(self, 'loading_popup') and self.loading_popup:

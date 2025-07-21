@@ -17,7 +17,7 @@ def setup_mita_controls(gui, parent_layout):
     event_bus = get_event_bus()
     
     # Получаем список персонажей через события
-    all_characters = event_bus.emit_and_wait(Events.GET_ALL_CHARACTERS, timeout=1.0)
+    all_characters = event_bus.emit_and_wait(Events.Model.GET_ALL_CHARACTERS, timeout=1.0)
     character_list = all_characters[0] if all_characters else ["Crazy"]
 
     provider_names = list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi'] + list(gui.settings.get("CUSTOM_API_PRESETS", {}).keys())
@@ -25,7 +25,7 @@ def setup_mita_controls(gui, parent_layout):
     provider_names.insert(0, _("Текущий", "Current"))
 
     # Получаем текущего персонажа для начальной настройки
-    current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+    current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
     current_char_id = current_char_data[0]['char_id'] if current_char_data and current_char_data[0] else "Crazy"
 
     mita_config = [
@@ -84,8 +84,8 @@ def change_character_actions(gui, character=None):
     else:
         return
 
-    event_bus.emit(Events.SET_CHARACTER_TO_CHANGE, {'character': selected_character})
-    event_bus.emit(Events.CHECK_CHANGE_CHARACTER)
+    event_bus.emit(Events.Model.SET_CHARACTER_TO_CHANGE, {'character': selected_character})
+    event_bus.emit(Events.Model.CHECK_CHANGE_CHARACTER)
 
     if hasattr(gui, 'char_provider_combobox'):
         provider_key = f"CHAR_PROVIDER_{selected_character}"
@@ -133,7 +133,7 @@ def apply_prompt_set(gui, force_apply=True):
         if copy_prompt_set(set_path, character_prompts_path):
             if force_apply:
                 QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен.", "Prompt set applied successfully."))
-            event_bus.emit(Events.RELOAD_CHARACTER_DATA)
+            event_bus.emit(Events.Model.RELOAD_CHARACTER_DATA)
         else:
             if force_apply:
                 QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
@@ -150,7 +150,7 @@ def open_folder(path):
 
 def open_character_folder(gui):
     event_bus = get_event_bus()
-    current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+    current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
     
     if current_char_data and current_char_data[0]:
         char_data = current_char_data[0]
@@ -168,7 +168,7 @@ def open_character_folder(gui):
 
 def open_character_history_folder(gui):
     event_bus = get_event_bus()
-    current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+    current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
     
     if current_char_data and current_char_data[0]:
         char_data = current_char_data[0]
@@ -186,13 +186,13 @@ def open_character_history_folder(gui):
 
 def clear_history(gui):
     event_bus = get_event_bus()
-    event_bus.emit(Events.CLEAR_CHARACTER_HISTORY)
+    event_bus.emit(Events.Model.CLEAR_CHARACTER_HISTORY)
     gui.clear_chat_display()
     gui.update_debug_info()
 
 def clear_history_all(gui):
     event_bus = get_event_bus()
-    event_bus.emit(Events.CLEAR_ALL_HISTORIES)
+    event_bus.emit(Events.Model.CLEAR_ALL_HISTORIES)
     gui.clear_chat_display()
     gui.update_debug_info()
 
@@ -204,7 +204,7 @@ def reload_prompts(gui):
         gui._show_loading_popup(_("Загрузка промптов...", "Downloading prompts..."))
         
         event_bus = get_event_bus()
-        event_bus.emit(Events.RELOAD_PROMPTS_ASYNC)
+        event_bus.emit(Events.Model.RELOAD_PROMPTS_ASYNC)
 
 def save_character_provider(gui, provider: str):
     event_bus = get_event_bus()
@@ -216,4 +216,4 @@ def save_character_provider(gui, provider: str):
     provider_key = f"CHAR_PROVIDER_{selected_character}"
     gui.settings.set(provider_key, provider)
     logger.info(f"Saved provider '{provider}' for character '{selected_character}'")
-    event_bus.emit(Events.CHECK_CHANGE_CHARACTER)
+    event_bus.emit(Events.Model.CHECK_CHANGE_CHARACTER)

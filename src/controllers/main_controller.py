@@ -95,15 +95,15 @@ class MainController:
                 self.telegram_controller.start_silero_async()
     
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
+        self.event_bus.subscribe(Events.Model.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
         
-        self.event_bus.subscribe(Events.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
-        self.event_bus.subscribe(Events.REQUEST_TG_PASSWORD, self._on_request_tg_password, weak=False)
+        self.event_bus.subscribe(Events.Telegram.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
+        self.event_bus.subscribe(Events.Telegram.REQUEST_TG_PASSWORD, self._on_request_tg_password, weak=False)
         
-        self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
-        self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
+        self.event_bus.subscribe(Events.GUI.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
+        self.event_bus.subscribe(Events.GUI.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
-        self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
+        self.event_bus.subscribe(Events.Server.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")
@@ -113,11 +113,11 @@ class MainController:
         self.audio_controller.delete_all_sound_files()
         
         try:
-            self.event_bus.emit(Events.STOP_SERVER)
+            self.event_bus.emit(Events.Server.STOP_SERVER)
         except Exception as e:
             logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
         
-        self.event_bus.emit(Events.STOP_SPEECH_RECOGNITION)
+        self.event_bus.emit(Events.Speech.STOP_SPEECH_RECOGNITION)
         time.sleep(2)
         
         self.loop_controller.stop_loop()

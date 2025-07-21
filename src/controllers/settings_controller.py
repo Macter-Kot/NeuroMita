@@ -20,9 +20,9 @@ class SettingsController:
         
 
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.GET_SETTINGS, self._on_get_settings, weak=False)
-        self.event_bus.subscribe(Events.GET_SETTING, self._on_get_setting, weak=False)
-        self.event_bus.subscribe(Events.SAVE_SETTING, self._on_save_setting, weak=False)
+        self.event_bus.subscribe(Events.Settings.GET_SETTINGS, self._on_get_settings, weak=False)
+        self.event_bus.subscribe(Events.Settings.GET_SETTING, self._on_get_setting, weak=False)
+        self.event_bus.subscribe(Events.Settings.SAVE_SETTING, self._on_save_setting, weak=False)
         
     def load_api_settings(self, update_model):
         logger.info("Начинаю загрузку настроек (из уже загруженного словаря)")
@@ -94,7 +94,7 @@ class SettingsController:
         self.settings.set(key, value)
         self.settings.save_settings()
         
-        self.event_bus.emit(Events.SETTING_CHANGED, {"key": key, "value": value})
+        self.event_bus.emit(Events.Core.SETTING_CHANGED, {"key": key, "value": value})
         
         logger.debug(f"Настройка '{key}' успешно применена со значением: {value}")
 

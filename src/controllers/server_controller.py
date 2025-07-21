@@ -22,14 +22,14 @@ class ServerController:
         self.start_server()
         
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.GET_SERVER_DATA, self._on_get_server_data, weak=False)
-        self.event_bus.subscribe(Events.RESET_SERVER_DATA, self._on_reset_server_data, weak=False)
-        self.event_bus.subscribe(Events.STOP_SERVER, self._on_stop_server, weak=False)
-        self.event_bus.subscribe(Events.GET_CHAT_SERVER, self._on_get_chat_server, weak=False)
-        self.event_bus.subscribe(Events.SET_PATCH_TO_SOUND_FILE, self._on_set_patch_to_sound_file, weak=False)
-        self.event_bus.subscribe(Events.SET_ID_SOUND, self._on_set_id_sound, weak=False)
-        self.event_bus.subscribe(Events.SET_GAME_CONNECTION, self._on_update_game_connection, weak=False)
-        self.event_bus.subscribe(Events.GET_GAME_CONNECTION, self._on_get_connection_status, weak=False)
+        self.event_bus.subscribe(Events.Server.GET_SERVER_DATA, self._on_get_server_data, weak=False)
+        self.event_bus.subscribe(Events.Server.RESET_SERVER_DATA, self._on_reset_server_data, weak=False)
+        self.event_bus.subscribe(Events.Server.STOP_SERVER, self._on_stop_server, weak=False)
+        self.event_bus.subscribe(Events.Server.GET_CHAT_SERVER, self._on_get_chat_server, weak=False)
+        self.event_bus.subscribe(Events.Server.SET_PATCH_TO_SOUND_FILE, self._on_set_patch_to_sound_file, weak=False)
+        self.event_bus.subscribe(Events.Server.SET_ID_SOUND, self._on_set_id_sound, weak=False)
+        self.event_bus.subscribe(Events.Server.SET_GAME_CONNECTION, self._on_update_game_connection, weak=False)
+        self.event_bus.subscribe(Events.Server.GET_GAME_CONNECTION, self._on_get_connection_status, weak=False)
         
     def start_server(self):
         if not self.running:
@@ -72,13 +72,13 @@ class ServerController:
             # needUpdate = self.server.handle_connection()
             # if needUpdate:
             #     logger.info(f"[{time.strftime('%H:%M:%S')}] run_server_loop: Обнаружено needUpdate, вызываю load_chat_history.")
-            #     self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+            #     self.event_bus.emit(Events.GUI.RELOAD_CHAT_HISTORY)
     
     def _on_get_server_data(self, event: Event):
 
-        silero_connected_result = self.event_bus.emit_and_wait(Events.GET_SILERO_STATUS)
+        silero_connected_result = self.event_bus.emit_and_wait(Events.Telegram.GET_SILERO_STATUS)
         silero_connected = silero_connected_result[0] if silero_connected_result else False
-        instand_send_result = self.event_bus.emit_and_wait(Events.GET_INSTANT_SEND_STATUS)
+        instand_send_result = self.event_bus.emit_and_wait(Events.Speech.GET_INSTANT_SEND_STATUS)
         instand_send = instand_send_result[0] if instand_send_result else False
 
         return {
@@ -114,7 +114,7 @@ class ServerController:
     ## -> server_controller.py
     def update_game_connection(self, is_connected):
         self.ConnectedToGame = is_connected
-        self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+        self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
 
     def _on_update_game_connection(self, event: Event):
         is_connected = event.data.get('is_connected', False)

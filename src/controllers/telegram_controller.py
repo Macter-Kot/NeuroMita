@@ -27,11 +27,11 @@ class TelegramController:
         
     def _subscribe_to_events(self):
         self.event_bus.subscribe("telegram_settings_loaded", self._on_telegram_settings_loaded, weak=False)
-        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.Core.SETTING_CHANGED, self._on_setting_changed, weak=False)
         self.event_bus.subscribe("telegram_send_voice_request", self._on_send_voice_request, weak=False)
-        self.event_bus.subscribe(Events.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
-        self.event_bus.subscribe(Events.GET_SILERO_STATUS, self._on_get_silero_status, weak=False)
-        self.event_bus.subscribe(Events.LOOP_READY, self._on_loop_ready, weak=False)
+        self.event_bus.subscribe(Events.Telegram.SET_SILERO_CONNECTED, self._on_set_silero_connected, weak=False)
+        self.event_bus.subscribe(Events.Telegram.GET_SILERO_STATUS, self._on_get_silero_status, weak=False)
+        self.event_bus.subscribe(Events.Core.LOOP_READY, self._on_loop_ready, weak=False)
     
     def _on_telegram_settings_loaded(self, event: Event):
         data = event.data
@@ -74,7 +74,7 @@ class TelegramController:
         # Проверяем, есть ли уже loop
         if not self._loop:
             # Пробуем получить loop синхронно
-            loops = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=0.1)
+            loops = self.event_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=0.1)
             if loops and loops[0]:
                 self._loop = loops[0]
         
@@ -115,7 +115,7 @@ class TelegramController:
                 self.bot_handler_ready = True
                 if hasattr(self, 'silero_connected') and self.silero_connected:
                     logger.info("ТГ успешно подключен")
-                    self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+                    self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
                 else:
                     logger.info("ТГ не подключен")
             except Exception as e:
@@ -148,7 +148,7 @@ class TelegramController:
             if error and future:
                 future.set_exception(error)
         
-        self.event_bus.emit(Events.RUN_IN_LOOP, {
+        self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
             'coroutine': coro,
             'callback': handle_result
         })

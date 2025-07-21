@@ -36,41 +36,41 @@ class GuiController:
 
         
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.UPDATE_STATUS_COLORS, self._on_update_status_colors, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_USER_INPUT_UI, self._on_clear_user_input_ui, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_USER_INPUT, self._on_clear_user_input_ui, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_CHAT_UI, self._on_update_chat_ui, weak=False)
-        self.event_bus.subscribe(Events.PREPARE_STREAM_UI, self._on_prepare_stream_ui, weak=False)
-        self.event_bus.subscribe(Events.APPEND_STREAM_CHUNK_UI, self._on_append_stream_chunk_ui, weak=False)
-        self.event_bus.subscribe(Events.FINISH_STREAM_UI, self._on_finish_stream_ui, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_STATUS, self._on_update_status, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_DEBUG_INFO, self._on_update_debug_info, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_TOKEN_COUNT, self._on_update_token_count, weak=False)
-        self.event_bus.subscribe(Events.CHECK_AND_INSTALL_FFMPEG, self._on_check_and_install_ffmpeg, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_STATUS_COLORS, self._on_update_status_colors, weak=False)
+        self.event_bus.subscribe(Events.GUI.CLEAR_USER_INPUT_UI, self._on_clear_user_input_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.CLEAR_USER_INPUT, self._on_clear_user_input_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_CHAT_UI, self._on_update_chat_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.PREPARE_STREAM_UI, self._on_prepare_stream_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.APPEND_STREAM_CHUNK_UI, self._on_append_stream_chunk_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.FINISH_STREAM_UI, self._on_finish_stream_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_STATUS, self._on_update_status, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_DEBUG_INFO, self._on_update_debug_info, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_TOKEN_COUNT, self._on_update_token_count, weak=False)
+        self.event_bus.subscribe(Events.GUI.CHECK_AND_INSTALL_FFMPEG, self._on_check_and_install_ffmpeg, weak=False)
         
-        self.event_bus.subscribe(Events.ON_STARTED_RESPONSE_GENERATION, self._on_started_response, weak=False)
-        self.event_bus.subscribe(Events.ON_SUCCESSFUL_RESPONSE, self._on_successful_response, weak=False)
-        self.event_bus.subscribe(Events.ON_FAILED_RESPONSE_ATTEMPT, self._on_failed_response_attempt, weak=False)
-        self.event_bus.subscribe(Events.ON_FAILED_RESPONSE, self._on_failed_response, weak=False)
+        self.event_bus.subscribe(Events.Model.ON_STARTED_RESPONSE_GENERATION, self._on_started_response, weak=False)
+        self.event_bus.subscribe(Events.Model.ON_SUCCESSFUL_RESPONSE, self._on_successful_response, weak=False)
+        self.event_bus.subscribe(Events.Model.ON_FAILED_RESPONSE_ATTEMPT, self._on_failed_response_attempt, weak=False)
+        self.event_bus.subscribe(Events.Model.ON_FAILED_RESPONSE, self._on_failed_response, weak=False)
         
-        self.event_bus.subscribe(Events.INSERT_TEXT_TO_INPUT, self._on_insert_text_to_input, weak=False)
-        self.event_bus.subscribe(Events.CHECK_USER_ENTRY_EXISTS, self._on_check_user_entry_exists, weak=False)
+        self.event_bus.subscribe(Events.GUI.INSERT_TEXT_TO_INPUT, self._on_insert_text_to_input, weak=False)
+        self.event_bus.subscribe(Events.GUI.CHECK_USER_ENTRY_EXISTS, self._on_check_user_entry_exists, weak=False)
 
-        self.event_bus.subscribe(Events.SWITCH_VOICEOVER_SETTINGS, self._on_switch_voiceover_settings, weak=False)
-        self.event_bus.subscribe(Events.SHOW_INFO_MESSAGE, self._on_show_info_message, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_CHAT_FONT_SIZE, self._on_update_chat_font_size, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHAT_HISTORY, self._on_reload_chat_history, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_TOKEN_COUNT_UI, self._on_update_token_count_ui, weak=False)
-        self.event_bus.subscribe(Events.GET_GUI_WINDOW_ID, self._on_get_gui_window_id, weak=False)
+        self.event_bus.subscribe(Events.GUI.SWITCH_VOICEOVER_SETTINGS, self._on_switch_voiceover_settings, weak=False)
+        self.event_bus.subscribe(Events.GUI.SHOW_INFO_MESSAGE, self._on_show_info_message, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_CHAT_FONT_SIZE, self._on_update_chat_font_size, weak=False)
+        self.event_bus.subscribe(Events.GUI.RELOAD_CHAT_HISTORY, self._on_reload_chat_history, weak=False)
+        self.event_bus.subscribe(Events.GUI.UPDATE_TOKEN_COUNT_UI, self._on_update_token_count_ui, weak=False)
+        self.event_bus.subscribe(Events.GUI.GET_GUI_WINDOW_ID, self._on_get_gui_window_id, weak=False)
 
-        self.event_bus.subscribe(Events.CHECK_TRITON_DEPENDENCIES, self._on_check_triton_dependencies, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_MODEL_LOADING_STATUS, self._on_update_model_loading_status, weak=False)
-        self.event_bus.subscribe(Events.FINISH_MODEL_LOADING, self._on_finish_model_loading, weak=False)
-        self.event_bus.subscribe(Events.SHOW_ERROR_MESSAGE, self._on_show_error_message, weak=False)
-        self.event_bus.subscribe(Events.CANCEL_MODEL_LOADING, self._on_cancel_model_loading, weak=False)
+        self.event_bus.subscribe(Events.GUI.CHECK_TRITON_DEPENDENCIES, self._on_check_triton_dependencies, weak=False)
+        self.event_bus.subscribe(Events.Audio.UPDATE_MODEL_LOADING_STATUS, self._on_update_model_loading_status, weak=False)
+        self.event_bus.subscribe(Events.Audio.FINISH_MODEL_LOADING, self._on_finish_model_loading, weak=False)
+        self.event_bus.subscribe(Events.GUI.SHOW_ERROR_MESSAGE, self._on_show_error_message, weak=False)
+        self.event_bus.subscribe(Events.Audio.CANCEL_MODEL_LOADING, self._on_cancel_model_loading, weak=False)
 
-        self.event_bus.subscribe(Events.PROMPT_FOR_TG_CODE, self._on_prompt_for_tg_code, weak=False)
-        self.event_bus.subscribe(Events.PROMPT_FOR_TG_PASSWORD, self._on_prompt_for_tg_password, weak=False)
+        self.event_bus.subscribe(Events.Telegram.PROMPT_FOR_TG_CODE, self._on_prompt_for_tg_code, weak=False)
+        self.event_bus.subscribe(Events.Telegram.PROMPT_FOR_TG_PASSWORD, self._on_prompt_for_tg_password, weak=False)
         
         self.event_bus.subscribe("history_loaded", self._on_history_loaded_event, weak=False)
         self.event_bus.subscribe("more_history_loaded", self._on_more_history_loaded_event, weak=False)
@@ -81,7 +81,7 @@ class GuiController:
         self.event_bus.subscribe("reload_prompts_failed", self._on_reload_prompts_failed_event, weak=False)
         self.event_bus.subscribe("display_loading_popup", self._on_display_loading_popup_event, weak=False)
         self.event_bus.subscribe("hide_loading_popup", self._on_hide_loading_popup_event, weak=False)
-        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.Core.SETTING_CHANGED, self._on_setting_changed, weak=False)
                 
     def _connect_view_signals(self):
         if self.view:
@@ -108,7 +108,7 @@ class GuiController:
             
     def clear_user_input(self):
         logger.debug("GuiController: clear_user_input")
-        self.event_bus.emit(Events.CLEAR_USER_INPUT)
+        self.event_bus.emit(Events.GUI.CLEAR_USER_INPUT)
         if self.view and self.view.user_entry:
             self.view.user_entry.clear()
         else:
@@ -290,7 +290,7 @@ class GuiController:
         logger.info("GuiController: получено событие ON_STARTED_RESPONSE_GENERATION")
         character_name = "Мита"
         
-        results = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+        results = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
         if results and results[0]:
             character_data = results[0]
             character_name = character_data.get('name', 'Мита')
@@ -448,11 +448,11 @@ class GuiController:
         value = event.data.get('value')
         
         if key in ["USE_VOICEOVER", "VOICEOVER_METHOD", "AUDIO_BOT"]:
-            self.event_bus.emit(Events.SWITCH_VOICEOVER_SETTINGS)
+            self.event_bus.emit(Events.GUI.SWITCH_VOICEOVER_SETTINGS)
             
         if key == "AUDIO_BOT":
             if value.startswith("@CrazyMitaAIbot"):
-                self.event_bus.emit(Events.SHOW_INFO_MESSAGE, {
+                self.event_bus.emit(Events.GUI.SHOW_INFO_MESSAGE, {
                     "title": "Информация",
                     "message": "VinerX: наши товарищи из CrazyMitaAIbot предоставляет озвучку бесплатно буквально со своих пк, будет время - загляните к ним в тг, скажите спасибо)"
                 })
@@ -460,8 +460,8 @@ class GuiController:
         elif key == "CHAT_FONT_SIZE":
             try:
                 font_size = int(value)
-                self.event_bus.emit(Events.UPDATE_CHAT_FONT_SIZE, {"font_size": font_size})
-                self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+                self.event_bus.emit(Events.GUI.UPDATE_CHAT_FONT_SIZE, {"font_size": font_size})
+                self.event_bus.emit(Events.GUI.RELOAD_CHAT_HISTORY)
                 logger.info(f"Размер шрифта чата изменен на: {font_size}")
             except ValueError:
                 logger.warning(f"Неверное значение для размера шрифта: {value}")
@@ -469,10 +469,10 @@ class GuiController:
                 logger.error(f"Ошибка при изменении размера шрифта: {e}")
                 
         elif key in ["SHOW_CHAT_TIMESTAMPS", "MAX_CHAT_HISTORY_DISPLAY", "HIDE_CHAT_TAGS"]:
-            self.event_bus.emit(Events.RELOAD_CHAT_HISTORY)
+            self.event_bus.emit(Events.GUI.RELOAD_CHAT_HISTORY)
             logger.info(f"Настройка '{key}' изменена на: {value}. История чата перезагружена.")
             
         elif key == "SHOW_TOKEN_INFO":
-            self.event_bus.emit(Events.UPDATE_TOKEN_COUNT)
+            self.event_bus.emit(Events.GUI.UPDATE_TOKEN_COUNT)
             
         

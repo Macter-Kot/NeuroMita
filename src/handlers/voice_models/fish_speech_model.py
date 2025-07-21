@@ -797,10 +797,10 @@ class FishSpeechModel(IVoiceModel):
                     logger.warning("Модель 'medium+low' требует RVC, но обработчик не был предоставлен.")
 
             
-            connected_to_game = self.events.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            connected_to_game = self.events.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game:
-                self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
-            # self.events.emit(Events.SET_ID_SOUND, id_sound)
+                self.events.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, final_output_path)
+            # self.events.emit(Events.Server.SET_ID_SOUND, id_sound)
             return final_output_path
         except Exception as error:
             traceback.print_exc()

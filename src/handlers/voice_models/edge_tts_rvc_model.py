@@ -466,9 +466,9 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             else:
                 final_output_path = output_file_rvc
 
-            connected_to_game = self.events.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            connected_to_game = self.events.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game and TEST_WITH_DONE_AUDIO is None:
-                self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
+                self.events.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, final_output_path)
             return final_output_path
         except Exception as error:
             traceback.print_exc()
@@ -603,9 +603,9 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             )
             
             
-            connected_to_game = self.events.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            connected_to_game = self.events.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game:
-                self.events.emit(Events.SET_PATCH_TO_SOUND_FILE, final_output_path)
+                self.events.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, final_output_path)
             
             return final_output_path
             

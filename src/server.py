@@ -32,7 +32,7 @@ class ChatServer:
         
         client_socket = None
         try:
-            settings_result = self.event_bus.emit_and_wait(Events.GET_SETTINGS, timeout=1.0)
+            settings_result = self.event_bus.emit_and_wait(Events.Settings.GET_SETTINGS, timeout=1.0)
             settings = settings_result[0] if settings_result else {}
             
             self.text_wait_limit_enabled = settings.get("LIMIT_TEXT_WAIT", False)
@@ -58,11 +58,11 @@ class ChatServer:
 
         except socket.error as e:
             logger.error(f"Socket error: {e}")
-            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.Server.SET_GAME_CONNECTION, {'is_connected': False})
             return False
         except Exception as e:
             logger.error(f"Connection handling error: {e}")
-            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.Server.SET_GAME_CONNECTION, {'is_connected': False})
             return False
         finally:
             if client_socket:
@@ -103,13 +103,13 @@ class ChatServer:
             message_type = message_data["type"]
             character = str(message_data["character"])
             
-            self.event_bus.emit(Events.SET_CHARACTER_TO_CHANGE, {'character': character})
+            self.event_bus.emit(Events.Model.SET_CHARACTER_TO_CHANGE, {'character': character})
 
             message = message_data["input"]
             system_message = message_data["dataToSentSystem"]
             system_info = message_data["systemInfo"]
 
-            self.event_bus.emit(Events.SET_GAME_DATA, {
+            self.event_bus.emit(Events.Server.SET_GAME_DATA, {
                 'distance': float(message_data["distance"].replace(",", ".")),
                 'roomPlayer': int(message_data["roomPlayer"]),
                 'roomMita': int(message_data["roomMita"]),
@@ -117,7 +117,7 @@ class ChatServer:
                 'actualInfo': message_data["currentInfo"]
             })
 
-            self.event_bus.emit(Events.SET_DIALOG_ACTIVE, {
+            self.event_bus.emit(Events.Server.SET_DIALOG_ACTIVE, {
                 'active': bool(message_data.get("dialog_active", False))
             })
 
@@ -132,20 +132,20 @@ class ChatServer:
 
             if system_info != "-":
                 logger.info("Добавил систем инфо " + system_info)
-                self.event_bus.emit(Events.ADD_TEMPORARY_SYSTEM_INFO, {'content': system_info})
+                self.event_bus.emit(Events.Model.ADD_TEMPORARY_SYSTEM_INFO, {'content': system_info})
 
             response = ""
 
             if message == "waiting":
                 if system_message != "-":
                     logger.info(f"Получено system_message {system_message} id {message_id}")
-                    self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
+                    self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
                     response = self.generate_response("", system_message, decoded_image_data)
                 elif self.messages_to_say:
                     response = self.messages_to_say.pop(0)
             elif message == "boring":
                 logger.info(f"Получено boring message id {message_id}")
-                self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
+                self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
                 date_now = datetime.now().replace(microsecond=0)
                 response = self.generate_response("",
                                             f"Время {date_now}, Игрок долго молчит( Ты можешь что-то сказать или предпринять",
@@ -154,8 +154,8 @@ class ChatServer:
             else:
                 logger.info(f"Получено message id {message_id}")
                 
-                self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
-                self.event_bus.emit(Events.UPDATE_CHAT_UI, {
+                self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
+                self.event_bus.emit(Events.GUI.UPDATE_CHAT_UI, {
                     'role': 'user',
                     'response': message,
                     'is_initial': False,
@@ -167,17 +167,17 @@ class ChatServer:
                 if not character:
                     character = "Mita"
 
-            user_input_result = self.event_bus.emit_and_wait(Events.GET_USER_INPUT, timeout=1.0)
+            user_input_result = self.event_bus.emit_and_wait(Events.Speech.GET_USER_INPUT, timeout=1.0)
             user_input = user_input_result[0] if user_input_result else ""
             
             transmitted_to_game = False
             if user_input:
                 transmitted_to_game = True
 
-            server_data_result = self.event_bus.emit_and_wait(Events.GET_SERVER_DATA, timeout=1.0)
+            server_data_result = self.event_bus.emit_and_wait(Events.Server.GET_SERVER_DATA, timeout=1.0)
             server_data = server_data_result[0] if server_data_result else {}
             
-            settings_result = self.event_bus.emit_and_wait(Events.GET_SETTINGS, timeout=1.0)
+            settings_result = self.event_bus.emit_and_wait(Events.Settings.GET_SETTINGS, timeout=1.0)
             settings = settings_result[0] if settings_result else {}
 
             if server_data.get('patch_to_sound_file', '') != "":
@@ -213,10 +213,10 @@ class ChatServer:
 
             })
             
-            self.event_bus.emit(Events.RESET_SERVER_DATA)
+            self.event_bus.emit(Events.Server.RESET_SERVER_DATA)
 
             if transmitted_to_game:
-                self.event_bus.emit(Events.CLEAR_USER_INPUT)
+                self.event_bus.emit(Events.GUI.CLEAR_USER_INPUT)
 
             json_message = json.dumps(message_data)
             client_socket.sendall(json_message.encode("utf-8"))  # Используем sendall для гарантии отправки всех данных
@@ -225,25 +225,25 @@ class ChatServer:
             
             logger.warning(f"Я сравниваю айдишник из игры {message_id} и айдишник из сервера {server_data.get('id_sound')}: {message_id==server_data.get('id_sound')}")
 
-            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': True})
+            self.event_bus.emit(Events.Server.SET_GAME_CONNECTION, {'is_connected': True})
 
             return True
             
         except Exception as e:
             logger.error(f"Ошибка обработки подключения: {e}")
-            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.Server.SET_GAME_CONNECTION, {'is_connected': False})
             return False
         
     def generate_response(self, input_text, system_input_text, image_data: list[bytes] = None):
         if image_data is None:
             image_data = []
         try:
-            self.event_bus.emit(Events.SET_WAITING_ANSWER, {'waiting': True})
+            self.event_bus.emit(Events.Audio.SET_WAITING_ANSWER, {'waiting': True})
             
             message_id = getattr(self, 'current_message_id', None)
 
             # Используем событие вместо прямого вызова
-            response_result = self.event_bus.emit_and_wait(Events.SEND_MESSAGE, {
+            response_result = self.event_bus.emit_and_wait(Events.Chat.SEND_MESSAGE, {
                 'user_input': input_text,
                 'system_input': system_input_text,
                 'image_data': image_data,
@@ -258,7 +258,7 @@ class ChatServer:
             logger.error(f"Ошибка генерации ответа: {e}")
             return "Произошла ошибка при обработке вашего сообщения."
         finally:
-            self.event_bus.emit(Events.SET_WAITING_ANSWER, {'waiting': False})
+            self.event_bus.emit(Events.Audio.SET_WAITING_ANSWER, {'waiting': False})
 
     async def handle_message(self, message):
         if self.text_wait_limit_enabled:
@@ -274,4 +274,4 @@ class ChatServer:
         if self.server_socket:
             self.server_socket.close()
             logger.info("Сервер остановлен.")
-            self.event_bus.emit(Events.SET_GAME_CONNECTION, {'is_connected': False})
+            self.event_bus.emit(Events.Server.SET_GAME_CONNECTION, {'is_connected': False})

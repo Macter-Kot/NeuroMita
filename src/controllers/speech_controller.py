@@ -21,21 +21,21 @@ class SpeechController:
     def _subscribe_to_events(self):
         self.events_bus.subscribe("speech_settings_loaded", self._on_speech_settings_loaded, weak=False)
         self.events_bus.subscribe("setting_changed", self._on_setting_changed, weak=False)
-        self.events_bus.subscribe(Events.GET_INSTANT_SEND_STATUS, self._on_get_instant_send_status, weak=False)
-        self.events_bus.subscribe(Events.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
-        self.events_bus.subscribe(Events.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
-        self.events_bus.subscribe(Events.SEND_MESSAGE, self._on_sent_message, weak=False)
-        self.events_bus.subscribe(Events.GET_MIC_STATUS, self._on_get_mic_status, weak=False)
-        self.events_bus.subscribe(Events.GET_USER_INPUT, self._on_get_user_input, weak=False)
+        self.events_bus.subscribe(Events.Speech.GET_INSTANT_SEND_STATUS, self._on_get_instant_send_status, weak=False)
+        self.events_bus.subscribe(Events.Speech.SET_INSTANT_SEND_STATUS, self._on_set_instant_send_status, weak=False)
+        self.events_bus.subscribe(Events.Speech.SPEECH_TEXT_RECOGNIZED, self._on_speech_text_recognized, weak=False)
+        self.events_bus.subscribe(Events.Chat.SEND_MESSAGE, self._on_sent_message, weak=False)
+        self.events_bus.subscribe(Events.Speech.GET_MIC_STATUS, self._on_get_mic_status, weak=False)
+        self.events_bus.subscribe(Events.Speech.GET_USER_INPUT, self._on_get_user_input, weak=False)
         
-        self.events_bus.subscribe(Events.SET_MICROPHONE, self._on_set_microphone, weak=False)
-        self.events_bus.subscribe(Events.START_SPEECH_RECOGNITION, self._on_start_speech_recognition, weak=False)
-        self.events_bus.subscribe(Events.STOP_SPEECH_RECOGNITION, self._on_stop_speech_recognition, weak=False)
+        self.events_bus.subscribe(Events.Speech.SET_MICROPHONE, self._on_set_microphone, weak=False)
+        self.events_bus.subscribe(Events.Speech.START_SPEECH_RECOGNITION, self._on_start_speech_recognition, weak=False)
+        self.events_bus.subscribe(Events.Speech.STOP_SPEECH_RECOGNITION, self._on_stop_speech_recognition, weak=False)
         
-        self.events_bus.subscribe(Events.GET_MICROPHONE_LIST, self._on_get_microphone_list, weak=False)
-        self.events_bus.subscribe(Events.REFRESH_MICROPHONE_LIST, self._on_refresh_microphone_list, weak=False)
-        self.events_bus.subscribe(Events.SET_GIGAAM_OPTIONS, self._on_set_gigaam_options, weak=False)
-        self.events_bus.subscribe(Events.RESTART_SPEECH_RECOGNITION, self._on_restart_speech_recognition, weak=False)
+        self.events_bus.subscribe(Events.Speech.GET_MICROPHONE_LIST, self._on_get_microphone_list, weak=False)
+        self.events_bus.subscribe(Events.Speech.REFRESH_MICROPHONE_LIST, self._on_refresh_microphone_list, weak=False)
+        self.events_bus.subscribe(Events.Speech.SET_GIGAAM_OPTIONS, self._on_set_gigaam_options, weak=False)
+        self.events_bus.subscribe(Events.Speech.RESTART_SPEECH_RECOGNITION, self._on_restart_speech_recognition, weak=False)
 
     def _on_sent_message(self, event: Event):
         self.recognized_text = ""
@@ -73,13 +73,13 @@ class SpeechController:
                 if self.device_id is None:
                     self.device_id = 0
                 
-                loop = self.events_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)[0]
+                loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
                 SpeechRecognition.speech_recognition_start(self.device_id, loop)
                 self.mic_recognition_active = True
             else:
                 SpeechRecognition.speech_recognition_stop()
                 self.mic_recognition_active = False
-            self.events_bus.emit(Events.UPDATE_STATUS_COLORS)
+            self.events_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
         elif key == "RECOGNIZER_TYPE":
             # Останавливаем текущее распознавание
             if self.mic_recognition_active:
@@ -91,7 +91,7 @@ class SpeechController:
 
             # Перезапускаем только если было активно
             if self.settings and self.settings.get("MIC_ACTIVE", False) and self.mic_recognition_active:
-                loop = self.events_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)[0]
+                loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
                 SpeechRecognition.speech_recognition_start(self.device_id, loop)
         elif key == "VOSK_MODEL":
             SpeechRecognition.vosk_model = value
@@ -122,7 +122,7 @@ class SpeechController:
         
         if bool(self.settings.get("MIC_INSTANT_SENT")):
             
-            waiting_answer = self.events_bus.emit_and_wait(Events.GET_WAITING_ANSWER)[0]
+            waiting_answer = self.events_bus.emit_and_wait(Events.Audio.GET_WAITING_ANSWER)[0]
             if not waiting_answer:
                 logger.warning("Instant send: " + text)
                 self.send_instantly(text)
@@ -130,7 +130,7 @@ class SpeechController:
                 self.recognized_text += text
                 
         elif self._check_user_entry_exists():
-            connected_to_game = self.events_bus.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
+            connected_to_game = self.events_bus.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game:
                 self.recognized_text += text
             else:    
@@ -158,7 +158,7 @@ class SpeechController:
         device_id = event.data.get('device_id', self.device_id)
         
         try:
-            loop_result = self.events_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
+            loop_result = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)
             loop = loop_result[0] if loop_result else None
             
             if loop:
@@ -202,13 +202,13 @@ class SpeechController:
         
         def restart_recognition():
             try:
-                self.events_bus.emit(Events.STOP_SPEECH_RECOGNITION)
+                self.events_bus.emit(Events.Speech.STOP_SPEECH_RECOGNITION)
                 start_time = time.time()
                 while SpeechRecognition._is_running and time.time() - start_time < 5:
                     time.sleep(0.1)
                 if SpeechRecognition._is_running:
                     logger.warning("Предыдущее распознавание не остановилось вовремя, принудительная остановка.")
-                self.events_bus.emit(Events.START_SPEECH_RECOGNITION, {'device_id': device_id})
+                self.events_bus.emit(Events.Speech.START_SPEECH_RECOGNITION, {'device_id': device_id})
                 logger.info("Распознавание перезапущено с новым микрофоном")
             except Exception as e:
                 logger.error(f"Ошибка перезапуска распознавания: {e}")
@@ -217,7 +217,7 @@ class SpeechController:
     
     def send_instantly(self, text_to_send):
         try:
-            llm_status_result = self.events_bus.emit_and_wait(Events.GET_LLM_PROCESSING_STATUS, timeout=0.1)
+            llm_status_result = self.events_bus.emit_and_wait(Events.Model.GET_LLM_PROCESSING_STATUS, timeout=0.1)
             llm_processing = llm_status_result[0] if llm_status_result else False
             
             if llm_processing:
@@ -227,7 +227,7 @@ class SpeechController:
             if not text_to_send:
                 return
                 
-            self.events_bus.emit(Events.UPDATE_CHAT_UI, {
+            self.events_bus.emit(Events.GUI.UPDATE_CHAT_UI, {
                 'role': 'user',
                 'response': text_to_send,
                 'is_initial': False,
@@ -235,7 +235,7 @@ class SpeechController:
             })
             
                 
-            self.events_bus.emit(Events.SEND_MESSAGE, {
+            self.events_bus.emit(Events.Chat.SEND_MESSAGE, {
                 'user_input': text_to_send,
                 'system_input': '',
                 'image_data': []
@@ -245,12 +245,12 @@ class SpeechController:
             logger.info(f"Ошибка обработки текста: {str(e)}")
             
     def _insert_text_to_input(self, text):
-        self.events_bus.emit(Events.INSERT_TEXT_TO_INPUT, {"text": text})
+        self.events_bus.emit(Events.GUI.INSERT_TEXT_TO_INPUT, {"text": text})
         
     def _get_user_input(self):
-        result = self.events_bus.emit_and_wait(Events.GET_USER_INPUT, timeout=0.5)
+        result = self.events_bus.emit_and_wait(Events.Speech.GET_USER_INPUT, timeout=0.5)
         return result[0] if result else ""
         
     def _check_user_entry_exists(self):
-        result = self.events_bus.emit_and_wait(Events.CHECK_USER_ENTRY_EXISTS, timeout=0.5)
+        result = self.events_bus.emit_and_wait(Events.GUI.CHECK_USER_ENTRY_EXISTS, timeout=0.5)
         return result[0] if result else False

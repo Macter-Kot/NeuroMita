@@ -1,7 +1,4 @@
 import os
-import asyncio
-import threading
-import tempfile
 import time
 from pathlib import Path
 from PyQt6.QtCore import QTimer
@@ -30,7 +27,6 @@ class MainController:
 
         self.dialog_active = False
 
-        self.staged_images = []
 
         self.loop_controller = LoopController(self)
         logger.warning("LoopController успешно инициализирован.")
@@ -72,7 +68,7 @@ class MainController:
         logger.warning("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self.settings)
         logger.warning("CaptureController успешно инициализирован.")
-        self.speech_controller = SpeechController(self)
+        self.speech_controller = SpeechController()
         logger.warning("SpeechController успешно инициализирован.")
         self.server_controller = ServerController()
         logger.warning("ServerController успешно инициализирован.")
@@ -99,8 +95,6 @@ class MainController:
                 self.telegram_controller.start_silero_async()
     
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.STAGE_IMAGE, self._on_stage_image, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_STAGED_IMAGES, self._on_clear_staged_images, weak=False)
         
         
         self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
@@ -112,32 +106,6 @@ class MainController:
         self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
         self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
-
-
-    def stage_image_bytes(self, img_bytes: bytes) -> int:
-        fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="nm_clip_")
-        os.close(fd)
-        with open(tmp_path, "wb") as f:
-            f.write(img_bytes)
-
-        self.staged_images.append(tmp_path)
-        logger.info(f"Clipboard image staged: {tmp_path}")
-        return len(self.staged_images)
-
-    def clear_staged_images(self):
-        self.staged_images.clear()
-    
-    
-    def _on_stage_image(self, event: Event):
-        image_data = event.data.get('image_data')
-        if image_data:
-            if isinstance(image_data, bytes):
-                self.stage_image_bytes(image_data)
-            elif isinstance(image_data, str):
-                self.staged_images.append(image_data)
-    
-    def _on_clear_staged_images(self, event: Event):
-        self.clear_staged_images()
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")

@@ -397,7 +397,6 @@ class Events:
     CLEAR_USER_INPUT = "clear_user_input"
     SET_WAITING_ANSWER = "set_waiting_answer"
     GENERATE_RESPONSE = "generate_response"
-    SET_CONNECTED_TO_GAME = "set_connected_to_game"
 
     # От telegram_handler.py
     SET_SOUND_FILE_DATA = "set_sound_file_data"

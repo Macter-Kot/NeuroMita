@@ -7,8 +7,7 @@ from core.events import get_event_bus, Events, Event
 
 
 class SpeechController:
-    def __init__(self, main_controller):
-        self.main = main_controller
+    def __init__(self):
         self.settings = None
         self.selected_microphone = ""
         self.device_id = 0
@@ -73,7 +72,9 @@ class SpeechController:
                 # Убедимся, что у нас есть правильный device_id
                 if self.device_id is None:
                     self.device_id = 0
-                SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
+                
+                loop = self.events_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)[0]
+                SpeechRecognition.speech_recognition_start(self.device_id, loop)
                 self.mic_recognition_active = True
             else:
                 SpeechRecognition.speech_recognition_stop()
@@ -90,7 +91,8 @@ class SpeechController:
 
             # Перезапускаем только если было активно
             if self.settings and self.settings.get("MIC_ACTIVE", False) and self.mic_recognition_active:
-                SpeechRecognition.speech_recognition_start(self.device_id, self.main.loop)
+                loop = self.events_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)[0]
+                SpeechRecognition.speech_recognition_start(self.device_id, loop)
         elif key == "VOSK_MODEL":
             SpeechRecognition.vosk_model = value
         elif key == "SILENCE_THRESHOLD":
@@ -128,7 +130,7 @@ class SpeechController:
                 self.recognized_text += text
                 
         elif self._check_user_entry_exists():
-            connected_to_game = self.events_bus.emit_and_wait(Events.GET_CONNECTED_TO_GAME)[0]
+            connected_to_game = self.events_bus.emit_and_wait(Events.GET_GAME_CONNECTION)[0]
             if connected_to_game:
                 self.recognized_text += text
             else:    

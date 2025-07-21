@@ -1,5 +1,6 @@
+import os
 import asyncio
-import time
+import tempfile
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 
@@ -10,6 +11,7 @@ class ChatController:
         self.event_bus = get_event_bus()
         self.llm_processing = False
         
+        self.staged_images = []
         self._subscribe_to_events()
         
     def _subscribe_to_events(self):
@@ -17,6 +19,9 @@ class ChatController:
         self.event_bus.subscribe(Events.GET_LLM_PROCESSING_STATUS, self._on_get_llm_processing_status, weak=False)
         self.event_bus.subscribe("send_periodic_image_request", self._on_send_periodic_image_request, weak=False)
         self.event_bus.subscribe(Events.CLEAR_CHAT, self._on_clear_chat, weak=False)
+        
+        self.event_bus.subscribe(Events.STAGE_IMAGE, self._on_stage_image, weak=False)
+        self.event_bus.subscribe(Events.CLEAR_STAGED_IMAGES, self._on_clear_staged_images, weak=False)
         
     async def async_send_message(
         self,
@@ -168,3 +173,29 @@ class ChatController:
     
     def _on_clear_chat(self, event: Event):
         pass
+
+    
+    def stage_image_bytes(self, img_bytes: bytes) -> int:
+        fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="nm_clip_")
+        os.close(fd)
+        with open(tmp_path, "wb") as f:
+            f.write(img_bytes)
+
+        self.staged_images.append(tmp_path)
+        logger.info(f"Clipboard image staged: {tmp_path}")
+        return len(self.staged_images)
+
+    def clear_staged_images(self):
+        self.staged_images.clear()
+    
+    
+    def _on_stage_image(self, event: Event):
+        image_data = event.data.get('image_data')
+        if image_data:
+            if isinstance(image_data, bytes):
+                self.stage_image_bytes(image_data)
+            elif isinstance(image_data, str):
+                self.staged_images.append(image_data)
+    
+    def _on_clear_staged_images(self, event: Event):
+        self.clear_staged_images()

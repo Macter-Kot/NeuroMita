@@ -33,11 +33,6 @@ class MainController:
 
         self.dialog_active = False
 
-        self.lazy_load_batch_size = 50
-        self.total_messages_in_history = 0
-        self.loaded_messages_offset = 0
-        self.loading_more_history = False
-
         self.staged_images = []
 
         self.loop_controller = LoopController(self)
@@ -54,11 +49,11 @@ class MainController:
             os.makedirs(target_folder, exist_ok=True)
             self.config_path = os.path.join(target_folder, "settings.json")
 
-            self.settings_controller = SettingsController(self, self.config_path)
+            self.settings_controller = SettingsController(self.config_path)
             self.settings = self.settings_controller.settings
         except Exception as e:
             logger.info("Не удалось удачно получить из системных переменных все данные", e)
-            self.settings = SettingsController(self, "Settings/settings.json").settings
+            self.settings = SettingsController("Settings/settings.json").settings
 
         try:
             self.pip_installer = PipInstaller(
@@ -76,7 +71,7 @@ class MainController:
         
         self.audio_controller = AudioController(self)
         logger.warning("AudioController успешно инициализирован.")
-        self.model_controller = ModelController(self, "", "", "", "", False, self.pip_installer)
+        self.model_controller = ModelController(self.settings, self.pip_installer)
         logger.warning("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self.settings)
         logger.warning("CaptureController успешно инициализирован.")

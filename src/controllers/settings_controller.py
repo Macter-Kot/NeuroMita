@@ -12,8 +12,7 @@ from core.events import get_event_bus, Events
 
 
 class SettingsController:
-    def __init__(self, main_controller, config_path):
-        self.main = main_controller
+    def __init__(self, config_path):
         self.config_path = config_path
         self.event_bus = get_event_bus()
         self.settings = SettingsManager(self.config_path)

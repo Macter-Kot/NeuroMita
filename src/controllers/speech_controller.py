@@ -140,10 +140,10 @@ class SpeechController:
             self.selected_microphone = microphone_name
             self.device_id = device_id
             
-            if self.main.settings:
-                self.main.settings.set("NM_MICROPHONE_ID", device_id)
-                self.main.settings.set("NM_MICROPHONE_NAME", microphone_name)
-                self.main.settings.save_settings()
+            if self.settings:
+                self.settings.set("NM_MICROPHONE_ID", device_id)
+                self.settings.set("NM_MICROPHONE_NAME", microphone_name)
+                self.settings.save_settings()
             
             logger.info(f"Выбран микрофон: {microphone_name} (ID: {device_id})")
     

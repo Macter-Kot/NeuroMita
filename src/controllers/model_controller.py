@@ -6,10 +6,16 @@ from main_logger import logger
 # Контроллер для работы с моделью LLM
 
 class ModelController:
-    def __init__(self, main_controller, api_key, api_key_res, api_url, api_model, makeRequest, pip_installer):
-        self.main = main_controller
+    def __init__(self, settings, pip_installer):
+        self.settings = settings
         self.event_bus = get_event_bus()
-        self.model = ChatModel(self.main.settings, api_key, api_key_res, api_url, api_model, makeRequest, pip_installer)
+
+        self.lazy_load_batch_size = 50
+        self.total_messages_in_history = 0
+        self.loaded_messages_offset = 0
+        self.loading_more_history = False
+
+        self.model = ChatModel(settings, "", "", "", "", False, pip_installer)
         self._subscribe_to_events()
         
     def _subscribe_to_events(self):
@@ -196,49 +202,49 @@ class ModelController:
     
     # События истории
     def _on_load_history(self, event: Event):
-        self.main.loaded_messages_offset = 0
-        self.main.total_messages_in_history = 0
-        self.main.loading_more_history = False
+        self.loaded_messages_offset = 0
+        self.total_messages_in_history = 0
+        self.loading_more_history = False
         
         chat_history = self.model.current_character.load_history()
         all_messages = chat_history["messages"]
-        self.main.total_messages_in_history = len(all_messages)
+        self.total_messages_in_history = len(all_messages)
         
-        max_display_messages = int(self.main.settings.get("MAX_CHAT_HISTORY_DISPLAY", 100))
-        start_index = max(0, self.main.total_messages_in_history - max_display_messages)
+        max_display_messages = int(self.settings.get("MAX_CHAT_HISTORY_DISPLAY", 100))
+        start_index = max(0, self.total_messages_in_history - max_display_messages)
         messages_to_load = all_messages[start_index:]
         
-        self.main.loaded_messages_offset = len(messages_to_load)
+        self.loaded_messages_offset = len(messages_to_load)
         
         self.event_bus.emit("history_loaded", {
             'messages': messages_to_load,
-            'total_messages': self.main.total_messages_in_history,
-            'loaded_offset': self.main.loaded_messages_offset
+            'total_messages': self.total_messages_in_history,
+            'loaded_offset': self.loaded_messages_offset
         })
     
     def _on_load_more_history(self, event: Event):
-        if self.main.loaded_messages_offset >= self.main.total_messages_in_history:
+        if self.loaded_messages_offset >= self.total_messages_in_history:
             return
         
-        self.main.loading_more_history = True
+        self.loading_more_history = True
         try:
             chat_history = self.model.current_character.load_history()
             all_messages = chat_history["messages"]
             
-            lazy_load_batch_size = getattr(self.main, 'lazy_load_batch_size', 50)
-            end_index = self.main.total_messages_in_history - self.main.loaded_messages_offset
+            lazy_load_batch_size = self.lazy_load_batch_size
+            end_index = self.total_messages_in_history - self.loaded_messages_offset
             start_index = max(0, end_index - lazy_load_batch_size)
             messages_to_prepend = all_messages[start_index:end_index]
             
             if messages_to_prepend:
-                self.main.loaded_messages_offset += len(messages_to_prepend)
+                self.loaded_messages_offset += len(messages_to_prepend)
                 
                 self.event_bus.emit("more_history_loaded", {
                     'messages': messages_to_prepend,
-                    'loaded_offset': self.main.loaded_messages_offset
+                    'loaded_offset': self.loaded_messages_offset
                 })
         finally:
-            self.main.loading_more_history = False
+            self.loading_more_history = False
     
     # События информации
     def _on_get_character_name(self, event: Event):
@@ -250,9 +256,9 @@ class ModelController:
         return 0
     
     def _on_calculate_cost(self, event: Event):
-        self.model.token_cost_input = float(self.main.settings.get("TOKEN_COST_INPUT", 0.000001))
-        self.model.token_cost_output = float(self.main.settings.get("TOKEN_COST_OUTPUT", 0.000002))
-        self.model.max_model_tokens = int(self.main.settings.get("MAX_MODEL_TOKENS", 32000))
+        self.model.token_cost_input = float(self.settings.get("TOKEN_COST_INPUT", 0.000001))
+        self.model.token_cost_output = float(self.settings.get("TOKEN_COST_OUTPUT", 0.000002))
+        self.model.max_model_tokens = int(self.settings.get("MAX_MODEL_TOKENS", 32000))
         
         if hasattr(self.model, 'calculate_cost_for_current_context'):
             return self.model.calculate_cost_for_current_context()
@@ -291,25 +297,32 @@ class ModelController:
         return None
     
     def _on_reload_prompts_async(self, event: Event):
-        if self.main.loop and self.main.loop.is_running():
-            import asyncio
-            asyncio.run_coroutine_threadsafe(self._async_reload_prompts(), self.main.loop)
-        else:
-            logger.error("Цикл событий asyncio не запущен. Невозможно выполнить асинхронную загрузку промптов.")
-            self.event_bus.emit("reload_prompts_failed", {"error": "Event loop not running"})
-    
+        # Получаем главный asyncio-loop через событие
+        loop_res = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP, timeout=1.0)
+        loop = loop_res[0] if loop_res else None
+        
+        logger.info("Запрос на асинхронное обновление промптов...")
+        self.event_bus.emit(Events.RUN_IN_LOOP, {
+            'coroutine': self._async_reload_prompts(),
+            'callback': None  # Можно добавить callback для обработки результата, если нужно
+        })
+
     async def _async_reload_prompts(self):
         try:
             from utils.prompt_downloader import PromptDownloader
+            import asyncio
             downloader = PromptDownloader()
-            success = await self.main.loop.run_in_executor(None, downloader.download_and_replace_prompts)
+            
+            # Используем asyncio.get_event_loop() для получения текущего loop
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, downloader.download_and_replace_prompts)
             
             if success:
                 if hasattr(self.model, 'current_character_to_change'):
                     character_name = self.model.current_character_to_change
                     character = self.model.characters.get(character_name)
                     if character:
-                        await self.main.loop.run_in_executor(None, character.reload_prompts)
+                        await loop.run_in_executor(None, character.reload_prompts)
                     else:
                         logger.error("Персонаж для перезагрузки не найден")
                 

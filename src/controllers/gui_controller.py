@@ -33,6 +33,7 @@ class GuiController:
         logger.info("GuiController подписался на события")
 
         QTimer.singleShot(100, self.check_and_install_ffmpeg)
+
         
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.UPDATE_STATUS_COLORS, self._on_update_status_colors, weak=False)

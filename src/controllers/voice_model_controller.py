@@ -17,6 +17,8 @@ from ui.windows.voice_model_view import VoiceModelSettingsView, VoiceCollapsible
 
 from PyQt6.QtCore import QTimer
 
+from core.events import get_event_bus, Events
+
 try:
     from utils.gpu_utils import check_gpu_provider, get_cuda_devices, get_gpu_name_by_id
 except ImportError:
@@ -72,28 +74,110 @@ class VoiceModelController:
         self.docs_manager = DocsManager()
         self.dependencies_status = self._check_system_dependencies()
         
+        self.event_bus = get_event_bus()
+        
+        # Подписываемся на события запросов данных
+        self.event_bus.subscribe(Events.VoiceModel.GET_MODEL_DATA, self._handle_get_model_data, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.GET_INSTALLED_MODELS, self._handle_get_installed_models, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.GET_DEPENDENCIES_STATUS, self._handle_get_dependencies_status, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.GET_DEFAULT_DESCRIPTION, self._handle_get_default_description, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.GET_MODEL_DESCRIPTION, self._handle_get_model_description, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.GET_SETTING_DESCRIPTION, self._handle_get_setting_description, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.GET_SECTION_VALUES, self._handle_get_section_values, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.CHECK_GPU_RTX30_40, self._handle_check_gpu_rtx30_40, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.INSTALL_MODEL, self._handle_install_model, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.UNINSTALL_MODEL, self._handle_uninstall_model, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.SAVE_SETTINGS, self._handle_save_settings, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.CLOSE_DIALOG, self._handle_close_dialog, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.OPEN_DOC, self._handle_open_doc, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.UPDATE_DESCRIPTION, self._handle_update_description, weak=False)
+        self.event_bus.subscribe(Events.VoiceModel.CLEAR_DESCRIPTION, self._handle_clear_description, weak=False)
+        
         # Создаем View
-        self.view = VoiceModelSettingsView(self)
+        self.view = None
         
-        # Добавляем View в layout parent (install_dialog)
-        view_parent.layout().addWidget(self.view)
         
-        # Подключаем сигналы View к методам Controller
-        self.view.install_requested.connect(self.handle_install_request)
-        self.view.uninstall_requested.connect(self.handle_uninstall_request)
-        self.view.save_requested.connect(self.save_and_continue)
-        self.view.close_requested.connect(self.save_and_quit)
-        self.view.description_update_requested.connect(self.handle_description_update)
-        self.view.clear_description_requested.connect(self.handle_clear_description)
+        if view_parent:
+            self._create_view()
+    
+    def _create_view(self):
+        """Создает View и добавляет его в родительский виджет"""
+        if self.view:
+            return  # View уже создан
+            
+        # Создаем View
+        self.view = VoiceModelSettingsView()
         
-        # Инициализируем UI через View
-        self.view.create_model_panels(self.local_voice_models, self.installed_models)
-        self.view.display_installed_models_settings(self.local_voice_models, self.installed_models, self.dependencies_status)
+        # Если есть родитель, добавляем View в его layout
+        if self.view_parent and hasattr(self.view_parent, 'layout'):
+            self.view_parent.layout().addWidget(self.view)
+        
+        # Инициализируем данные во View
+        self.view._initialize_data()
+
+    def set_view_parent(self, parent):
+        """Устанавливает родителя для View и создает View если нужно"""
+        self.view_parent = parent
+        if not self.view:
+            self._create_view()
+
+    def _handle_get_model_data(self, event):
+        return self.local_voice_models
+
+    def _handle_get_installed_models(self, event):
+        return self.installed_models
+
+    def _handle_get_dependencies_status(self, event):
+        status = self.dependencies_status.copy()
+        status['detected_gpu_vendor'] = self.detected_gpu_vendor
+        return status
+
+    def _handle_get_default_description(self, event):
+        return self.default_description_text
+
+    def _handle_get_model_description(self, event):
+        model_id = event.data
+        return self.model_descriptions.get(model_id, self.default_description_text)
+
+    def _handle_get_setting_description(self, event):
+        setting_key = event.data
+        return self.setting_descriptions.get(setting_key, self.default_description_text)
+
+    def _handle_get_section_values(self, event):
+        model_id = event.data
+        return self.view.get_section_values(model_id)
+
+    def _handle_check_gpu_rtx30_40(self, event):
+        return self.is_gpu_rtx30_or_40()
+
+    def _handle_install_model(self, event):
+        model_id = event.data
+        self.handle_install_request(model_id)
+
+    def _handle_uninstall_model(self, event):
+        model_id = event.data
+        self.handle_uninstall_request(model_id)
+
+    def _handle_save_settings(self, event):
+        self.save_and_continue()
+
+    def _handle_close_dialog(self, event):
+        self.save_and_quit()
+
+    def _handle_open_doc(self, event):
+        doc_name = event.data
+        self.open_doc(doc_name)
+
+    def _handle_update_description(self, event):
+        key = event.data
+        self.handle_description_update(key)
+
+    def _handle_clear_description(self, event):
+        self.handle_clear_description()
 
     def get_default_model_structure(self):
         return get_default_model_structure()
         
-
     def load_settings(self):
         default_model_structure = self.get_default_model_structure()
         adapted_default_structure = self.finalize_model_settings(
@@ -118,6 +202,7 @@ class VoiceModelController:
                         if setting_key in model_saved_values:
                             setting.setdefault("options", {})["default"] = model_saved_values[setting_key]
         self.local_voice_models = merged_model_structure
+        
         logger.info(_("Загрузка и адаптация настроек завершена.", "Loading and adaptation of settings completed."))
 
     def load_installed_models_state(self):
@@ -150,8 +235,9 @@ class VoiceModelController:
 
     def save_settings(self):
         settings_to_save = {}
+        all_section_values = self.view.get_all_section_values()
         for model_id in self.installed_models:
-            values = self.view.get_section_values(model_id)
+            values = all_section_values.get(model_id, {})
             if values:
                 settings_to_save[model_id] = values
         if settings_to_save:
@@ -372,7 +458,9 @@ class VoiceModelController:
             return
 
         self.installation_in_progress = True
-        self.view.disable_all_action_buttons()
+        
+        # Уведомляем View о начале установки через сигнал
+        self.view.install_started_signal.emit(model_id)
         
         # Определяем установленные компоненты
         installed_components = set()
@@ -387,12 +475,11 @@ class VoiceModelController:
         # Модели, которые станут доступны после установки
         models_to_mark_installed = self._get_installable_models(model_id, installed_components, model_new_components)
         
-        # Обновляем UI для всех моделей с QTimer для гарантии отрисовки
+        # Обновляем UI для всех моделей
         for mid in models_to_mark_installed:
-            QTimer.singleShot(0, lambda m=mid: self.view.set_button_text(m, _("Ожидание...", "Waiting...")))
-            QTimer.singleShot(0, lambda m=mid: self.view.set_button_enabled(m, False))
-        
-        QTimer.singleShot(0, lambda: self.view.set_button_text(model_id, _("Загрузка...", "Downloading...")))
+            if mid != model_id:
+                QTimer.singleShot(0, lambda m=mid: self.view.set_button_text(m, _("Ожидание...", "Waiting...")))
+                QTimer.singleShot(0, lambda m=mid: self.view.set_button_enabled(m, False))
         
         # Запускаем установку
         success = False
@@ -405,7 +492,7 @@ class VoiceModelController:
         self.handle_download_result(success, model_id, models_to_mark_installed)
         
         self.installation_in_progress = False
-        QTimer.singleShot(0, self.view.enable_all_action_buttons)  # Восстанавливаем после
+        self.view.install_finished_signal.emit({"model_id": model_id, "success": success})
 
     def _get_installable_models(self, model_id, installed_components, new_components):
         all_components = installed_components | new_components
@@ -423,10 +510,9 @@ class VoiceModelController:
             return
 
         self.installation_in_progress = True
-        self.view.disable_all_action_buttons()
-
-        QTimer.singleShot(0, lambda: self.view.set_button_text(model_id, _("Удаление...", "Uninstalling...")))
-        QTimer.singleShot(0, lambda: self.view.set_button_enabled(model_id, False))
+        
+        # Уведомляем View о начале удаления через сигнал
+        self.view.uninstall_started_signal.emit(model_id)
 
         success = False
         try:
@@ -448,7 +534,7 @@ class VoiceModelController:
         self.handle_uninstall_result(success, model_id)
         
         self.installation_in_progress = False
-        QTimer.singleShot(0, self.view.enable_all_action_buttons)  # Восстанавливаем после
+        self.view.uninstall_finished_signal.emit({"model_id": model_id, "success": success})
 
     def handle_download_result(self, success, model_id, models_to_mark_installed):
         if success:
@@ -461,11 +547,6 @@ class VoiceModelController:
             self.load_settings()
             logger.info(_("Настройки перезагружены.", "Settings reloaded."))
             
-            # Полностью перестраиваем панели моделей для обновления кнопок
-            QTimer.singleShot(0, lambda: self.view.create_model_panels(self.local_voice_models, self.installed_models))
-            logger.info("Панели моделей перестроены после установки.")
-            
-            self.view.display_installed_models_settings(self.local_voice_models, self.installed_models, self.dependencies_status)
             self.save_installed_models_list()
             
             if self.on_save_callback:
@@ -478,8 +559,6 @@ class VoiceModelController:
             logger.info(f"{_('Обработка установки', 'Handling installation of')} {model_id} {_('и связанных моделей завершена.', 'and related models completed.')}")
         else:
             logger.info(f"{_('Ошибка установки модели', 'Error installing model')} {model_id}.")
-            # Восстанавливаем UI для всех моделей через enable_all_action_buttons
-            QTimer.singleShot(0, self.view.enable_all_action_buttons)
 
     def handle_uninstall_result(self, success, model_id):
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
@@ -491,68 +570,17 @@ class VoiceModelController:
                 self.installed_models.remove(model_id)
                 logger.info(f"Удалена модель {model_id} из installed_models.")
 
-            # Полностью перестраиваем панели моделей для обновления кнопок
-            QTimer.singleShot(0, lambda: self.view.create_model_panels(self.local_voice_models, self.installed_models))
-            logger.info("Панели моделей перестроены после удаления.")
-
-            self.view.display_installed_models_settings(self.local_voice_models, self.installed_models, self.dependencies_status)
             self.save_installed_models_list()
             
             if self.on_save_callback:
                 callback_data = {"installed_models": list(self.installed_models), "models_data": self.local_voice_models}
                 self.on_save_callback(callback_data)
-            
-            QTimer.singleShot(50, self.view._update_settings_scrollregion)
 
         else:
             logger.error(f"{_('Ошибка при удалении модели', 'Error uninstalling model')} {model_id}.")
             self.view.show_critical(_("Ошибка Удаления", "Uninstallation Error"), 
                                     _(f"Не удалось удалить модель '{model_name}'.\nСм. лог для подробностей.", 
                                     f"Could not uninstall model '{model_name}'.\nSee log for details."))
-            # Восстанавливаем UI через enable_all_action_buttons
-            QTimer.singleShot(0, self.view.enable_all_action_buttons)
-
-    def enable_all_action_buttons(self):
-        """Enable all install/uninstall buttons based on their state and compatibility"""
-        if self.installation_in_progress:
-            return
-            
-        for model_id in self.view.model_action_buttons:
-            button = self.view.model_action_buttons.get(model_id)
-            if button:
-                model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
-                if not model_data:
-                    continue
-                    
-                if model_id in self.installed_models:
-                    # Кнопка удаления
-                    QTimer.singleShot(0, lambda b=button: b.setText(_("Удалить", "Uninstall")))
-                    QTimer.singleShot(0, lambda b=button: b.setEnabled(True))
-                    QTimer.singleShot(0, lambda b=button: b.setObjectName("DangerButton"))
-                    QTimer.singleShot(0, lambda b=button: b.setStyleSheet(b.styleSheet()))  # Refresh style
-                    logger.info(f"Кнопка для {model_id} (installed): text='Удалить', enabled=True")
-                else:
-                    # Кнопка установки с проверкой совместимости
-                    install_text = _("Установить", "Install")
-                    can_install = True
-                    
-                    supported_vendors = model_data.get('gpu_vendor', [])
-                    allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
-                    is_amd_user = self.detected_gpu_vendor == "AMD"
-                    is_amd_supported = "AMD" in supported_vendors
-                    is_gpu_unsupported_amd = is_amd_user and not is_amd_supported
-                    
-                    if is_gpu_unsupported_amd and not allow_unsupported_gpu:
-                        can_install = False
-                        install_text = _("Несовместимо с AMD", "Incompatible with AMD")
-                    
-                    QTimer.singleShot(0, lambda b=button, t=install_text: b.setText(t))
-                    QTimer.singleShot(0, lambda b=button, e=can_install: b.setEnabled(e))
-                    QTimer.singleShot(0, lambda b=button: b.setObjectName("SecondaryButton"))
-                    QTimer.singleShot(0, lambda b=button: b.setStyleSheet(b.styleSheet()))  # Refresh style
-                    logger.info(f"Кнопка для {model_id} (not installed): text='{install_text}', enabled={can_install}")
-                
-        QTimer.singleShot(50, self.view._update_models_scrollregion)
 
     def save_installed_models_list(self):
         try:
@@ -565,14 +593,14 @@ class VoiceModelController:
     def handle_description_update(self, key):
         """Обновляет описание для модели или настройки"""
         if key in self.model_descriptions:
-            self.view._update_description_slot(self.model_descriptions[key])
+            self.view.update_description_signal.emit(self.model_descriptions[key])
         elif key in self.setting_descriptions:
-            self.view._update_description_slot(self.setting_descriptions[key])
+            self.view.update_description_signal.emit(self.setting_descriptions[key])
         else:
-            self.view._update_description_slot(self.default_description_text)
+            self.view.update_description_signal.emit(self.default_description_text)
 
     def handle_clear_description(self):
-        self.view._clear_description_slot()
+        self.view.clear_description_signal.emit()
 
     def save_and_continue(self):
         self.save_settings()

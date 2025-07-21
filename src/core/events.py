@@ -326,6 +326,7 @@ class Events:
         GET_GUI_WINDOW_ID = "get_gui_window_id"
         CHECK_TRITON_DEPENDENCIES = "check_triton_dependencies"
         SHOW_ERROR_MESSAGE = "show_error_message"
+        UPDATE_LOCAL_VOICE_COMBOBOX = "update_local_voice_combobox" 
 
     class Model:
         """События для управления LLM, персонажами и историей"""
@@ -378,6 +379,8 @@ class Events:
         CANCEL_MODEL_LOADING = "cancel_model_loading"
         GET_WAITING_ANSWER = "get_waiting_answer"
         VOICEOVER_REQUESTED = "voiceover_requested"
+        OPEN_VOICE_MODEL_SETTINGS = "open_voice_model_settings"
+        OPEN_VOICE_MODEL_SETTINGS_DIALOG = "open_voice_model_settings_dialog"
 
     class Speech:
         """События для распознавания речи и управления микрофоном"""
@@ -442,3 +445,28 @@ class Events:
         GET_SETTING = "get_setting"
         LOAD_SETTINGS = "load_settings"
         GET_SETTINGS = "get_settings"
+
+
+    class VoiceModel:
+        """События для управления локальными голосовыми моделями"""
+        GET_MODEL_DATA = "get_voice_model_data"
+        GET_INSTALLED_MODELS = "get_installed_models"
+        GET_DEPENDENCIES_STATUS = "get_dependencies_status"
+        GET_DEFAULT_DESCRIPTION = "get_default_description"
+        GET_MODEL_DESCRIPTION = "get_model_description"
+        GET_SETTING_DESCRIPTION = "get_setting_description"
+        GET_SECTION_VALUES = "get_section_values"
+        CHECK_GPU_RTX30_40 = "check_gpu_rtx30_40"
+        INSTALL_MODEL = "install_voice_model"
+        UNINSTALL_MODEL = "uninstall_voice_model"
+        SAVE_SETTINGS = "save_voice_model_settings"
+        CLOSE_DIALOG = "close_voice_model_dialog"
+        OPEN_DOC = "open_voice_model_doc"
+        UPDATE_DESCRIPTION = "update_voice_model_description"
+        CLEAR_DESCRIPTION = "clear_voice_model_description"
+        MODEL_INSTALL_STARTED = "voice_model_install_started"
+        MODEL_INSTALL_FINISHED = "voice_model_install_finished"
+        MODEL_UNINSTALL_STARTED = "voice_model_uninstall_started"
+        MODEL_UNINSTALL_FINISHED = "voice_model_uninstall_finished"
+        REFRESH_MODEL_PANELS = "refresh_voice_model_panels"
+        REFRESH_SETTINGS_DISPLAY = "refresh_voice_settings_display"

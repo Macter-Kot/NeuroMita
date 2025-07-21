@@ -60,9 +60,6 @@ class GuiController:
             self.view.finish_model_loading_signal = getattr(self.view, 'finish_model_loading_signal', None)
             self.view.cancel_model_loading_signal = getattr(self.view, 'cancel_model_loading_signal', None)
         
-    def connect_view_signals(self):
-        self.main_controller.telegram_controller.connect_view_signals()
-        
     def update_status_colors(self):
         self.status_controller.update_status_colors()
         

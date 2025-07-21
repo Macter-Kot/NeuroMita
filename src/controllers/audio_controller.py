@@ -48,6 +48,22 @@ class AudioController:
         self.event_bus.subscribe(Events.Audio.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
         self.event_bus.subscribe(Events.Audio.GET_WAITING_ANSWER, self._on_get_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.Audio.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
+        self.event_bus.subscribe(Events.Audio.OPEN_VOICE_MODEL_SETTINGS, self._on_open_voice_model_settings, weak=False)
+        
+    def _on_open_voice_model_settings(self, event: Event):
+        """
+        GUI запрашивает данные для окна «Локальные модели».
+        Возвращаем только данные, без создания контроллера.
+        """
+        try:
+            return {
+                'local_voice': self.local_voice,
+                'config_dir': "Settings",
+                'settings': self.settings
+            }
+        except Exception as e:
+            logger.error(f"_on_open_voice_model_settings: {e}", exc_info=True)
+            return None
 
     def _on_voiceover_requested(self, event: Event):
         data = event.data

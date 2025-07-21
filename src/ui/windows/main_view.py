@@ -164,6 +164,8 @@ class ChatGUI(QMainWindow):
     finish_model_loading_signal = pyqtSignal(dict)
     cancel_model_loading_signal = pyqtSignal()
 
+    create_dialog_signal = pyqtSignal(dict)
+
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
@@ -258,6 +260,36 @@ class ChatGUI(QMainWindow):
         self.update_model_loading_status_signal.connect(self._on_update_model_loading_status)
         self.finish_model_loading_signal.connect(self._on_finish_model_loading)
         self.cancel_model_loading_signal.connect(self._on_cancel_model_loading)
+        self.create_dialog_signal.connect(self._create_dialog_for_voice_model)
+
+    def _create_dialog_for_voice_model(self, data):
+        """Создает пустой диалог и возвращает его через callback"""
+        try:
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout
+            
+            # Создаем диалог
+            dialog = QDialog(self)
+            dialog.setWindowTitle(_("Управление локальными моделями", "Manage Local Models"))
+            dialog.setModal(False)
+            dialog.resize(875, 800)
+            
+            # Создаем layout
+            dialog_layout = QVBoxLayout(dialog)
+            dialog_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Вызываем callback с созданным диалогом
+            callback = data.get('callback')
+            if callback:
+                callback(dialog)
+            
+            # Показываем диалог
+            dialog.show()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при создании диалога: {e}", exc_info=True)
+            error_callback = data.get('error_callback')
+            if error_callback:
+                error_callback(str(e))
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -1684,60 +1716,13 @@ class ChatGUI(QMainWindow):
             logger.error(f"Неожиданная ошибка при проверке Triton. Игнорируйте это предупреждение, если не используете \"Fish Speech+ / + RVC\" озвучку. Exception: {e}", exc_info=True)
 
     def open_local_model_installation_window(self):
+        """Открывает окно управления локальными голосовыми моделями"""
         try:
-            import os
-
-            config_dir = "Settings"
-            os.makedirs(config_dir, exist_ok=True)
-
-            def on_save_callback(settings_data):
-                installed_models_ids = settings_data.get("installed_models", [])
-                logger.info(f"Сохранены установленные модели (из окна установки): {installed_models_ids}")
-
-                self.event_bus.emit(Events.Audio.REFRESH_VOICE_MODULES)
-                self.update_local_voice_combobox()
-
-                current_model_id = self._get_setting("NM_CURRENT_VOICEOVER", None)
-                if current_model_id and current_model_id not in installed_models_ids:
-                    logger.warning(f"Текущая модель {current_model_id} была удалена. Сбрасываем выбор.")
-                    new_model_id = installed_models_ids[0] if installed_models_ids else None
-                    self._save_setting("NM_CURRENT_VOICEOVER", new_model_id)
-                    self.current_local_voice_id = new_model_id
-                    self.update_local_voice_combobox()
-
-            def check_installed_func(model_id):
-                result = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INSTALLED, {'model_id': model_id}, timeout=0.5)
-                return result[0] if result else False
-
-            class LocalVoiceStub:
-                def is_model_installed(self, model_id):
-                    return check_installed_func(model_id)
-
-            from PyQt6.QtWidgets import QDialog
-            install_dialog = QDialog(self)
-            install_dialog.setWindowTitle(_("Управление локальными моделями", "Manage Local Models"))
-            install_dialog.setModal(False)
-            install_dialog.resize(875, 800)
+            # Просто эмитим сигнал для AudioModelController
+            self.event_bus.emit(Events.Audio.OPEN_VOICE_MODEL_SETTINGS_DIALOG)
             
-            dialog_layout = QVBoxLayout(install_dialog)
-            dialog_layout.setContentsMargins(0, 0, 0, 0)
-            
-            controller = VoiceModelController(
-                view_parent=install_dialog,
-                config_dir=config_dir,
-                on_save_callback=on_save_callback,
-                local_voice=LocalVoiceStub(),
-                check_installed_func=check_installed_func,
-            )
-            
-            install_dialog.show()
-            
-        except ImportError:
-            logger.error("Не найден модуль voice_model_controller.py. Установка моделей недоступна.")
-            QMessageBox.critical(self, _("Ошибка", "Error"),
-                _("Не найден файл voice_model_controller.py", "voice_model_controller.py not found."))
         except Exception as e:
-            logger.error(f"Ошибка при открытии окна установки моделей: {e}", exc_info=True)
+            logger.error(f"Ошибка при вызове окна установки моделей: {e}", exc_info=True)
             QMessageBox.critical(self, _("Ошибка", "Error"), 
                 _("Не удалось открыть окно установки моделей.", "Failed to open model installation window."))
 

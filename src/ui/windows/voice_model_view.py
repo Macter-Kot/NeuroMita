@@ -11,6 +11,7 @@ from PyQt6.QtGui import QFont, QCursor
 from styles.voice_model_styles import get_stylesheet
 from main_logger import logger
 from utils import getTranslationVariant as _
+from core.events import get_event_bus, Events
 
 class VoiceCollapsibleSection(QFrame):
     def __init__(self, parent, title, collapsed=False, update_scrollregion_func=None, clear_description_func=None):
@@ -207,17 +208,20 @@ class VoiceCollapsibleSection(QFrame):
 
 
 class VoiceModelSettingsView(QWidget):
-    # Сигналы для Controller
-    install_requested = pyqtSignal(str)  # model_id
-    uninstall_requested = pyqtSignal(str)  # model_id
-    save_requested = pyqtSignal()
-    close_requested = pyqtSignal()
-    description_update_requested = pyqtSignal(str)  # key for model or setting
-    clear_description_requested = pyqtSignal()
 
-    def __init__(self, controller):
+    
+    update_description_signal = pyqtSignal(str)
+    clear_description_signal = pyqtSignal()
+    install_started_signal = pyqtSignal(str)
+    install_finished_signal = pyqtSignal(dict)
+    uninstall_started_signal = pyqtSignal(str) 
+    uninstall_finished_signal = pyqtSignal(dict)
+    refresh_panels_signal = pyqtSignal()
+    refresh_settings_signal = pyqtSignal()
+
+
+    def __init__(self):
         super().__init__()
-        self.controller = controller
         
         self.setWindowTitle(_("Настройки и Установка Локальных Моделей", "Settings and Installation of Local Models"))
         self.setMinimumSize(750, 500)
@@ -225,6 +229,8 @@ class VoiceModelSettingsView(QWidget):
         
         # Apply stylesheet
         self.setStyleSheet(get_stylesheet())
+        
+        self.event_bus = get_event_bus()
         
         self.description_label_widget = None
         self.settings_sections = {}
@@ -238,9 +244,48 @@ class VoiceModelSettingsView(QWidget):
 
         self._initialize_layout()
         
-        # Подключаем сигналы к слотам (Controller подключит свои обработчики)
-        self.description_update_requested.connect(self._update_description_slot)
-        self.clear_description_requested.connect(self._clear_description_slot)
+        # Подписываемся на события обновления UI
+        self.update_description_signal.connect(self._on_update_description)
+        self.clear_description_signal.connect(self._on_clear_description)
+        self.install_started_signal.connect(self._on_install_started)
+        self.install_finished_signal.connect(self._on_install_finished)
+        self.uninstall_started_signal.connect(self._on_uninstall_started)
+        self.uninstall_finished_signal.connect(self._on_uninstall_finished)
+        self.refresh_panels_signal.connect(self._on_refresh_panels)
+        self.refresh_settings_signal.connect(self._on_refresh_settings)
+        
+        # Инициализируем данные
+        self._initialize_data()
+
+    def _initialize_data(self):
+        # Получаем данные через события
+        models_data = self._get_models_data()
+        installed_models = self._get_installed_models()
+        
+        self.create_model_panels(models_data, installed_models)
+        
+        dependencies_status = self._get_dependencies_status()
+        self.display_installed_models_settings(models_data, installed_models, dependencies_status)
+
+    def _get_models_data(self):
+        results = self.event_bus.emit_and_wait(Events.VoiceModel.GET_MODEL_DATA)
+        return results[0] if results else []
+
+    def _get_installed_models(self):
+        results = self.event_bus.emit_and_wait(Events.VoiceModel.GET_INSTALLED_MODELS)
+        return results[0] if results else set()
+
+    def _get_dependencies_status(self):
+        results = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)
+        return results[0] if results else {}
+
+    def _get_default_description(self):
+        results = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEFAULT_DESCRIPTION)
+        return results[0] if results else ""
+
+    def _check_gpu_rtx30_40(self):
+        results = self.event_bus.emit_and_wait(Events.VoiceModel.CHECK_GPU_RTX30_40)
+        return results[0] if results else False
 
     def _initialize_layout(self):
         # Главный layout устанавливаем сразу на self
@@ -269,7 +314,8 @@ class VoiceModelSettingsView(QWidget):
         desc_title.setStyleSheet("font-weight: bold; font-size: 9pt;")
         desc_layout.addWidget(desc_title)
         
-        self.description_label_widget = QLabel(self.controller.default_description_text)
+        default_description = self._get_default_description()
+        self.description_label_widget = QLabel(default_description)
         self.description_label_widget.setWordWrap(True)
         self.description_label_widget.setStyleSheet("color: #cccccc; font-size: 9pt;")
         self.description_label_widget.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -329,10 +375,10 @@ class VoiceModelSettingsView(QWidget):
         bottom_layout.setContentsMargins(10, 10, 10, 10)
         
         close_button = QPushButton(_("Закрыть", "Close"))
-        close_button.clicked.connect(self.close_requested.emit)
+        close_button.clicked.connect(self._on_close_clicked)
         
         save_button = QPushButton(_("Сохранить", "Save"))
-        save_button.clicked.connect(self.save_requested.emit)
+        save_button.clicked.connect(self._on_save_clicked)
         save_button.setObjectName("PrimaryButton")
         
         bottom_layout.addStretch()
@@ -342,6 +388,69 @@ class VoiceModelSettingsView(QWidget):
         # Добавляем виджеты в главный layout
         main_widget_layout.addWidget(content_widget, 1)
         main_widget_layout.addWidget(bottom_widget)
+
+    def _on_install_clicked(self, model_id):
+        self.event_bus.emit(Events.VoiceModel.INSTALL_MODEL, model_id)
+
+    def _on_uninstall_clicked(self, model_id):
+        self.event_bus.emit(Events.VoiceModel.UNINSTALL_MODEL, model_id)
+
+    def _on_save_clicked(self):
+        self.event_bus.emit(Events.VoiceModel.SAVE_SETTINGS)
+
+    def _on_close_clicked(self):
+        self.event_bus.emit(Events.VoiceModel.CLOSE_DIALOG)
+
+    def _on_model_description_requested(self, model_id):
+        self.event_bus.emit(Events.VoiceModel.UPDATE_DESCRIPTION, model_id)
+
+    def _on_setting_description_requested(self, setting_key):
+        self.event_bus.emit(Events.VoiceModel.UPDATE_DESCRIPTION, setting_key)
+
+    def _on_clear_description_requested(self):
+        self.event_bus.emit(Events.VoiceModel.CLEAR_DESCRIPTION)
+
+    def _on_update_description(self, text):
+        if self.description_label_widget:
+            self.description_label_widget.setText(text)
+
+    def _on_clear_description(self):
+        if self.description_label_widget:
+            default_description = self._get_default_description()
+            self.description_label_widget.setText(default_description)
+
+    def _on_install_started(self, model_id):
+        button = self.model_action_buttons.get(model_id)
+        if button:
+            button.setText(_("Загрузка...", "Downloading..."))
+            button.setEnabled(False)
+        self.disable_all_action_buttons()
+
+    def _on_install_finished(self, data):
+        self.enable_all_action_buttons()
+        self._initialize_data()
+
+    def _on_uninstall_started(self, model_id):
+        button = self.model_action_buttons.get(model_id)
+        if button:
+            button.setText(_("Удаление...", "Uninstalling..."))
+            button.setEnabled(False)
+        self.disable_all_action_buttons()
+
+    def _on_uninstall_finished(self, data):
+        self.enable_all_action_buttons()
+        self._initialize_data()
+
+    def _on_refresh_panels(self):
+        models_data = self._get_models_data()
+        installed_models = self._get_installed_models()
+        self.create_model_panels(models_data, installed_models)
+
+    def _on_refresh_settings(self):
+        models_data = self._get_models_data()
+        installed_models = self._get_installed_models()
+        dependencies_status = self._get_dependencies_status()
+        self.display_installed_models_settings(models_data, installed_models, dependencies_status)
 
     def create_model_panels(self, models_data, installed_models):
         """Создает панели моделей на основе данных от Controller"""
@@ -371,8 +480,8 @@ class VoiceModelSettingsView(QWidget):
         
         panel = QFrame()
         panel.setObjectName("ModelPanel")
-        panel.enterEvent = lambda e: self.description_update_requested.emit(model_id)
-        panel.leaveEvent = lambda e: self.clear_description_requested.emit()
+        panel.enterEvent = lambda e: self._on_model_description_requested(model_id)
+        panel.leaveEvent = lambda e: self._on_clear_description_requested()
         
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(10, 5, 10, 6)
@@ -382,8 +491,8 @@ class VoiceModelSettingsView(QWidget):
         title_layout = QHBoxLayout()
         title_label = QLabel(model_name)
         title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-        title_label.enterEvent = lambda e: self.description_update_requested.emit(model_id)
-        title_label.leaveEvent = lambda e: self.clear_description_requested.emit()
+        title_label.enterEvent = lambda e: self._on_model_description_requested(model_id)
+        title_label.leaveEvent = lambda e: self._on_clear_description_requested()
         title_layout.addWidget(title_label)
         
         # Warning icon for medium model
@@ -410,7 +519,7 @@ class VoiceModelSettingsView(QWidget):
         
         # RTX 30+ indicator
         if requires_rtx30plus:
-            gpu_meets_requirement = self.controller.is_gpu_rtx30_or_40()
+            gpu_meets_requirement = self._check_gpu_rtx30_40()
             icon_color = "lightgreen" if gpu_meets_requirement else "orange"
             rtx_label = QLabel("RTX 30+")
             rtx_label.setStyleSheet(f"color: {icon_color}; font-size: 7pt; font-weight: bold;")
@@ -427,13 +536,18 @@ class VoiceModelSettingsView(QWidget):
         gpu_req_text = f"GPU: {', '.join(supported_vendors)}" if supported_vendors else "GPU: Any"
         info_label = QLabel(f"{vram_text} | {gpu_req_text}")
         info_label.setStyleSheet("color: #b0b0b0; font-size: 8pt;")
-        info_label.enterEvent = lambda e: self.description_update_requested.emit(model_id)
-        info_label.leaveEvent = lambda e: self.clear_description_requested.emit()
+        info_label.enterEvent = lambda e: self._on_model_description_requested(model_id)
+        info_label.leaveEvent = lambda e: self._on_clear_description_requested()
         panel_layout.addWidget(info_label)
         
         # AMD warning if needed
         allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
-        is_amd_user = self.controller.detected_gpu_vendor == "AMD"
+        
+        # Получаем информацию о GPU через событие
+        gpu_info = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)[0]
+        detected_gpu_vendor = gpu_info.get('detected_gpu_vendor') if gpu_info else None
+        
+        is_amd_user = detected_gpu_vendor == "AMD"
         is_amd_supported = "AMD" in supported_vendors
         is_gpu_unsupported_amd = is_amd_user and not is_amd_supported
         show_warning_amd = allow_unsupported_gpu and is_gpu_unsupported_amd
@@ -449,7 +563,7 @@ class VoiceModelSettingsView(QWidget):
         if is_installed:
             action_button = QPushButton(_("Удалить", "Uninstall"))
             action_button.setObjectName("DangerButton")
-            action_button.clicked.connect(lambda: self.uninstall_requested.emit(model_id))
+            action_button.clicked.connect(lambda: self._on_uninstall_clicked(model_id))
         else:
             install_text = _("Установить", "Install")
             can_install = True
@@ -461,7 +575,7 @@ class VoiceModelSettingsView(QWidget):
             action_button.setObjectName("SecondaryButton")
             action_button.setEnabled(can_install)
             if can_install:
-                action_button.clicked.connect(lambda: self.install_requested.emit(model_id))
+                action_button.clicked.connect(lambda: self._on_install_clicked(model_id))
         
         self.model_action_buttons[model_id] = action_button
         panel_layout.addWidget(action_button)
@@ -513,7 +627,7 @@ class VoiceModelSettingsView(QWidget):
                     section_title,
                     collapsed=start_collapsed,
                     update_scrollregion_func=self._update_settings_scrollregion,
-                    clear_description_func=self.clear_description_requested.emit
+                    clear_description_func=self._on_clear_description_requested
                 )
                 self.settings_sections[model_id] = section
                 
@@ -527,7 +641,7 @@ class VoiceModelSettingsView(QWidget):
                         if key and widget_type:
                             section.add_row(
                                 key, label, widget_type, options, setting_info,
-                                show_setting_description=lambda k: self.description_update_requested.emit(k)
+                                show_setting_description=lambda k: self._on_setting_description_requested(k)
                             )
                 else:
                     no_settings_label = QLabel(_("Специфические настройки отсутствуют.", "Specific settings are missing."))
@@ -591,7 +705,7 @@ class VoiceModelSettingsView(QWidget):
                 doc_link = QLabel(_("[Документация]", "[Documentation]"))
                 doc_link.setStyleSheet("color: #81d4fa; font-weight: bold; font-size: 9pt; text-decoration: underline;")
                 doc_link.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-                doc_link.mousePressEvent = lambda e: self.controller.open_doc("installation_guide.html")
+                doc_link.mousePressEvent = lambda e: self.event_bus.emit(Events.VoiceModel.OPEN_DOC, "installation_guide.html")
                 warning_layout.addWidget(doc_link)
                 
                 warning_layout.addStretch()
@@ -615,14 +729,6 @@ class VoiceModelSettingsView(QWidget):
             if w:
                 w.deleteLater()
 
-    def _update_description_slot(self, text):
-        if self.description_label_widget:
-            self.description_label_widget.setText(text)
-
-    def _clear_description_slot(self):
-        if self.description_label_widget:
-            self.description_label_widget.setText(self.controller.default_description_text)
-
     def _update_scrollregion(self, canvas):
         """Update scroll region"""
         if canvas:
@@ -639,6 +745,13 @@ class VoiceModelSettingsView(QWidget):
         if section:
             return section.get_values()
         return {}
+
+    def get_all_section_values(self):
+        """Получить значения всех секций настроек"""
+        all_values = {}
+        for model_id, section in self.settings_sections.items():
+            all_values[model_id] = section.get_values()
+        return all_values
 
     def set_button_text(self, model_id, text):
         button = self.model_action_buttons.get(model_id)
@@ -663,11 +776,43 @@ class VoiceModelSettingsView(QWidget):
                 button._original_text = button.text()
 
     def enable_all_action_buttons(self):
-        for button in self.model_action_buttons.values():
-            button.setEnabled(True)
-            if hasattr(button, '_original_text'):
-                button.setText(button._original_text)
-                delattr(button, '_original_text')
+        models_data = self._get_models_data()
+        installed_models = self._get_installed_models()
+        
+        for model_id, button in self.model_action_buttons.items():
+            model_data = next((m for m in models_data if m["id"] == model_id), None)
+            if not model_data:
+                continue
+                
+            if model_id in installed_models:
+                # Кнопка удаления
+                button.setText(_("Удалить", "Uninstall"))
+                button.setEnabled(True)
+                button.setObjectName("DangerButton")
+                button.setStyleSheet(button.styleSheet())  # Refresh style
+            else:
+                # Кнопка установки с проверкой совместимости
+                install_text = _("Установить", "Install")
+                can_install = True
+                
+                supported_vendors = model_data.get('gpu_vendor', [])
+                allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
+                
+                gpu_info = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)[0]
+                detected_gpu_vendor = gpu_info.get('detected_gpu_vendor') if gpu_info else None
+                
+                is_amd_user = detected_gpu_vendor == "AMD"
+                is_amd_supported = "AMD" in supported_vendors
+                is_gpu_unsupported_amd = is_amd_user and not is_amd_supported
+                
+                if is_gpu_unsupported_amd and not allow_unsupported_gpu:
+                    can_install = False
+                    install_text = _("Несовместимо с AMD", "Incompatible with AMD")
+                
+                button.setText(install_text)
+                button.setEnabled(can_install)
+                button.setObjectName("SecondaryButton")
+                button.setStyleSheet(button.styleSheet())  # Refresh style
 
     def show_warning(self, title, message):
         QMessageBox.warning(self, title, message)

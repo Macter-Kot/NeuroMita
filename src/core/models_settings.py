@@ -1,3 +1,4 @@
+from utils import getTranslationVariant as _
 
 def get_default_model_structure():
     return [

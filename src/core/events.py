@@ -435,7 +435,7 @@ class Events:
     FINISH_MODEL_LOADING = "finish_model_loading"
     SHOW_ERROR_MESSAGE = "show_error_message"
     CANCEL_MODEL_LOADING = "cancel_model_loading"
-    GET_WAITING_ANSWER = "get_waiting_voiceover"
+    GET_WAITING_ANSWER = "get_waiting_answer"
 
     # От telegram_controller.py
     PROMPT_FOR_TG_CODE = "prompt_for_tg_code"

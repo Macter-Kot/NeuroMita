@@ -9,7 +9,6 @@ import sys
 import os
 import asyncio
 import pygame
-
 import time
 import ffmpeg
 from utils.gpu_utils import check_gpu_provider
@@ -88,6 +87,7 @@ class LocalVoice:
         self.msvc_found = False
         self.triton_installed = False
         self.triton_checks_performed = False
+        self._dialog_choice = None
         
         self.known_main_packages = ["tts-with-rvc", "fish-speech-lib", "triton-windows", "f5-tts"]
         self.protected_packages = ["g4f", "gigaam", "pillow", "silero-vad"]

@@ -104,3 +104,8 @@ class GuiController:
         
     def update_token_count(self):
         self.chat_controller.update_token_count()
+
+    def cleanup(self):
+        """Очистка ресурсов при закрытии приложения"""
+        if hasattr(self.audio_model_controller, '_voice_model_controller'):
+            self.audio_model_controller._voice_model_controller = None

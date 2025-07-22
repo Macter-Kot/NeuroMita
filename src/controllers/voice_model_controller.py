@@ -102,15 +102,29 @@ class VoiceModelController:
     
     def _create_view(self):
         """Создает View и добавляет его в родительский виджет"""
+        # Удаляем старый View если он есть
         if self.view:
-            return  # View уже создан
+            try:
+                if self.view.parent():
+                    self.view.setParent(None)
+                self.view.deleteLater()
+            except:
+                pass
+            self.view = None
             
-        # Создаем View
+        # Создаем новый View
         self.view = VoiceModelSettingsView()
         
         # Если есть родитель, добавляем View в его layout
         if self.view_parent and hasattr(self.view_parent, 'layout'):
-            self.view_parent.layout().addWidget(self.view)
+            # Очищаем layout перед добавлением
+            layout = self.view_parent.layout()
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            
+            layout.addWidget(self.view)
         
         # Инициализируем данные во View
         self.view._initialize_data()
@@ -232,14 +246,22 @@ class VoiceModelController:
             for model_data in self.get_default_model_structure():
                 model_id = model_data.get("id")
                 if model_id:
+                    # Проверяем напрямую через local_voice для более надежной проверки
                     is_installed = False
-                    if model_id == "low": is_installed = self.check_installed_func("tts_with_rvc")
-                    elif model_id == "low+": is_installed = self.check_installed_func("tts_with_rvc")
-                    elif model_id == "medium": is_installed = self.check_installed_func("fish_speech_lib")
-                    elif model_id == "medium+": is_installed = self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
-                    elif model_id == "medium+low": is_installed = self.check_installed_func("tts_with_rvc") and self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
-                    elif model_id == "high": is_installed = self.check_installed_func("f5_tts")
-                    elif model_id == "high+low": is_installed = self.check_installed_func("f5_tts") and self.check_installed_func("tts_with_rvc")
+                    try:
+                        if hasattr(self.local_voice, 'is_model_installed'):
+                            is_installed = self.local_voice.is_model_installed(model_id)
+                        else:
+                            # Fallback на старый метод
+                            if model_id == "low": is_installed = self.check_installed_func("tts_with_rvc")
+                            elif model_id == "low+": is_installed = self.check_installed_func("tts_with_rvc")
+                            elif model_id == "medium": is_installed = self.check_installed_func("fish_speech_lib")
+                            elif model_id == "medium+": is_installed = self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
+                            elif model_id == "medium+low": is_installed = self.check_installed_func("tts_with_rvc") and self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
+                            elif model_id == "high": is_installed = self.check_installed_func("f5_tts")
+                            elif model_id == "high+low": is_installed = self.check_installed_func("f5_tts") and self.check_installed_func("tts_with_rvc")
+                    except Exception as e:
+                        logger.error(f"Ошибка при проверке установки модели {model_id}: {e}")
 
                     if is_installed:
                         self.installed_models.add(model_id)
@@ -444,19 +466,21 @@ class VoiceModelController:
         elif window:
             QTimer.singleShot(0, window.close)
 
-    def handle_uninstall_request(self, model_id):
+    def handle_uninstall_request(self, model_id, status_cb=None, log_cb=None, window=None):
         model_name = next((m["name"] for m in self.local_voice_models if m["id"] == model_id), model_id)
 
         if self.local_voice.is_model_initialized(model_id):
             self.view.show_critical(
                 _("Модель Активна", "Model Active"),
                 _(f"Модель '{model_name}' сейчас используется или инициализирована.\n\n"
-                  "Пожалуйста, перезапустите приложение полностью, чтобы освободить ресурсы, "
-                  "прежде чем удалять эту модель.",
-                  f"Model '{model_name}' is currently in use or initialized.\n\n"
-                  "Please restart the application completely to free up resources "
-                  "before uninstalling this model.")
+                "Пожалуйста, перезапустите приложение полностью, чтобы освободить ресурсы, "
+                "прежде чем удалять эту модель.",
+                f"Model '{model_name}' is currently in use or initialized.\n\n"
+                "Please restart the application completely to free up resources "
+                "before uninstalling this model.")
             )
+            if window:
+                QTimer.singleShot(0, window.close)
             return
 
         message = _(f"Вы уверены, что хотите удалить модель '{model_name}'?\n\n"
@@ -467,7 +491,9 @@ class VoiceModelController:
                     "This action is irreversible!")
         
         if self.view.show_question(_("Подтверждение Удаления", "Confirm Uninstallation"), message):
-            self.start_uninstall(model_id)
+            self.start_uninstall(model_id, status_cb, log_cb, window)
+        elif window:
+            QTimer.singleShot(0, window.close)
 
     def start_download(self, model_id, progress_cb=None, status_cb=None, log_cb=None, window=None):
         if self.installation_in_progress:
@@ -522,7 +548,7 @@ class VoiceModelController:
         
         return installable_models
 
-    def start_uninstall(self, model_id):
+    def start_uninstall(self, model_id, status_cb=None, log_cb=None, window=None):
         if self.installation_in_progress:
             return
 
@@ -533,17 +559,21 @@ class VoiceModelController:
 
         success = False
         try:
-            if model_id in ("low", "low+"):
-                success = self.local_voice.uninstall_edge_tts_rvc()
-            elif model_id == "medium":
-                success = self.local_voice.uninstall_fish_speech()
-            elif model_id in ("medium+", "medium+low"):
-                success = self.local_voice.uninstall_triton_component()
-            elif model_id in ("high", "high+low"):
-                success = self.local_voice.uninstall_f5_tts()
+            # Передаем колбэки в local_voice если они есть
+            if status_cb or log_cb:
+                success = self.local_voice.download_model(model_id, None, status_cb, log_cb)
             else:
-                logger.error(f"Unknown model_id for uninstall: {model_id}")
-                success = False
+                if model_id in ("low", "low+"):
+                    success = self.local_voice.uninstall_edge_tts_rvc()
+                elif model_id == "medium":
+                    success = self.local_voice.uninstall_fish_speech()
+                elif model_id in ("medium+", "medium+low"):
+                    success = self.local_voice.uninstall_triton_component()
+                elif model_id in ("high", "high+low"):
+                    success = self.local_voice.uninstall_f5_tts()
+                else:
+                    logger.error(f"Unknown model_id for uninstall: {model_id}")
+                    success = False
         except Exception as e:
             logger.error(f"Uninstall exception for {model_id}: {e}", exc_info=True)
             success = False
@@ -552,6 +582,11 @@ class VoiceModelController:
         
         self.installation_in_progress = False
         self.view.uninstall_finished_signal.emit({"model_id": model_id, "success": success})
+        
+        if window:
+            if success and status_cb:
+                status_cb(_("Удаление завершено!", "Uninstallation complete!"))
+            QTimer.singleShot(3000 if success else 5000, window.close)
 
     def handle_download_result(self, success, model_id, models_to_mark_installed):
         if success:
@@ -624,7 +659,12 @@ class VoiceModelController:
 
     def save_and_quit(self):
         self.save_settings()
-        self.view.window().close()
+        # Ищем родительский диалог
+        if self.view:
+            dialog = self.view.window()
+            if dialog and hasattr(dialog, 'close'):
+                # Используем QTimer чтобы избежать блокировки
+                QTimer.singleShot(0, dialog.close)
 
     def open_doc(self, doc_name):
         self.docs_manager.open_doc(doc_name)

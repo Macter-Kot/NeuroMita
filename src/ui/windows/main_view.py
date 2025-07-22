@@ -196,6 +196,10 @@ class ChatGUI(QMainWindow):
         self.current_settings_category = None
         self.settings_containers = {}
 
+        
+        self._voice_model_dialog = None
+        self._voice_model_controller_callback = None
+
         self.update_chat_signal.connect(self._insert_message_slot)
         self.update_status_signal.connect(self.update_status_colors)
         self.update_debug_signal.connect(self.update_debug_info)
@@ -263,11 +267,46 @@ class ChatGUI(QMainWindow):
         self.create_dialog_signal.connect(self._create_dialog_for_voice_model)
 
     def _create_dialog_for_voice_model(self, data):
-        """Создает пустой диалог и возвращает его через callback"""
+        """Создает или показывает существующий диалог управления моделями"""
         try:
             from PyQt6.QtWidgets import QDialog, QVBoxLayout
             
-            # Создаем диалог
+            callback = data.get('callback')
+            
+            # Проверяем, существует ли диалог
+            dialog_exists = False
+            if self._voice_model_dialog:
+                try:
+                    # Пытаемся проверить, что диалог еще жив
+                    self._voice_model_dialog.isVisible()  # Это вызовет исключение если объект удален
+                    if self._voice_model_dialog.layout() and self._voice_model_dialog.layout().count() > 0:
+                        dialog_exists = True
+                except:
+                    # Диалог был удален или поврежден
+                    self._voice_model_dialog = None
+            
+            if dialog_exists:
+                # Диалог существует и содержит виджеты
+                # Всегда вызываем callback для обновления данных
+                if callback:
+                    callback(self._voice_model_dialog)
+                
+                # Показываем существующий диалог
+                self._voice_model_dialog.show()
+                self._voice_model_dialog.raise_()
+                self._voice_model_dialog.activateWindow()
+                return
+            
+            # Если диалог был поврежден, пытаемся его закрыть
+            if self._voice_model_dialog:
+                try:
+                    self._voice_model_dialog.close()
+                    self._voice_model_dialog.deleteLater()
+                except:
+                    pass
+                self._voice_model_dialog = None
+            
+            # Создаем новый диалог
             dialog = QDialog(self)
             dialog.setWindowTitle(_("Управление локальными моделями", "Manage Local Models"))
             dialog.setModal(False)
@@ -277,8 +316,18 @@ class ChatGUI(QMainWindow):
             dialog_layout = QVBoxLayout(dialog)
             dialog_layout.setContentsMargins(0, 0, 0, 0)
             
+            # Сохраняем ссылку на диалог
+            self._voice_model_dialog = dialog
+            
+            # При закрытии диалога НЕ удаляем контроллер
+            def on_dialog_closed():
+                # Просто скрываем диалог
+                if self._voice_model_dialog:
+                    self._voice_model_dialog.hide()
+            
+            dialog.finished.connect(on_dialog_closed)
+            
             # Вызываем callback с созданным диалогом
-            callback = data.get('callback')
             if callback:
                 callback(dialog)
             
@@ -290,6 +339,7 @@ class ChatGUI(QMainWindow):
             error_callback = data.get('error_callback')
             if error_callback:
                 error_callback(str(e))
+
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -1360,6 +1410,13 @@ class ChatGUI(QMainWindow):
         self.event_bus.emit(Events.Capture.STOP_CAMERA_CAPTURE)
         self.event_bus.emit(Events.Audio.DELETE_SOUND_FILES)
         self.event_bus.emit(Events.Server.STOP_SERVER)
+        if self._voice_model_dialog:
+            try:
+                self._voice_model_dialog.close()
+                self._voice_model_dialog.deleteLater()
+            except:
+                pass
+            self._voice_model_dialog = None
         logger.info("Закрываемся")
         event.accept()
 

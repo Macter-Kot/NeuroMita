@@ -1,12 +1,13 @@
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QMessageBox
+
 from main_logger import logger
 from core.events import Events, Event
 from .base_controller import BaseController
 from ui.windows.voice_action_windows import VoiceInstallationWindow, VoiceActionWindow
 from ui.windows.voice_action_windows import VCRedistWarningDialog, TritonDependenciesDialog
-from PyQt6.QtCore import pyqtSignal
 from utils import getTranslationVariant as _
+
+from PyQt6.QtWidgets import (QApplication, QMessageBox)
+from PyQt6.QtCore import QTimer, pyqtSignal, QThread
 
 class AudioModelController(BaseController):
 
@@ -58,7 +59,6 @@ class AudioModelController(BaseController):
             from controllers.voice_model_controller import VoiceModelController
             from PyQt6.QtCore import QTimer
             
-            
             # Получаем данные от AudioController
             audio_data = self.event_bus.emit_and_wait(Events.Audio.OPEN_VOICE_MODEL_SETTINGS, timeout=1.0)
             if not audio_data or not audio_data[0]:
@@ -99,19 +99,33 @@ class AudioModelController(BaseController):
                 )
                 return result[0] if result else False
             
-            # Сохраняем ссылку на контроллер
-            self._voice_model_controller = None
-            
             def on_dialog_created(dialog):
                 """Callback вызывается когда диалог создан в GUI потоке"""
-                # Создаем VoiceModelController с готовым диалогом
-                self._voice_model_controller = VoiceModelController(
-                    view_parent=dialog,
-                    config_dir=config_dir,
-                    on_save_callback=on_save_callback,
-                    local_voice=local_voice,
-                    check_installed_func=check_installed_func
-                )
+                # Проверяем, есть ли уже контроллер
+                if hasattr(self, '_voice_model_controller') and self._voice_model_controller:
+                    # Обновляем данные в существующем контроллере
+                    self._voice_model_controller.local_voice = local_voice
+                    self._voice_model_controller.load_installed_models_state()
+                    self._voice_model_controller.load_settings()
+                    
+                    # Проверяем, есть ли View в диалоге
+                    if dialog.layout().count() == 0:
+                        # View был потерян, пересоздаем
+                        self._voice_model_controller.view_parent = dialog
+                        self._voice_model_controller._create_view()
+                    else:
+                        # Обновляем данные в существующем View
+                        if self._voice_model_controller.view:
+                            self._voice_model_controller.view._initialize_data()
+                else:
+                    # Создаем новый контроллер
+                    self._voice_model_controller = VoiceModelController(
+                        view_parent=dialog,
+                        config_dir=config_dir,
+                        on_save_callback=on_save_callback,
+                        local_voice=local_voice,
+                        check_installed_func=check_installed_func
+                    )
             
             def on_error(error_msg):
                 logger.error(f"Ошибка создания диалога: {error_msg}")

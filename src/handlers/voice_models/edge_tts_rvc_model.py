@@ -20,7 +20,7 @@ from core.events import get_event_bus, Events
 
 from managers.settings_manager import SettingsManager
 
-from utils import getTranslationVariant as _
+from utils import getTranslationVariant as _, get_character_voice_paths
 
 class EdgeTTS_RVC_Model(IVoiceModel):
     def __init__(self, parent: 'LocalVoice', model_id: str):
@@ -160,8 +160,14 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 return False
             
             settings = self.parent.load_model_settings(current_mode)
-            device = settings.get("device", "cuda:0" if self.parent.provider == "NVIDIA" else "dml")
-            f0_method = settings.get("f0method", "rmvpe" if self.parent.provider == "NVIDIA" else "pm")
+            
+            # Для режима low+ используем специальные параметры
+            if current_mode == "low+":
+                device = settings.get("silero_rvc_device", "cuda:0" if self.parent.provider == "NVIDIA" else "dml")
+                f0_method = settings.get("silero_rvc_f0method", "rmvpe" if self.parent.provider == "NVIDIA" else "pm")
+            else:
+                device = settings.get("device", "cuda:0" if self.parent.provider == "NVIDIA" else "dml")
+                f0_method = settings.get("f0method", "rmvpe" if self.parent.provider == "NVIDIA" else "pm")
             
             is_nvidia = self.parent.provider in ["NVIDIA"]
             model_ext = 'pth' if is_nvidia else 'onnx'
@@ -174,7 +180,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
 
             self.current_tts_rvc = self.tts_rvc_module(model_path=model_path_to_use, device=device, f0_method=f0_method)
             self._adjust_sampling_rate_for_amd()
-            logger.info("Базовый компонент RVC инициализирован.")
+            logger.info(f"Базовый компонент RVC инициализирован с device={device}, f0_method={f0_method}")
         
         # Обновляем голос EdgeTTS в RVC в любом случае
         if self.parent.voice_language == "ru":
@@ -194,7 +200,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                     language = 'en' if self.parent.voice_language == 'en' else 'ru'
                     model_id_silero = 'v3_en' if language == 'en' else 'v4_ru'
                     
-                    logger.info(f"Загрузка модели Silero ({language}/{model_id_silero})...")
+                    logger.info(f"Загрузка модели Silero ({language}/{model_id_silero}) на устройство {silero_device}...")
                     model, _ = torch.hub.load(repo_or_dir='snakers4/silero-models', model='silero_tts', language=language, speaker=model_id_silero, trust_repo=True)
                     model.to(silero_device)
                     self.current_silero_model = model
@@ -242,19 +248,35 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         self.initialized = True
         return True
 
+
+    def _update_parent_paths(self, character=None):
+        """Обновляет пути в parent на основе персонажа"""
+        voice_paths = get_character_voice_paths(character, self.parent.provider)
+        self.parent.pth_path = voice_paths['pth_path']
+        self.parent.index_path = voice_paths['index_path']
+        self.parent.clone_voice_filename = voice_paths['clone_voice_filename']
+        self.parent.clone_voice_text = voice_paths['clone_voice_text']
+        self.parent.current_character_name = voice_paths['character_name']
+        logger.info(f"Обновлены пути в parent для персонажа: {voice_paths['character_name']}")
+
     async def voiceover(self, text: str, character: Optional[Any] = None, **kwargs) -> Optional[str]:
         current_mode = self.parent.current_model_id
         if not self.initialized:
             raise Exception(f"Обработчик не инициализирован для режима '{current_mode}'.")
+        
+        # Обновляем пути в parent перед озвучкой
+        logger.warning(f"VOICEOVER ПОЛУЧИЛ: {character}")
+        self._update_parent_paths(character)
             
         if current_mode == "low":
-            return await self._voiceover_edge_tts_rvc(text, **kwargs)
+            return await self._voiceover_edge_tts_rvc(text, character, **kwargs)
         elif current_mode == "low+":
             return await self._voiceover_silero_rvc(text, character)
         else:
             raise ValueError(f"Обработчик вызван с неизвестным режимом: {current_mode}")
 
     async def apply_rvc_to_file(self, filepath: str, 
+                               character: Optional[Any] = None,
                                pitch: float = 0,
                                index_rate: float = 0.75,
                                protect: float = 0.33,
@@ -270,6 +292,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         
         Параметры:
         - filepath: путь к входному аудиофайлу
+        - character: объект персонажа для получения путей к модели
         - pitch: изменение высоты тона (-24 до 24)
         - index_rate: коэффициент использования индексного файла (0.0 до 1.0)
         - protect: защита консонант от изменений (0.0 до 0.5)
@@ -289,6 +312,14 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         logger.info(f"Вызов RVC для файла: {filepath}")
         
         try:
+            # Обновляем пути в parent
+            self._update_parent_paths(character)
+            
+            # Получаем пути для персонажа
+            voice_paths = get_character_voice_paths(character, self.parent.provider)
+            model_path = voice_paths['pth_path']
+            index_path = voice_paths['index_path']
+            
             # Подготовка параметров инференса
             inference_params = {
                 "pitch": pitch,
@@ -305,27 +336,28 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 inference_params["f0method"] = f0method
             
             # Установка индексного файла
-            if use_index_file and self.parent.index_path and os.path.exists(self.parent.index_path):
-                self.current_tts_rvc.set_index_path(self.parent.index_path)
+            if use_index_file and index_path and os.path.exists(index_path):
+                self.current_tts_rvc.set_index_path(index_path)
             else:
                 self.current_tts_rvc.set_index_path("")
             
             self._adjust_sampling_rate_for_amd()
 
             # Обновление модели если необходимо
-            if os.path.abspath(self.parent.pth_path) != os.path.abspath(self.current_tts_rvc.current_model):
+            if os.path.abspath(model_path) != os.path.abspath(self.current_tts_rvc.current_model):
                 if self.parent.provider in ["NVIDIA"]:
-                    self.current_tts_rvc.current_model = self.parent.pth_path
+                    self.current_tts_rvc.current_model = model_path
                 elif self.parent.provider in ["AMD"]:
                     if hasattr(self.current_tts_rvc, 'set_model'):
-                        self.current_tts_rvc.set_model(self.parent.pth_path)
-                        logger.info(f'PTH ФАйл изменен на: {self.parent.pth_path}')
+                        self.current_tts_rvc.set_model(model_path)
+                        logger.info(f'RVC модель изменена на: {model_path}')
                     else:
-                        self.current_tts_rvc.current_model = self.parent.pth_path
-                        logger.info(f'PTH ФАйл изменен на: {self.parent.pth_path}')
+                        self.current_tts_rvc.current_model = model_path
+                        logger.info(f'RVC модель изменена на: {model_path}')
                         logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
             else:
-                logger.info(f'PTH ФАйл изменен на: {self.parent.pth_path}')
+                logger.info(f'RVC модель не изменилась: {model_path}')
+            
             # Применение RVC
             output_file_rvc = self.current_tts_rvc.voiceover_file(input_path=filepath, **inference_params)
             
@@ -355,33 +387,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             logger.info(f"Ошибка при применении RVC к файлу: {error}")
             return None
 
-    # def _get_fsprvc_params(self, settings: dict) -> dict:
-    #     """
-    #     Получает параметры для FSP+RVC модели.
-    #     Эта функция закомментирована для напоминания о FSP+RVC параметрах.
-    #     
-    #     Параметры FSP+RVC из настроек:
-    #     - fsprvc_rvc_pitch: высота тона для RVC
-    #     - fsprvc_index_rate: коэффициент использования индекса 
-    #     - fsprvc_protect: защита консонант
-    #     - fsprvc_filter_radius: радиус медианного фильтра
-    #     - fsprvc_rvc_rms_mix_rate: коэффициент смешивания RMS
-    #     - fsprvc_is_half: использовать половинную точность
-    #     - fsprvc_f0method: метод извлечения F0
-    #     - fsprvc_use_index_file: использовать индексный файл
-    #     """
-    #     return {
-    #         "pitch": float(settings.get("fsprvc_rvc_pitch", 0)),
-    #         "index_rate": float(settings.get("fsprvc_index_rate", 0.75)),
-    #         "protect": float(settings.get("fsprvc_protect", 0.33)),
-    #         "filter_radius": int(settings.get("fsprvc_filter_radius", 3)),
-    #         "rms_mix_rate": float(settings.get("fsprvc_rvc_rms_mix_rate", 0.5)),
-    #         "is_half": settings.get("fsprvc_is_half", "True").lower() == "true",
-    #         "f0method": settings.get("fsprvc_f0method", None),
-    #         "use_index_file": settings.get("fsprvc_use_index_file", True)
-    #     }
-
-    async def _voiceover_edge_tts_rvc(self, text, TEST_WITH_DONE_AUDIO: str = None, settings_model_id: Optional[str] = None):
+    async def _voiceover_edge_tts_rvc(self, text, character=None, TEST_WITH_DONE_AUDIO: str = None, settings_model_id: Optional[str] = None):
         if self.current_tts_rvc is None:
             raise Exception("Компонент RVC не инициализирован.")
         try:
@@ -389,9 +395,15 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             settings = self.parent.load_model_settings(config_id)
             logger.info(f"RVC использует конфигурацию от модели: '{config_id}'")
 
+            # Получаем пути для персонажа
+            voice_paths = get_character_voice_paths(character, self.parent.provider)
+            model_path = voice_paths['pth_path']
+            index_path = voice_paths['index_path'] 
+            character_name = voice_paths['character_name']
+
             # Получаем параметры из настроек
             pitch = float(settings.get("pitch", 0))
-            if self.parent.current_character_name == "Player" and config_id != "medium+low":
+            if character_name == "Player" and config_id != "medium+low":
                 pitch = -12
             
             index_rate = float(settings.get("index_rate", 0.75))
@@ -404,8 +416,8 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             tts_rate = int(settings.get("tts_rate", 0)) if config_id != "medium+low" else 0
             vol = str(settings.get("volume", "1.0")) 
 
-            if use_index_file and self.parent.index_path and os.path.exists(self.parent.index_path):
-                self.current_tts_rvc.set_index_path(self.parent.index_path)
+            if use_index_file and index_path and os.path.exists(index_path):
+                self.current_tts_rvc.set_index_path(index_path)
             else:
                 self.current_tts_rvc.set_index_path("")
             
@@ -416,15 +428,20 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             if f0method_override:
                 inference_params["f0method"] = f0method_override
             
-            if os.path.abspath(self.parent.pth_path) != os.path.abspath(self.current_tts_rvc.current_model):
+            # Локальная переменная для отслеживания смены модели
+            current_model_abs = os.path.abspath(self.current_tts_rvc.current_model)
+            model_path_abs = os.path.abspath(model_path)
+            
+            if current_model_abs != model_path_abs:
                 if self.parent.provider in ["NVIDIA"]:
-                    self.current_tts_rvc.current_model = self.parent.pth_path
+                    self.current_tts_rvc.current_model = model_path
                 elif self.parent.provider in ["AMD"]:
                     if hasattr(self.current_tts_rvc, 'set_model'):
-                        self.current_tts_rvc.set_model(self.parent.pth_path)
+                        self.current_tts_rvc.set_model(model_path)
                     else:
-                        self.current_tts_rvc.current_model = self.parent.pth_path
+                        self.current_tts_rvc.current_model = model_path
                         logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
+                logger.info(f"RVC модель изменена на: {model_path}")
 
             self._adjust_sampling_rate_for_amd()
 
@@ -441,9 +458,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             converted_file = self.parent.convert_wav_to_stereo(output_file_rvc, 
                                                                stereo_output_file, 
                                                                atempo=1.0, 
-                                                               volume=vol,
-                                                               #pitch=(4 if self.parent.current_character_name == 'ShorthairMita' and self.parent.provider in ['AMD'] else 0)
-                                                               )
+                                                               volume=vol)
 
             if converted_file and os.path.exists(converted_file):
                 final_output_path = stereo_output_file
@@ -461,7 +476,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             logger.info(f"Ошибка при создании озвучки с Edge-TTS + RVC: {error}")
             return None
 
-    def _preprocess_text_to_ssml(self, text: str):
+    def _preprocess_text_to_ssml(self, text: str, character_name: str):
         lang = self.parent.voice_language
         defaults = {'en': {'pitch': 6, 'speaker': "en_88"}, 'ru': {'pitch': 2, 'speaker': "kseniya"}}
         lang_defaults = defaults.get(lang, defaults['en'])
@@ -470,7 +485,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             'ru': {"CappieMita": (6, "kseniya"), "MitaKind": (1, "kseniya"), "ShorthairMita": (2, "kseniya"), "CrazyMita": (2, "kseniya"), "Mila": (2, "kseniya"), "TinyMita": (-3, "baya"), "SleepyMita": (2, "baya"), "GhostMita": (1, "baya"), "Player": (0, "aidar")}
         }
         character_rvc_pitch, character_speaker = lang_defaults['pitch'], lang_defaults['speaker']
-        character_short_name = self.parent.current_character_name
+        character_short_name = character_name
         current_lang_params = char_params.get(lang, char_params['en'])
         if specific_params := current_lang_params.get(character_short_name):
             character_rvc_pitch, character_speaker = specific_params
@@ -533,12 +548,20 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         self.parent.current_character = character if character is not None else getattr(self.parent, 'current_character', None)
         temp_wav = None
         try:
-            ssml_text, character_base_rvc_pitch, character_speaker = self._preprocess_text_to_ssml(text)
+            # Получаем пути для персонажа
+            voice_paths = get_character_voice_paths(character, self.parent.provider)
+            character_name = voice_paths['character_name']
+            
+            ssml_text, character_base_rvc_pitch, character_speaker = self._preprocess_text_to_ssml(text, character_name)
             settings = self.parent.load_model_settings('low+')
             
+            # Параметры для Silero TTS
             audio_tensor = self.current_silero_model.apply_tts(
-                ssml_text=ssml_text, speaker=character_speaker, sample_rate=self.current_silero_sample_rate,
-                put_accent=settings.get("silero_put_accent", True), put_yo=settings.get("silero_put_yo", True)
+                ssml_text=ssml_text, 
+                speaker=character_speaker, 
+                sample_rate=self.current_silero_sample_rate,
+                put_accent=settings.get("silero_put_accent", True), 
+                put_yo=settings.get("silero_put_yo", True)
             )
             
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav_file:
@@ -546,37 +569,18 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             sf.write(temp_wav, audio_tensor.cpu().numpy(), self.current_silero_sample_rate)
             
             if not os.path.exists(temp_wav) or os.path.getsize(temp_wav) == 0:
-                 return None
+                return None
 
             # Подготовка параметров RVC для Silero
             base_rvc_pitch_from_settings = float(settings.get("silero_rvc_pitch", 6))
             final_rvc_pitch = base_rvc_pitch_from_settings - (6 - character_base_rvc_pitch)
 
-            # Настройка модели RVC для персонажа
-            is_nvidia = self.parent.provider in ["NVIDIA"]
-            model_ext = 'pth' if is_nvidia else 'onnx'
-            rvc_model_short_name = str(getattr(character, 'short_name', "Mila"))
-            self.parent.pth_path = os.path.join(self.parent.clone_voice_folder, f"{rvc_model_short_name}.{model_ext}")
-            self.parent.index_path = os.path.join(self.parent.clone_voice_folder, f"{rvc_model_short_name}.index")
-            if not os.path.exists(self.parent.pth_path): 
-                raise Exception(f"Файл модели RVC не найден: {self.parent.pth_path}")
-
-            if os.path.abspath(self.parent.pth_path) != os.path.abspath(getattr(self.current_tts_rvc, 'current_model', '')):
-                logger.info(f"Смена RVC модели на: {self.parent.pth_path}")
-                if self.parent.provider in ["NVIDIA"]:
-                    self.current_tts_rvc.current_model = self.parent.pth_path
-                elif self.parent.provider in ["AMD"]:
-                    if hasattr(self.current_tts_rvc, 'set_model'):
-                        self.current_tts_rvc.set_model(self.parent.pth_path)
-                    else:
-                        self.current_tts_rvc.current_model = self.parent.pth_path
-                        logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
-
             vol = str(settings.get("volume", "1.0")) 
 
-            # Применение RVC через общую функцию
+            # Применение RVC через общую функцию с правильными параметрами
             final_output_path = await self.apply_rvc_to_file(
                 filepath=temp_wav,
+                character=character,
                 pitch=final_rvc_pitch,
                 index_rate=float(settings.get("silero_rvc_index_rate", 0.75)),
                 protect=float(settings.get("silero_rvc_protect", 0.33)),
@@ -584,10 +588,9 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 rms_mix_rate=float(settings.get("silero_rvc_rms_mix_rate", 0.5)),
                 is_half=settings.get("silero_rvc_is_half", "True").lower() == "true" if self.parent.provider == "NVIDIA" else True,
                 f0method=settings.get("silero_rvc_f0method", None),
-                use_index_file=settings.get("use_index_file", True),
+                use_index_file=settings.get("silero_rvc_use_index_file", True),
                 volume=vol
             )
-            
             
             connected_to_game = self.events.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game:

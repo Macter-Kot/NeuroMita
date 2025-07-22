@@ -7,6 +7,7 @@ from num2words import num2words
 
 from main_logger import logger
 from managers.settings_manager import SettingsManager
+from utils.gpu_utils import check_gpu_provider
 
 
 def clamp(value, min_value, max_value):
@@ -20,6 +21,47 @@ def getTranslationVariant(ru_str, en_str=""):
 
 
 _ = getTranslationVariant  # Временно, мб
+
+def get_character_voice_paths(character=None, provider=None):
+    """
+    Возвращает все пути для голосовой модели персонажа.
+    
+    Args:
+        character: Объект персонажа или словарь с полем/ключом 'short_name'
+        provider: GPU провайдер ("NVIDIA", "AMD", и т.д.). Если None, определяется автоматически.
+    
+    Returns:
+        dict: Словарь с путями:
+            - pth_path: путь к файлу модели (.pth или .onnx)
+            - index_path: путь к индексному файлу
+            - clone_voice_filename: путь к эталонному аудио
+            - clone_voice_text: путь к текстовому файлу
+            - character_name: короткое имя персонажа
+    """
+    if provider is None:
+        provider = check_gpu_provider()
+    
+    is_nvidia = provider in ["NVIDIA"]
+    model_ext = 'pth' if is_nvidia else 'onnx'
+    clone_voice_folder = "Models"
+    
+    short_name = "Mila"  # значение по умолчанию
+    
+    if character:
+        # Проверяем, является ли character словарем
+        if isinstance(character, dict):
+            short_name = str(character.get('short_name', 'Mila'))
+        # Иначе пробуем как объект с атрибутом
+        elif hasattr(character, 'short_name'):
+            short_name = str(character.short_name)
+    
+    return {
+        'pth_path': os.path.join(clone_voice_folder, f"{short_name}.{model_ext}"),
+        'index_path': os.path.join(clone_voice_folder, f"{short_name}.index"),
+        'clone_voice_filename': os.path.join(clone_voice_folder, f"{short_name}.wav"),
+        'clone_voice_text': os.path.join(clone_voice_folder, f"{short_name}.txt"),
+        'character_name': short_name
+    }
 
 def load_text_from_file(filename):
     """
@@ -136,7 +178,6 @@ def SH(s, placeholder="***", percent=0.20):
     # Собираем результат
     return f"{start}{placeholder}{end}"
 
-#Замена чисел на слова в русском тексте
 def replace_numbers_with_words(text):
     numbers = re.findall(r'\d+', text)
     for number in numbers:
@@ -177,11 +218,3 @@ def process_text_to_voice(text_to_speak: str) -> str:
         logger.info("TTS text was empty after cleaning, using default '...'")
 
     return clean_text.strip()
-
-# text = load_text_from_file("Prompts/Common/None.txt")
-# logger.info(text)
-# textEncoded = shift_chars(text,1)
-# logger.info(textEncoded)
-# textDecoded = shift_chars(textEncoded,-1)
-# logger.info(textDecoded)
-#

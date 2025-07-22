@@ -37,7 +37,7 @@ from handlers.voice_models.f5_tts_model import F5TTSModel
 from docs import DocsManager
 from main_logger import logger
 
-from utils import getTranslationVariant as _
+from utils import getTranslationVariant as _, get_character_voice_paths
 
 
 from PyQt6.QtCore import QMetaObject, QThread, Qt, QObject
@@ -150,13 +150,12 @@ class LocalVoice:
         logger.info(f"Попытка инициализации и активации модели '{model_id}'...")
 
         # Шаг 2: Устанавливаем пути по умолчанию ДО инициализации
-        is_nvidia = self.provider in ["NVIDIA"]
-        model_ext = 'pth' if is_nvidia else 'onnx'
-        self.pth_path = os.path.join(self.clone_voice_folder, f"Mila.{model_ext}")
-        self.index_path = os.path.join(self.clone_voice_folder, "Mila.index")
-        self.clone_voice_filename = os.path.join(self.clone_voice_folder, "Mila.wav")
-        self.clone_voice_text = os.path.join(self.clone_voice_folder, "Mila.txt")
-        self.current_character_name = "Mila"
+        voice_paths = get_character_voice_paths(None, self.provider)
+        self.pth_path = voice_paths['pth_path']
+        self.index_path = voice_paths['index_path']
+        self.clone_voice_filename = voice_paths['clone_voice_filename']
+        self.clone_voice_text = voice_paths['clone_voice_text']
+        self.current_character_name = voice_paths['character_name']
 
         # Шаг 3: Вызываем инициализацию. Дочерний метод теперь достаточно умен,
         # чтобы догрузить/выгрузить компоненты по необходимости.
@@ -184,21 +183,26 @@ class LocalVoice:
                      raise Exception(f"Не удалось инициализировать модель '{self.current_model_id}'.")
             else:
                  raise ValueError("Модель не выбрана или не инициализирована.")
+        logger.info(f"Запуск озвучки c персонажем: {character} ")
+
         if character is not None:
+            logger.info(f"НО ЗАШЕЛ Я В NOT NONE")
             self.current_character = character
-            is_nvidia = self.provider in ["NVIDIA"]
-            short_name = str(getattr(character, 'short_name', "Mila"))
-            self.current_character_name = short_name
-            self.pth_path = os.path.join(self.clone_voice_folder, f"{short_name}.{'pth' if is_nvidia else 'onnx'}")
-            self.index_path = os.path.join(self.clone_voice_folder, f"{short_name}.index")
-            self.clone_voice_filename = os.path.join(self.clone_voice_folder, f"{short_name}.wav")
-            self.clone_voice_text = os.path.join(self.clone_voice_folder, f"{short_name}.txt")
+            voice_paths = get_character_voice_paths(character, self.provider)
+            self.current_character_name = voice_paths['character_name']
+            self.pth_path = voice_paths['pth_path']
+            self.index_path = voice_paths['index_path']
+            self.clone_voice_filename = voice_paths['clone_voice_filename']
+            self.clone_voice_text = voice_paths['clone_voice_text']
         else:
-            self.current_character_name = "Mila"
-            self.pth_path = os.path.join(self.clone_voice_folder, "Mila.pth")
-            self.index_path = os.path.join(self.clone_voice_folder, "Mila.index")
-            self.clone_voice_filename = os.path.join(self.clone_voice_folder, "Mila.wav")
-            self.clone_voice_text = os.path.join(self.clone_voice_folder, "Mila.txt")
+            logger.info(f"НО ЗАШЕЛ Я В NONE")
+            voice_paths = get_character_voice_paths(None, self.provider)
+            self.current_character_name = voice_paths['character_name']
+            self.pth_path = voice_paths['pth_path']
+            self.index_path = voice_paths['index_path']
+            self.clone_voice_filename = voice_paths['clone_voice_filename']
+            self.clone_voice_text = voice_paths['clone_voice_text']
+        
         return await self.active_model_instance.voiceover(text, character)
 
     # =========================================================================

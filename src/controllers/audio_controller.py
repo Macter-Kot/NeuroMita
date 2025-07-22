@@ -245,8 +245,8 @@ class AudioController:
         result_path = None
         try:
             
-            current_char_data = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER)[0]
-            character = current_char_data['name'] if current_char_data else None
+            character = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER)[0]
+            logger.warning(f"КАКАЯ НАХЕР МИЛА? : {character}")
             
             output_file = f"MitaVoices/output_{uuid.uuid4()}.wav"
             absolute_audio_path = os.path.abspath(output_file)

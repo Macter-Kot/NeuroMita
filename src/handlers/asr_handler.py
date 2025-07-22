@@ -208,7 +208,7 @@ class SpeechRecognition:
         text_clean = recognized_text.strip()
         if text_clean:
             event_bus = get_event_bus()
-            event_bus.emit(Events.SPEECH_TEXT_RECOGNIZED, {'text': text_clean})
+            event_bus.emit(Events.Speech.SPEECH_TEXT_RECOGNIZED, {'text': text_clean})
 
     @staticmethod
     async def live_recognition() -> None:

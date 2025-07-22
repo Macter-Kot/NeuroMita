@@ -192,3 +192,4 @@ web/vtt/models/*
 /init.py
 /include
 /ActualAssetbundles
+update_event_signatures.py

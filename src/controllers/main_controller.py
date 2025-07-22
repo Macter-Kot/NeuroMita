@@ -1,7 +1,4 @@
 import os
-import asyncio
-import threading
-import tempfile
 import time
 from pathlib import Path
 from PyQt6.QtCore import QTimer
@@ -27,20 +24,11 @@ class MainController:
     def __init__(self, view):
         self.view = view
         self.event_bus = get_event_bus()
-        
-
-        self.ConnectedToGame = False
 
         self.dialog_active = False
 
-        self.lazy_load_batch_size = 50
-        self.total_messages_in_history = 0
-        self.loaded_messages_offset = 0
-        self.loading_more_history = False
 
-        self.staged_images = []
-
-        self.loop_controller = LoopController(self)
+        self.loop_controller = LoopController()
         logger.warning("LoopController успешно инициализирован.")
 
         self.gui_controller = None
@@ -54,11 +42,11 @@ class MainController:
             os.makedirs(target_folder, exist_ok=True)
             self.config_path = os.path.join(target_folder, "settings.json")
 
-            self.settings_controller = SettingsController(self, self.config_path)
+            self.settings_controller = SettingsController(self.config_path)
             self.settings = self.settings_controller.settings
         except Exception as e:
             logger.info("Не удалось удачно получить из системных переменных все данные", e)
-            self.settings = SettingsController(self, "Settings/settings.json").settings
+            self.settings = SettingsController("Settings/settings.json").settings
 
         try:
             self.pip_installer = PipInstaller(
@@ -76,11 +64,11 @@ class MainController:
         
         self.audio_controller = AudioController(self)
         logger.warning("AudioController успешно инициализирован.")
-        self.model_controller = ModelController(self, "", "", "", "", False, self.pip_installer)
+        self.model_controller = ModelController(self.settings, self.pip_installer)
         logger.warning("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self.settings)
         logger.warning("CaptureController успешно инициализирован.")
-        self.speech_controller = SpeechController(self)
+        self.speech_controller = SpeechController()
         logger.warning("SpeechController успешно инициализирован.")
         self.server_controller = ServerController()
         logger.warning("ServerController успешно инициализирован.")
@@ -102,54 +90,20 @@ class MainController:
             self.gui_controller = GuiController(self, view)
             logger.warning("GuiController успешно инициализирован.")
             self.settings_controller.load_api_settings(False)
+            # в этой логике надо добавить автоподключение.
             if self.settings.get('VOICEOVER_METHOD') == 'TG' and self.settings.get('USE_VOICEOVER', False):
                 self.telegram_controller.start_silero_async()
     
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.CLEAR_CHAT, self._on_clear_chat, weak=False)
+        self.event_bus.subscribe(Events.Model.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
         
-        self.event_bus.subscribe(Events.SAVE_SETTING, self._on_save_setting, weak=False)
-        self.event_bus.subscribe(Events.GET_SETTING, self._on_get_setting, weak=False)
+        self.event_bus.subscribe(Events.Telegram.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
+        self.event_bus.subscribe(Events.Telegram.REQUEST_TG_PASSWORD, self._on_request_tg_password, weak=False)
         
-        self.event_bus.subscribe(Events.STAGE_IMAGE, self._on_stage_image, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_STAGED_IMAGES, self._on_clear_staged_images, weak=False)
-        
-        self.event_bus.subscribe(Events.GET_CONNECTION_STATUS, self._on_get_connection_status, weak=False)
-        
-        self.event_bus.subscribe(Events.SCHEDULE_G4F_UPDATE, self._on_schedule_g4f_update, weak=False)
-        
-        self.event_bus.subscribe(Events.REQUEST_TG_CODE, self._on_request_tg_code, weak=False)
-        self.event_bus.subscribe(Events.REQUEST_TG_PASSWORD, self._on_request_tg_password, weak=False)
-        
-        self.event_bus.subscribe(Events.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
-        self.event_bus.subscribe(Events.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
+        self.event_bus.subscribe(Events.GUI.SHOW_LOADING_POPUP, self._on_show_loading_popup, weak=False)
+        self.event_bus.subscribe(Events.GUI.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
-        self.event_bus.subscribe(Events.UPDATE_GAME_CONNECTION, self._on_update_game_connection, weak=False)
-        self.event_bus.subscribe(Events.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
-        self.event_bus.subscribe(Events.GET_SETTINGS, self._on_get_settings, weak=False)
-        self.event_bus.subscribe(Events.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
-        self.event_bus.subscribe(Events.SET_CONNECTED_TO_GAME, self._on_set_connected_to_game, weak=False)
-        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
-
-    def all_settings_actions(self, key, value):
-        self.settings_controller.all_settings_actions(key, value)
-
-    def update_game_connection(self, is_connected):
-        self.ConnectedToGame = is_connected
-        self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
-
-    def stage_image_bytes(self, img_bytes: bytes) -> int:
-        fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="nm_clip_")
-        os.close(fd)
-        with open(tmp_path, "wb") as f:
-            f.write(img_bytes)
-
-        self.staged_images.append(tmp_path)
-        logger.info(f"Clipboard image staged: {tmp_path}")
-        return len(self.staged_images)
-
-    def clear_staged_images(self):
-        self.staged_images.clear()
+        self.event_bus.subscribe(Events.Server.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")
@@ -159,11 +113,11 @@ class MainController:
         self.audio_controller.delete_all_sound_files()
         
         try:
-            self.event_bus.emit(Events.STOP_SERVER)
+            self.event_bus.emit(Events.Server.STOP_SERVER)
         except Exception as e:
             logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
         
-        self.event_bus.emit(Events.STOP_SPEECH_RECOGNITION)
+        self.event_bus.emit(Events.Speech.STOP_SPEECH_RECOGNITION)
         time.sleep(2)
         
         self.loop_controller.stop_loop()
@@ -212,37 +166,7 @@ class MainController:
         else:
             logger.info("Нет запланированных обновлений g4f.")
     
-    def _on_clear_chat(self, event: Event):
-        pass
     
-    def _on_save_setting(self, event: Event):
-        key = event.data.get('key')
-        value = event.data.get('value')
-        
-        if key:
-            self.settings.set(key, value)
-            self.settings.save_settings()
-            self.all_settings_actions(key, value)
-    
-    def _on_get_setting(self, event: Event):
-        key = event.data.get('key')
-        default = event.data.get('default', None)
-        
-        return self.settings.get(key, default)
-    
-    def _on_stage_image(self, event: Event):
-        image_data = event.data.get('image_data')
-        if image_data:
-            if isinstance(image_data, bytes):
-                self.stage_image_bytes(image_data)
-            elif isinstance(image_data, str):
-                self.staged_images.append(image_data)
-    
-    def _on_clear_staged_images(self, event: Event):
-        self.clear_staged_images()
-    
-    def _on_get_connection_status(self, event: Event):
-        return self.ConnectedToGame
     
     def _on_schedule_g4f_update(self, event: Event):
         version = event.data.get('version', 'latest')
@@ -275,29 +199,6 @@ class MainController:
     def _on_close_loading_popup(self, event: Event):
         self.event_bus.emit("hide_loading_popup")
 
-    def _on_update_game_connection(self, event: Event):
-        is_connected = event.data.get('is_connected', False)
-        self.update_game_connection(is_connected)
-
     def _on_set_dialog_active(self, event: Event):
         self.dialog_active = event.data.get('active', False)
-
-    def _on_get_settings(self, event: Event):
-        return self.settings.settings
     
-    def _on_set_waiting_answer(self, event: Event):
-        self.audio_controller.waiting_answer = event.data.get('waiting', False)
-
-    def _on_set_connected_to_game(self, event: Event):
-        self.ConnectedToGame = event.data.get('connected', False)
-
-    def _on_setting_changed(self, event: Event):
-        key = event.data.get('key')
-        value = event.data.get('value')
-        
-        # MainController не обрабатывает никакие специфичные настройки
-        pass
-
-    @property
-    def loop(self):
-        return self.loop_controller.loop

@@ -40,14 +40,14 @@ class CaptureController:
         self.event_bus.subscribe("update_screen_capture_exclusion", self._on_update_screen_capture_exclusion, weak=False)
         self.event_bus.subscribe("check_image_request_timer_running", self._on_check_image_request_timer_running, weak=False)
         self.event_bus.subscribe("trigger_send_interval_image", self._on_trigger_send_interval_image, weak=False)
-        self.event_bus.subscribe(Events.GET_SCREEN_CAPTURE_STATUS, self._on_get_screen_capture_status, weak=False)
-        self.event_bus.subscribe(Events.GET_CAMERA_CAPTURE_STATUS, self._on_get_camera_capture_status, weak=False)
-        self.event_bus.subscribe(Events.UPDATE_LAST_IMAGE_REQUEST_TIME, self._on_update_last_image_request_time, weak=False)
-        self.event_bus.subscribe(Events.CAPTURE_SCREEN, self._on_capture_screen, weak=False)
-        self.event_bus.subscribe(Events.GET_CAMERA_FRAMES, self._on_get_camera_frames, weak=False)
-        self.event_bus.subscribe(Events.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
-        self.event_bus.subscribe(Events.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
-        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.Capture.GET_SCREEN_CAPTURE_STATUS, self._on_get_screen_capture_status, weak=False)
+        self.event_bus.subscribe(Events.Capture.GET_CAMERA_CAPTURE_STATUS, self._on_get_camera_capture_status, weak=False)
+        self.event_bus.subscribe(Events.Capture.UPDATE_LAST_IMAGE_REQUEST_TIME, self._on_update_last_image_request_time, weak=False)
+        self.event_bus.subscribe(Events.Capture.CAPTURE_SCREEN, self._on_capture_screen, weak=False)
+        self.event_bus.subscribe(Events.Capture.GET_CAMERA_FRAMES, self._on_get_camera_frames, weak=False)
+        self.event_bus.subscribe(Events.Capture.STOP_SCREEN_CAPTURE, self._on_stop_screen_capture, weak=False)
+        self.event_bus.subscribe(Events.Capture.STOP_CAMERA_CAPTURE, self._on_stop_camera_capture, weak=False)
+        self.event_bus.subscribe(Events.Core.SETTING_CHANGED, self._on_setting_changed, weak=False)
 
     def _on_capture_settings_loaded(self, event: Event):
         if self.settings:
@@ -150,7 +150,7 @@ class CaptureController:
 
             hwnd_to_pass = None
             if exclude_gui:
-                hwnd_to_pass = self.event_bus.emit_and_wait(Events.GET_GUI_WINDOW_ID, timeout=0.5)
+                hwnd_to_pass = self.event_bus.emit_and_wait(Events.GUI.GET_GUI_WINDOW_ID, timeout=0.5)
                 hwnd_to_pass = hwnd_to_pass[0] if hwnd_to_pass else None
                 logger.info(f"Получен HWND окна GUI для исключения: {hwnd_to_pass}")
             elif exclude_title:
@@ -177,6 +177,9 @@ class CaptureController:
         elif key == "IMAGE_REQUEST_INTERVAL":
             self.stop_image_request_timer()
             self.start_image_request_timer()
+
+        if key in ["MIC_ACTIVE", "ENABLE_SCREEN_ANALYSIS", "ENABLE_CAMERA_CAPTURE"]:
+            self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
     
     def start_screen_capture_thread(self):
         if not self.screen_capture_running:
@@ -203,7 +206,7 @@ class CaptureController:
             self.screen_capture_active = True
             if self.settings.get("SEND_IMAGE_REQUESTS", 1):
                 self.start_image_request_timer()
-            self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+            self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
             
     def stop_screen_capture_thread(self):
         if self.screen_capture_running:
@@ -211,7 +214,7 @@ class CaptureController:
             self.screen_capture_running = False
             logger.info("Поток захвата экрана остановлен.")
         self.screen_capture_active = False
-        self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+        self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
         
     def start_camera_capture_thread(self):
         if not self.settings:
@@ -236,14 +239,14 @@ class CaptureController:
                                               capture_height)
             logger.info(f"Поток захвата с камеры запущен с индексом {camera_index}")
             self.camera_capture_active = True
-            self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+            self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
             
     def stop_camera_capture_thread(self):
         if hasattr(self, 'camera_capture') and self.camera_capture is not None and self.camera_capture.is_running():
             self.camera_capture.stop_capture()
             logger.info("Поток захвата с камеры остановлен.")
         self.camera_capture_active = False
-        self.event_bus.emit(Events.UPDATE_STATUS_COLORS)
+        self.event_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
         
     def start_image_request_timer(self):
         if not self.image_request_timer_running:

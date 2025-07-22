@@ -9,8 +9,7 @@ from core.events import get_event_bus, Events, Event
 # Контроллер для работы с циклом событий asyncio
 
 class LoopController:
-    def __init__(self, main_controller):
-        self.main_controller = main_controller
+    def __init__(self):
         self.event_bus = get_event_bus()
         
         self.loop_ready_event = threading.Event()
@@ -22,8 +21,8 @@ class LoopController:
         logger.info("LoopController успешно инициализирован.")
     
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.GET_EVENT_LOOP, self._on_get_event_loop, weak=False)
-        self.event_bus.subscribe(Events.RUN_IN_LOOP, self._on_run_in_loop, weak=False)
+        self.event_bus.subscribe(Events.Core.GET_EVENT_LOOP, self._on_get_event_loop, weak=False)
+        self.event_bus.subscribe(Events.Core.RUN_IN_LOOP, self._on_run_in_loop, weak=False)
     
     def start_asyncio_loop(self):
         try:
@@ -33,7 +32,7 @@ class LoopController:
             self.loop_ready_event.set()
             
             # Публикуем событие о готовности loop
-            self.event_bus.emit(Events.LOOP_READY, {'loop': self.loop})
+            self.event_bus.emit(Events.Core.LOOP_READY, {'loop': self.loop})
             
             try:
                 self.loop.run_forever()

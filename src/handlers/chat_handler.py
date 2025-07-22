@@ -373,7 +373,7 @@ class ChatModel:
 
                 if not success or not llm_response_content:
                     logger.warning("LLM generation failed or returned empty.")
-                    self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': translate("Не удалось получить ответ.", "Text generation failed.")})
+                    self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': translate("Не удалось получить ответ.", "Text generation failed.")})
                     return None
 
                 processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
@@ -436,12 +436,12 @@ class ChatModel:
                 self.current_character.save_character_state_to_history(llm_messages_history_limited)
 
 
-                self.event_bus.emit(Events.ON_SUCCESSFUL_RESPONSE)
+                self.event_bus.emit(Events.Model.ON_SUCCESSFUL_RESPONSE)
                 return final_response_text
 
             except Exception as e:
                 logger.error(f"Error during LLM response generation or processing: {e}", exc_info=True)
-                self.event_bus.emit(Events.ON_FAILED_RESPONSE, {'error': str(e)})
+                self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': str(e)})
                 return f"Ошибка: {e}"
 
     def process_history_compression(self,llm_messages_history):
@@ -540,7 +540,7 @@ class ChatModel:
         self._log_generation_start()
 
         
-        self.event_bus.emit(Events.ON_STARTED_RESPONSE_GENERATION)
+        self.event_bus.emit(Events.Model.ON_STARTED_RESPONSE_GENERATION)
 
         # Region Tools
 
@@ -623,7 +623,7 @@ class ChatModel:
 
             if attempt < max_attempts:
                 logger.info(f"Waiting {retry_delay}s before next attempt...")
-                self.event_bus.emit(Events.ON_FAILED_RESPONSE_ATTEMPT)
+                self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE_ATTEMPT)
                 time.sleep(retry_delay)
 
         logger.error("All generation attempts failed.")
@@ -1340,7 +1340,7 @@ class ChatModel:
             combined_messages.extend(event_system_infos)
 
         # 4. Текущий ввод пользователя (если есть)
-        user_input = self.event_bus.emit_and_wait(Events.GET_USER_INPUT)
+        user_input = self.event_bus.emit_and_wait(Events.Speech.GET_USER_INPUT)
         user_input_from_gui = user_input[0] if user_input else ""
 
         if user_input_from_gui:

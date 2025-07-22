@@ -32,7 +32,7 @@ class TelegramBotHandler:
         self.last_send_time = -1
 
         # Получаем настройки через событие
-        settings_result = self.event_bus.emit_and_wait(Events.GET_SETTINGS, timeout=1.0)
+        settings_result = self.event_bus.emit_and_wait(Events.Settings.GET_SETTINGS, timeout=1.0)
         settings = settings_result[0] if settings_result else {}
         
         self.silero_time_limit = int(settings.get("SILERO_TIME", "10"))
@@ -148,7 +148,7 @@ class TelegramBotHandler:
             connection_result = await asyncio.get_event_loop().run_in_executor(
                 None, 
                 self.event_bus.emit_and_wait,
-                Events.GET_CONNECTION_STATUS,
+                Events.Server.GET_GAME_CONNECTION,
                 {},
                 1.0
             )
@@ -168,9 +168,9 @@ class TelegramBotHandler:
                     logger.info(f"Ошибка при удалении файла {sound_absolute_path}: {remove_error}")
 
                 # Устанавливаем данные через события
-                self.event_bus.emit(Events.SET_PATCH_TO_SOUND_FILE, absolute_wav_path)
+                self.event_bus.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, absolute_wav_path)
                 logger.info(f"Файл установлен серверу: {absolute_wav_path}")
-                self.event_bus.emit_and_wait(Events.SET_ID_SOUND, {'id': message_id})
+                self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
                 logger.info(f"Установленный файлу message_Id: {message_id}")
             else:
                 logger.info(f"Отправлен воспроизводится: {sound_absolute_path}")
@@ -187,7 +187,7 @@ class TelegramBotHandler:
             loop_results = await asyncio.get_event_loop().run_in_executor(
                 None,
                 self.event_bus.emit_and_wait,
-                Events.GET_EVENT_LOOP,
+                Events.Core.GET_EVENT_LOOP,
                 {},
                 1.0
             )
@@ -198,14 +198,14 @@ class TelegramBotHandler:
                     await self.client.send_code_request(self.phone)
                     
                     code_future = loop.create_future()
-                    self.event_bus.emit(Events.PROMPT_FOR_TG_CODE, {'future': code_future})
+                    self.event_bus.emit(Events.Telegram.PROMPT_FOR_TG_CODE, {'future': code_future})
                     verification_code = await code_future
                     
                     try:
                         await self.client.sign_in(phone=self.phone, code=verification_code)
                     except SessionPasswordNeededError:
                         password_future = loop.create_future()
-                        self.event_bus.emit(Events.PROMPT_FOR_TG_PASSWORD, {'future': password_future})
+                        self.event_bus.emit(Events.Telegram.PROMPT_FOR_TG_PASSWORD, {'future': password_future})
                         password = await password_future
                         await self.client.sign_in(password=password)
 
@@ -219,7 +219,7 @@ class TelegramBotHandler:
             await self.client.send_message(self.tg_bot, "/start")
             
             # Устанавливаем статус подключения через событие
-            self.event_bus.emit(Events.SET_SILERO_CONNECTED, {'connected': True})
+            self.event_bus.emit(Events.Telegram.SET_SILERO_CONNECTED, {'connected': True})
 
             if self.tg_bot == "@silero_voice_bot":
                 await asyncio.sleep(0.35)
@@ -233,7 +233,7 @@ class TelegramBotHandler:
                 await self.TurnOffCircles()
             logger.info("Включено все в ТГ для сообщений миты")
         except Exception as e:
-            self.event_bus.emit(Events.SET_SILERO_CONNECTED, {'connected': False})
+            self.event_bus.emit(Events.Telegram.SET_SILERO_CONNECTED, {'connected': False})
             logger.error(f"Ошибка авторизации: {e}")
 
     async def getLastMessage(self):

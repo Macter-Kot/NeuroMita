@@ -153,7 +153,7 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
             return
         
         event_bus = get_event_bus()
-        current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+        current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
         
         if current_char_data and current_char_data[0]:
             char_data = current_char_data[0]
@@ -164,7 +164,7 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
             
             if copy_prompt_set(set_path, character_prompts_path):
                 QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен к текущему персонажу.", "Prompt set successfully applied to the current character."))
-                event_bus.emit(Events.RELOAD_CHARACTER_DATA)
+                event_bus.emit(Events.Model.RELOAD_CHARACTER_DATA)
             else:
                 QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
         else:
@@ -172,7 +172,7 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
 
     def create_new_set_action():
         event_bus = get_event_bus()
-        current_char_data = event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER, timeout=1.0)
+        current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
         
         if current_char_data and current_char_data[0]:
             char_data = current_char_data[0]

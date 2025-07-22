@@ -38,14 +38,32 @@ class AudioController:
         self._subscribe_to_events()
 
     def _subscribe_to_events(self):
-        self.event_bus.subscribe(Events.VOICEOVER_REQUESTED, self._on_voiceover_requested, weak=False)
-        self.event_bus.subscribe(Events.SELECT_VOICE_MODEL, self._on_select_voice_model, weak=False)
-        self.event_bus.subscribe(Events.INIT_VOICE_MODEL, self._on_init_voice_model, weak=False)
-        self.event_bus.subscribe(Events.CHECK_MODEL_INSTALLED, self._on_check_model_installed, weak=False)
-        self.event_bus.subscribe(Events.CHECK_MODEL_INITIALIZED, self._on_check_model_initialized, weak=False)
-        self.event_bus.subscribe(Events.CHANGE_VOICE_LANGUAGE, self._on_change_voice_language, weak=False)
-        self.event_bus.subscribe(Events.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
-        self.event_bus.subscribe(Events.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
+        self.event_bus.subscribe(Events.Audio.VOICEOVER_REQUESTED, self._on_voiceover_requested, weak=False)
+        self.event_bus.subscribe(Events.Audio.SELECT_VOICE_MODEL, self._on_select_voice_model, weak=False)
+        self.event_bus.subscribe(Events.Audio.INIT_VOICE_MODEL, self._on_init_voice_model, weak=False)
+        self.event_bus.subscribe(Events.Audio.CHECK_MODEL_INSTALLED, self._on_check_model_installed, weak=False)
+        self.event_bus.subscribe(Events.Audio.CHECK_MODEL_INITIALIZED, self._on_check_model_initialized, weak=False)
+        self.event_bus.subscribe(Events.Audio.CHANGE_VOICE_LANGUAGE, self._on_change_voice_language, weak=False)
+        self.event_bus.subscribe(Events.Audio.REFRESH_VOICE_MODULES, self._on_refresh_voice_modules, weak=False)
+        self.event_bus.subscribe(Events.Audio.DELETE_SOUND_FILES, self._on_delete_sound_files, weak=False)
+        self.event_bus.subscribe(Events.Audio.GET_WAITING_ANSWER, self._on_get_waiting_answer, weak=False)
+        self.event_bus.subscribe(Events.Audio.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
+        self.event_bus.subscribe(Events.Audio.OPEN_VOICE_MODEL_SETTINGS, self._on_open_voice_model_settings, weak=False)
+        
+    def _on_open_voice_model_settings(self, event: Event):
+        """
+        GUI запрашивает данные для окна «Локальные модели».
+        Возвращаем только данные, без создания контроллера.
+        """
+        try:
+            return {
+                'local_voice': self.local_voice,
+                'config_dir': "Settings",
+                'settings': self.settings
+            }
+        except Exception as e:
+            logger.error(f"_on_open_voice_model_settings: {e}", exc_info=True)
+            return None
 
     def _on_voiceover_requested(self, event: Event):
         data = event.data
@@ -60,14 +78,16 @@ class AudioController:
         
         self.id_sound = message_id if message_id is not None else self.id_sound
         
-        loop = self.event_bus.emit_and_wait(Events.GET_EVENT_LOOP)[0]
+        loop = self.event_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP)[0]
         if loop and loop.is_running():
             try:
+                
+                self.waiting_answer = True
                 self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
 
                 if self.voiceover_method == "TG":
                     logger.info(f"Используем Telegram (Silero/Miku) для озвучки: {speaker}")
-                    self.event_bus.emit(Events.RUN_IN_LOOP, {
+                    self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
                         'coroutine': self.run_send_and_receive(text, speaker, self.id_sound)
                     })
 
@@ -76,7 +96,7 @@ class AudioController:
                     if selected_local_model_id:
                         logger.info(f"Используем {selected_local_model_id} для локальной озвучки")
                         if self.local_voice.is_model_initialized(selected_local_model_id):
-                            self.event_bus.emit(Events.RUN_IN_LOOP, {
+                            self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
                                 'coroutine': self.run_local_voiceover(text)
                             })
                         else:
@@ -89,8 +109,15 @@ class AudioController:
                 logger.info("Выполнено")
             except Exception as e:
                 logger.error(f"Ошибка при отправке текста на озвучку: {e}")
+            finally:
+                
+                self.waiting_answer = False
         else:
             logger.error("Ошибка: Цикл событий не готов.")
+
+    def _on_get_waiting_answer(self, event: Event):
+        return self.waiting_answer
+
     
     def _on_select_voice_model(self, event: Event):
         model_id = event.data.get('model_id')
@@ -112,7 +139,7 @@ class AudioController:
         
         if model_id:
             # Запускаем асинхронную инициализацию через event loop
-            self.event_bus.emit(Events.RUN_IN_LOOP, {
+            self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
                 'coroutine': self._async_init_model(model_id, progress_callback)
             })
     
@@ -183,11 +210,10 @@ class AudioController:
             
     async def run_send_and_receive(self, response, speaker_command, id=0):
         logger.info("Попытка получить фразу")
-        self.waiting_answer = True
         
         future = asyncio.Future()
         
-        self.event_bus.emit(Events.TELEGRAM_SEND_VOICE_REQUEST, {
+        self.event_bus.emit(Events.Telegram.TELEGRAM_SEND_VOICE_REQUEST, {
             'text': response,
             'speaker_command': speaker_command,
             'id': id,
@@ -199,13 +225,13 @@ class AudioController:
         except Exception as e:
             logger.error(f"Ошибка при получении озвучки через Telegram: {e}")
         
-        self.waiting_answer = False
         logger.info("Завершение получения фразы")
            
     async def run_local_voiceover(self, text):
         result_path = None
         try:
-            current_char_data = self.event_bus.emit_and_wait(Events.GET_CURRENT_CHARACTER)[0]
+            
+            current_char_data = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER)[0]
             character = current_char_data['name'] if current_char_data else None
             
             output_file = f"MitaVoices/output_{uuid.uuid4()}.wav"
@@ -220,14 +246,14 @@ class AudioController:
 
             if result_path:
                 logger.info(f"Локальная озвучка сохранена в: {result_path}")
-                is_connected = self.event_bus.emit_and_wait(Events.GET_CONNECTION_STATUS)[0]
+                is_connected = self.event_bus.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
                 
                 if not is_connected and self.settings.get("VOICEOVER_LOCAL_CHAT"):
                     await AudioHandler.handle_voice_file(result_path, self.settings.get("LOCAL_VOICE_DELETE_AUDIO",
                                                                                         True) if os.environ.get(
                         "ENABLE_VOICE_DELETE_CHECKBOX", "0") == "1" else True)
                 elif is_connected:
-                    self.event_bus.emit(Events.SET_PATCH_TO_SOUND_FILE, result_path)
+                    self.event_bus.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, result_path)
                 else:
                     logger.info("Озвучка в локальном чате отключена.")
             else:
@@ -276,24 +302,24 @@ class AudioController:
             except Exception as e:
                 logger.error(f"Ошибка при обработке модуля {module_name}: {e}", exc_info=True)
 
-        self.event_bus.emit(Events.CHECK_TRITON_DEPENDENCIES)
+        self.event_bus.emit(Events.GUI.CHECK_TRITON_DEPENDENCIES)
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
         """Совместимость со старым API - теперь запускает асинхронную инициализацию"""
         try:
-            self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+            self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                 'status': _("Загрузка настроек...", "Loading settings...")
             })
 
             # Создаем callback для обновления статуса
             def progress_callback(status_type, message):
                 if status_type == "status":
-                    self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                    self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                         'status': message
                     })
 
             # Запускаем асинхронную инициализацию через event bus
-            self.event_bus.emit(Events.RUN_IN_LOOP, {
+            self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
                 'coroutine': self._async_init_model_with_ui(model_id, progress_callback)
             })
             
@@ -302,20 +328,20 @@ class AudioController:
             if not self.model_loading_cancelled:
                 error_message = _("Критическая ошибка при инициализации модели: ",
                                   "Critical error during model initialization: ") + str(e)
-                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                     'status': _("Ошибка!", "Error!")
                 })
-                self.event_bus.emit(Events.SHOW_ERROR_MESSAGE, {
+                self.event_bus.emit(Events.GUI.SHOW_ERROR_MESSAGE, {
                     'title': _("Ошибка", "Error"),
                     'message': error_message
                 })
-                self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
+                self.event_bus.emit(Events.Audio.CANCEL_MODEL_LOADING)
 
     async def _async_init_model_with_ui(self, model_id: str, progress_callback):
         """Асинхронная инициализация с обновлением UI"""
         try:
             if not self.model_loading_cancelled:
-                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                     'status': _("Инициализация модели...", "Initializing model...")
                 })
                 
@@ -331,34 +357,34 @@ class AudioController:
                 )
 
             if success and not self.model_loading_cancelled:
-                self.event_bus.emit(Events.FINISH_MODEL_LOADING, {
+                self.event_bus.emit(Events.Audio.FINISH_MODEL_LOADING, {
                     'model_id': model_id
                 })
             elif not self.model_loading_cancelled:
                 error_message = _("Не удалось инициализировать модель. Проверьте логи.",
                                   "Failed to initialize model. Check logs.")
-                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                     'status': _("Ошибка инициализации!", "Initialization Error!")
                 })
-                self.event_bus.emit(Events.SHOW_ERROR_MESSAGE, {
+                self.event_bus.emit(Events.GUI.SHOW_ERROR_MESSAGE, {
                     'title': _("Ошибка инициализации", "Initialization Error"),
                     'message': error_message
                 })
-                self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
+                self.event_bus.emit(Events.Audio.CANCEL_MODEL_LOADING)
                 
         except Exception as e:
             logger.error(f"Ошибка при инициализации модели с UI {model_id}: {e}", exc_info=True)
             if not self.model_loading_cancelled:
                 error_message = _("Критическая ошибка при инициализации модели: ",
                                   "Critical error during model initialization: ") + str(e)
-                self.event_bus.emit(Events.UPDATE_MODEL_LOADING_STATUS, {
+                self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                     'status': _("Ошибка!", "Error!")
                 })
-                self.event_bus.emit(Events.SHOW_ERROR_MESSAGE, {
+                self.event_bus.emit(Events.GUI.SHOW_ERROR_MESSAGE, {
                     'title': _("Ошибка", "Error"),
                     'message': error_message
                 })
-                self.event_bus.emit(Events.CANCEL_MODEL_LOADING)
+                self.event_bus.emit(Events.Audio.CANCEL_MODEL_LOADING)
 
     def check_module_installed(self, module_name):
         logger.info(f"Проверка установки модуля: {module_name}")
@@ -422,3 +448,6 @@ class AudioController:
                     logger.info(f"Удален файл: {file}")
                 except Exception as e:
                     logger.info(f"Ошибка при удалении файла {file}: {e}")
+
+    def _on_set_waiting_answer(self, event: Event):
+        self.waiting_answer = event.data.get('waiting', False)

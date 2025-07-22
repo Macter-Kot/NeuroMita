@@ -6,47 +6,53 @@ from main_logger import logger
 # Контроллер для работы с моделью LLM
 
 class ModelController:
-    def __init__(self, main_controller, api_key, api_key_res, api_url, api_model, makeRequest, pip_installer):
-        self.main = main_controller
+    def __init__(self, settings, pip_installer):
+        self.settings = settings
         self.event_bus = get_event_bus()
-        self.model = ChatModel(self.main.settings, api_key, api_key_res, api_url, api_model, makeRequest, pip_installer)
+
+        self.lazy_load_batch_size = 50
+        self.total_messages_in_history = 0
+        self.loaded_messages_offset = 0
+        self.loading_more_history = False
+
+        self.model = ChatModel(settings, "", "", "", "", False, pip_installer)
         self._subscribe_to_events()
         
     def _subscribe_to_events(self):
         # Существующие события
         self.event_bus.subscribe("model_settings_loaded", self._on_model_settings_loaded, weak=False)
-        self.event_bus.subscribe(Events.SETTING_CHANGED, self._on_setting_changed, weak=False)
+        self.event_bus.subscribe(Events.Core.SETTING_CHANGED, self._on_setting_changed, weak=False)
         
         # События персонажей
-        self.event_bus.subscribe(Events.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)
-        self.event_bus.subscribe(Events.GET_CURRENT_CHARACTER, self._on_get_current_character, weak=False)
-        self.event_bus.subscribe(Events.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change, weak=False)
-        self.event_bus.subscribe(Events.CHECK_CHANGE_CHARACTER, self._on_check_change_character, weak=False)
-        self.event_bus.subscribe(Events.GET_CHARACTER, self._on_get_character, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHARACTER_DATA, self._on_reload_character_data, weak=False)
-        self.event_bus.subscribe(Events.RELOAD_CHARACTER_PROMPTS, self._on_reload_character_prompts, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_CHARACTER_HISTORY, self._on_clear_character_history, weak=False)
-        self.event_bus.subscribe(Events.CLEAR_ALL_HISTORIES, self._on_clear_all_histories, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_ALL_CHARACTERS, self._on_get_all_characters, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CURRENT_CHARACTER, self._on_get_current_character, weak=False)
+        self.event_bus.subscribe(Events.Model.SET_CHARACTER_TO_CHANGE, self._on_set_character_to_change, weak=False)
+        self.event_bus.subscribe(Events.Model.CHECK_CHANGE_CHARACTER, self._on_check_change_character, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CHARACTER, self._on_get_character, weak=False)
+        self.event_bus.subscribe(Events.Model.RELOAD_CHARACTER_DATA, self._on_reload_character_data, weak=False)
+        self.event_bus.subscribe(Events.Model.RELOAD_CHARACTER_PROMPTS, self._on_reload_character_prompts, weak=False)
+        self.event_bus.subscribe(Events.Model.CLEAR_CHARACTER_HISTORY, self._on_clear_character_history, weak=False)
+        self.event_bus.subscribe(Events.Model.CLEAR_ALL_HISTORIES, self._on_clear_all_histories, weak=False)
         
         # События истории
-        self.event_bus.subscribe(Events.LOAD_HISTORY, self._on_load_history, weak=False)
-        self.event_bus.subscribe(Events.LOAD_MORE_HISTORY, self._on_load_more_history, weak=False)
+        self.event_bus.subscribe(Events.Model.LOAD_HISTORY, self._on_load_history, weak=False)
+        self.event_bus.subscribe(Events.Model.LOAD_MORE_HISTORY, self._on_load_more_history, weak=False)
         
         # События информации
-        self.event_bus.subscribe(Events.GET_CHARACTER_NAME, self._on_get_character_name, weak=False)
-        self.event_bus.subscribe(Events.GET_CURRENT_CONTEXT_TOKENS, self._on_get_current_context_tokens, weak=False)
-        self.event_bus.subscribe(Events.CALCULATE_COST, self._on_calculate_cost, weak=False)
-        self.event_bus.subscribe(Events.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CHARACTER_NAME, self._on_get_character_name, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_CURRENT_CONTEXT_TOKENS, self._on_get_current_context_tokens, weak=False)
+        self.event_bus.subscribe(Events.Model.CALCULATE_COST, self._on_calculate_cost, weak=False)
+        self.event_bus.subscribe(Events.Model.GET_DEBUG_INFO, self._on_get_debug_info, weak=False)
         
         # События игры
-        self.event_bus.subscribe(Events.SET_GAME_DATA, self._on_set_game_data, weak=False)
-        self.event_bus.subscribe(Events.ADD_TEMPORARY_SYSTEM_INFO, self._on_add_temporary_system_info, weak=False)
+        self.event_bus.subscribe(Events.Server.SET_GAME_DATA, self._on_set_game_data, weak=False)
+        self.event_bus.subscribe(Events.Model.ADD_TEMPORARY_SYSTEM_INFO, self._on_add_temporary_system_info, weak=False)
         
         # События генерации
-        self.event_bus.subscribe(Events.GENERATE_RESPONSE, self._on_generate_response, weak=False)
+        self.event_bus.subscribe(Events.Model.GENERATE_RESPONSE, self._on_generate_response, weak=False)
         
         # События для обновления промптов
-        self.event_bus.subscribe(Events.RELOAD_PROMPTS_ASYNC, self._on_reload_prompts_async, weak=False)
+        self.event_bus.subscribe(Events.Model.RELOAD_PROMPTS_ASYNC, self._on_reload_prompts_async, weak=False)
         
     def _on_model_settings_loaded(self, event: Event):
         data = event.data
@@ -196,49 +202,49 @@ class ModelController:
     
     # События истории
     def _on_load_history(self, event: Event):
-        self.main.loaded_messages_offset = 0
-        self.main.total_messages_in_history = 0
-        self.main.loading_more_history = False
+        self.loaded_messages_offset = 0
+        self.total_messages_in_history = 0
+        self.loading_more_history = False
         
         chat_history = self.model.current_character.load_history()
         all_messages = chat_history["messages"]
-        self.main.total_messages_in_history = len(all_messages)
+        self.total_messages_in_history = len(all_messages)
         
-        max_display_messages = int(self.main.settings.get("MAX_CHAT_HISTORY_DISPLAY", 100))
-        start_index = max(0, self.main.total_messages_in_history - max_display_messages)
+        max_display_messages = int(self.settings.get("MAX_CHAT_HISTORY_DISPLAY", 100))
+        start_index = max(0, self.total_messages_in_history - max_display_messages)
         messages_to_load = all_messages[start_index:]
         
-        self.main.loaded_messages_offset = len(messages_to_load)
+        self.loaded_messages_offset = len(messages_to_load)
         
         self.event_bus.emit("history_loaded", {
             'messages': messages_to_load,
-            'total_messages': self.main.total_messages_in_history,
-            'loaded_offset': self.main.loaded_messages_offset
+            'total_messages': self.total_messages_in_history,
+            'loaded_offset': self.loaded_messages_offset
         })
     
     def _on_load_more_history(self, event: Event):
-        if self.main.loaded_messages_offset >= self.main.total_messages_in_history:
+        if self.loaded_messages_offset >= self.total_messages_in_history:
             return
         
-        self.main.loading_more_history = True
+        self.loading_more_history = True
         try:
             chat_history = self.model.current_character.load_history()
             all_messages = chat_history["messages"]
             
-            lazy_load_batch_size = getattr(self.main, 'lazy_load_batch_size', 50)
-            end_index = self.main.total_messages_in_history - self.main.loaded_messages_offset
+            lazy_load_batch_size = self.lazy_load_batch_size
+            end_index = self.total_messages_in_history - self.loaded_messages_offset
             start_index = max(0, end_index - lazy_load_batch_size)
             messages_to_prepend = all_messages[start_index:end_index]
             
             if messages_to_prepend:
-                self.main.loaded_messages_offset += len(messages_to_prepend)
+                self.loaded_messages_offset += len(messages_to_prepend)
                 
                 self.event_bus.emit("more_history_loaded", {
                     'messages': messages_to_prepend,
-                    'loaded_offset': self.main.loaded_messages_offset
+                    'loaded_offset': self.loaded_messages_offset
                 })
         finally:
-            self.main.loading_more_history = False
+            self.loading_more_history = False
     
     # События информации
     def _on_get_character_name(self, event: Event):
@@ -250,9 +256,9 @@ class ModelController:
         return 0
     
     def _on_calculate_cost(self, event: Event):
-        self.model.token_cost_input = float(self.main.settings.get("TOKEN_COST_INPUT", 0.000001))
-        self.model.token_cost_output = float(self.main.settings.get("TOKEN_COST_OUTPUT", 0.000002))
-        self.model.max_model_tokens = int(self.main.settings.get("MAX_MODEL_TOKENS", 32000))
+        self.model.token_cost_input = float(self.settings.get("TOKEN_COST_INPUT", 0.000001))
+        self.model.token_cost_output = float(self.settings.get("TOKEN_COST_OUTPUT", 0.000002))
+        self.model.max_model_tokens = int(self.settings.get("MAX_MODEL_TOKENS", 32000))
         
         if hasattr(self.model, 'calculate_cost_for_current_context'):
             return self.model.calculate_cost_for_current_context()
@@ -291,25 +297,32 @@ class ModelController:
         return None
     
     def _on_reload_prompts_async(self, event: Event):
-        if self.main.loop and self.main.loop.is_running():
-            import asyncio
-            asyncio.run_coroutine_threadsafe(self._async_reload_prompts(), self.main.loop)
-        else:
-            logger.error("Цикл событий asyncio не запущен. Невозможно выполнить асинхронную загрузку промптов.")
-            self.event_bus.emit("reload_prompts_failed", {"error": "Event loop not running"})
-    
+        # Получаем главный asyncio-loop через событие
+        loop_res = self.event_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)
+        loop = loop_res[0] if loop_res else None
+        
+        logger.info("Запрос на асинхронное обновление промптов...")
+        self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
+            'coroutine': self._async_reload_prompts(),
+            'callback': None  # Можно добавить callback для обработки результата, если нужно
+        })
+
     async def _async_reload_prompts(self):
         try:
             from utils.prompt_downloader import PromptDownloader
+            import asyncio
             downloader = PromptDownloader()
-            success = await self.main.loop.run_in_executor(None, downloader.download_and_replace_prompts)
+            
+            # Используем asyncio.get_event_loop() для получения текущего loop
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, downloader.download_and_replace_prompts)
             
             if success:
                 if hasattr(self.model, 'current_character_to_change'):
                     character_name = self.model.current_character_to_change
                     character = self.model.characters.get(character_name)
                     if character:
-                        await self.main.loop.run_in_executor(None, character.reload_prompts)
+                        await loop.run_in_executor(None, character.reload_prompts)
                     else:
                         logger.error("Персонаж для перезагрузки не найден")
                 

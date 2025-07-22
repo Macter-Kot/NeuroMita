@@ -9,10 +9,7 @@ import sys
 import os
 import asyncio
 import pygame
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QTextEdit, QFrame, QWidget, QProgressBar, QApplication)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QFont, QTextCursor
+
 import time
 import ffmpeg
 from utils.gpu_utils import check_gpu_provider
@@ -44,32 +41,7 @@ from main_logger import logger
 from utils import getTranslationVariant as _
 
 
-# ──────────────────────────────────────────────────────────────
-#  ДОБАВИТЬ в начало файла (после других импортов Qt)
 from PyQt6.QtCore import QMetaObject, QThread, Qt, QObject
-# ──────────────────────────────────────────────────────────────
-
-# ===== 1.  Утилита для «безопасного» вызова GUI из воркера =====
-def _call_in_main_thread(fn, *args, **kwargs):
-    """
-    Гарантирует выполнение fn в GUI-потоке и возвращает его результат.
-    Используется для показа диалоговых окон из фоновых потоков.
-    """
-    app = QApplication.instance()
-    if QThread.currentThread() == app.thread():
-        return fn(*args, **kwargs)
-
-    ret_holder = {}
-
-    def _wrapper():
-        ret_holder["result"] = fn(*args, **kwargs)
-
-    QMetaObject.invokeMethod(
-        app,
-        _wrapper,         
-        Qt.ConnectionType.BlockingQueuedConnection
-    )
-    return ret_holder.get("result")
 
 class LocalVoice:
     def __init__(self, parent=None):
@@ -116,7 +88,6 @@ class LocalVoice:
         self.msvc_found = False
         self.triton_installed = False
         self.triton_checks_performed = False
-        self._dialog_choice = None
         
         self.known_main_packages = ["tts-with-rvc", "fish-speech-lib", "triton-windows", "f5-tts"]
         self.protected_packages = ["g4f", "gigaam", "pillow", "silero-vad"]
@@ -514,180 +485,6 @@ class LocalVoice:
             # triton_installed остается True, но проверки не выполнены
             self.triton_checks_performed = False
 
-    def _create_installation_window(self, title, initial_status="Подготовка..."):
-        try:
-            dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
-            dialog.setWindowTitle(title)
-            dialog.setFixedSize(700, 400)
-            dialog.setWindowFlags(dialog.windowFlags())
-            
-            # Применяем стили
-            dialog.setStyleSheet("""
-                QDialog {
-                    background-color: #1e1e1e;
-                }
-                QLabel {
-                    color: #ffffff;
-                }
-                QTextEdit {
-                    background-color: #101010;
-                    color: #cccccc;
-                    border: 1px solid #333;
-                }
-                QProgressBar {
-                    border: 1px solid #555;
-                    border-radius: 5px;
-                    background-color: #555555;
-                    text-align: center;
-                }
-                QProgressBar::chunk {
-                    background-color: #4CAF50;
-                    border-radius: 5px;
-                }
-            """)
-            
-            layout = QVBoxLayout(dialog)
-            
-            # Заголовок
-            title_label = QLabel(title)
-            title_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(title_label)
-            
-            # Статус и прогресс
-            info_layout = QHBoxLayout()
-            status_label = QLabel(initial_status)
-            status_label.setFont(QFont("Segoe UI", 9))
-            info_layout.addWidget(status_label, 1)
-            
-            progress_value_label = QLabel("0%")
-            progress_value_label.setFont(QFont("Segoe UI", 9))
-            info_layout.addWidget(progress_value_label)
-            
-            layout.addLayout(info_layout)
-            
-            # Прогресс-бар
-            progress_bar = QProgressBar()
-            progress_bar.setRange(0, 100)
-            progress_bar.setTextVisible(False)
-            layout.addWidget(progress_bar)
-            
-            # Лог
-            log_text = QTextEdit()
-            log_text.setReadOnly(True)
-            log_text.setFont(QFont("Consolas", 9))
-            layout.addWidget(log_text, 1)
-            
-            # Функции обновления
-            def update_progress(value):
-                progress_bar.setValue(int(value))
-                progress_value_label.setText(f"{int(value)}%")
-                QApplication.processEvents()
-            
-            def update_status(message):
-                status_label.setText(message)
-                QApplication.processEvents()
-            
-            def update_log(text):
-                log_text.append(text)
-                cursor = log_text.textCursor()
-                cursor.movePosition(QTextCursor.MoveOperation.End)
-                log_text.setTextCursor(cursor)
-                QApplication.processEvents()
-            
-            # Центрируем окно
-            if self.parent and hasattr(self.parent, 'geometry'):
-                parent_rect = self.parent.geometry()
-                dialog.move(
-                    parent_rect.center().x() - dialog.width() // 2,
-                    parent_rect.center().y() - dialog.height() // 2
-                )
-            
-            dialog.show()
-            QApplication.processEvents()
-            
-            return {
-                "window": dialog,
-                "update_progress": update_progress,
-                "update_status": update_status,
-                "update_log": update_log
-            }
-        except Exception as e:
-            logger.error(f"Ошибка при создании окна установки: {e}", exc_info=True)
-            return None
-
-    def _create_action_window(self, title, initial_status="Подготовка..."):
-        try:
-            dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
-            dialog.setWindowTitle(title)
-            dialog.setFixedSize(700, 400)
-            dialog.setModal(True)
-            
-            dialog.setStyleSheet("""
-                QDialog {
-                    background-color: #1e1e1e;
-                }
-                QLabel {
-                    color: #ffffff;
-                }
-                QTextEdit {
-                    background-color: #101010;
-                    color: #cccccc;
-                    border: 1px solid #333;
-                }
-            """)
-            
-            layout = QVBoxLayout(dialog)
-            
-            # Заголовок
-            title_label = QLabel(title)
-            title_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(title_label)
-            
-            # Статус
-            status_label = QLabel(initial_status)
-            status_label.setFont(QFont("Segoe UI", 9))
-            layout.addWidget(status_label)
-            
-            # Лог
-            log_text = QTextEdit()
-            log_text.setReadOnly(True)
-            log_text.setFont(QFont("Consolas", 9))
-            layout.addWidget(log_text, 1)
-            
-            def update_status(message):
-                status_label.setText(message)
-                QApplication.processEvents()
-            
-            def update_log(text):
-                log_text.append(text)
-                cursor = log_text.textCursor()
-                cursor.movePosition(QTextCursor.MoveOperation.End)
-                log_text.setTextCursor(cursor)
-                QApplication.processEvents()
-            
-            # Центрируем окно
-            if self.parent and hasattr(self.parent, 'geometry'):
-                parent_rect = self.parent.geometry()
-                dialog.move(
-                    parent_rect.center().x() - dialog.width() // 2,
-                    parent_rect.center().y() - dialog.height() // 2
-                )
-            
-            dialog.show()
-            QApplication.processEvents()
-            
-            return {
-                "window": dialog,
-                "update_status": update_status,
-                "update_log": update_log
-            }
-        except Exception as e:
-            logger.error(f"Ошибка создания окна действия: {e}")
-            traceback.print_exc()
-            return None
-
     def _show_vc_redist_warning_dialog(self):
         from core.events import get_event_bus, Events
         event_bus = get_event_bus()
@@ -717,51 +514,6 @@ class LocalVoice:
             'triton_installed': self.triton_installed,
             'triton_checks_performed': self.triton_checks_performed
         }
-
-    def _update_status_display(self):
-        """Обновляет отображение статусов в диалоге"""
-        # Очищаем предыдущие виджеты
-        while self.status_layout.count():
-            item = self.status_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        
-        items = [
-            ("CUDA Toolkit:", self.cuda_found),
-            ("Windows SDK:", self.winsdk_found),
-            ("MSVC:", self.msvc_found)
-        ]
-        
-        for text, found in items:
-            item_widget = QWidget()
-            item_layout = QHBoxLayout(item_widget)
-            item_layout.setContentsMargins(0, 0, 15, 0)
-            
-            label = QLabel(text)
-            label.setFont(QFont("Segoe UI", 9))
-            item_layout.addWidget(label)
-            
-            status_text = _("Найден", "Found") if found else _("Не найден", "Not Found")
-            status_color = "#4CAF50" if found else "#F44336"
-            status_label = QLabel(status_text)
-            status_label.setFont(QFont("Segoe UI", 9))
-            status_label.setStyleSheet(f"color: {status_color};")
-            item_layout.addWidget(status_label)
-            
-            self.status_layout.addWidget(item_widget)
-        
-        self.status_layout.addStretch()
-        
-        # Обновляем видимость предупреждения
-        if hasattr(self, 'warning_label'):
-            self.warning_label.setVisible(not (self.cuda_found and self.winsdk_found and self.msvc_found))
-
-    def _on_refresh_status(self):
-        """Обработчик кнопки обновления статуса"""
-        logger.info(_("Обновление статуса зависимостей...", "Updating dependency status..."))
-        self._check_system_dependencies()
-        self._update_status_display()
-        logger.info(_("Статус обновлен.", "Status updated."))
 
     def _uninstall_component(self, component_name: str, main_package_to_remove: str) -> bool:
         try:

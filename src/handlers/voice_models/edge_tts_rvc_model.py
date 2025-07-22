@@ -227,7 +227,7 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             init_text = f"Инициализация модели {current_mode}" if self.parent.voice_language == "ru" else f"{current_mode} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {current_mode}...")
             try:
-                main_loop = self.parent.parent.loop
+                main_loop = self.events.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
                 if not main_loop or not main_loop.is_running():
                     raise RuntimeError("Главный цикл событий asyncio недоступен.")
                 
@@ -319,10 +319,13 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 elif self.parent.provider in ["AMD"]:
                     if hasattr(self.current_tts_rvc, 'set_model'):
                         self.current_tts_rvc.set_model(self.parent.pth_path)
+                        logger.info(f'PTH ФАйл изменен на: {self.parent.pth_path}')
                     else:
                         self.current_tts_rvc.current_model = self.parent.pth_path
+                        logger.info(f'PTH ФАйл изменен на: {self.parent.pth_path}')
                         logger.warning("Метод 'set_model' не найден, используется прямое присваивание (может не работать на AMD).")
-            
+            else:
+                logger.info(f'PTH ФАйл изменен на: {self.parent.pth_path}')
             # Применение RVC
             output_file_rvc = self.current_tts_rvc.voiceover_file(input_path=filepath, **inference_params)
             

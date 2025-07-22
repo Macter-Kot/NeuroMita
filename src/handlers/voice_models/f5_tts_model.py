@@ -91,59 +91,37 @@ class F5TTSModel(IVoiceModel):
         окно НЕ создаётся, все сообщения уводятся во внешние колбэки.
         """
         logger.info("[DEBUG] download_f5_tts_internal вошёл")
-        # ─────────────────────────────────────────────────────────
-        # 1.  Определяем режим работы
-        # ─────────────────────────────────────────────────────────
-        have_external = hasattr(self, "_external_log")
-        if have_external:
-            progress_window = None
-            update_progress = getattr(self, "_external_progress", lambda *_: None)
-            update_status   = getattr(self, "_external_status",   lambda *_: None)
-            update_log      = getattr(self, "_external_log",      lambda *_: None)
-        else:
-            gui = self.parent._create_installation_window(
-                title=_("Установка F5-TTS", "Installing F5-TTS"),
-                initial_status=_("Подготовка...", "Preparing...")
-            )
-            if not gui:
-                logger.error("Не удалось создать окно установки F5-TTS.")
-                return False
-
-            progress_window = gui["window"]
-            update_progress = gui["update_progress"]
-            update_status   = gui["update_status"]
-            update_log      = gui["update_log"]
-
-        # ─────────────────────────────────────────────────────────
-        # 2.  Основная логика установки
-        # ─────────────────────────────────────────────────────────
         try:
+            progress_cb = getattr(self.parent, "_external_progress", lambda *_: None)
+            status_cb = getattr(self.parent, "_external_status", lambda *_: None)
+            log_cb = getattr(self.parent, "_external_log", lambda *_: None)
+
             installer = PipInstaller(
                     script_path=r"libs\python\python.exe",
                     libs_path="Lib",
-                    update_status=update_status,
-                    update_log=update_log,
-                    progress_window=progress_window,
-                    update_progress=update_progress        # ← новинка
+                    update_status=status_cb,
+                    update_log=log_cb,
+                    progress_window=None,
+                    update_progress=progress_cb
                 )
             logger.info("[DEBUG] PipInstaller создан, запускаем pip install")
 
-            update_progress(5)
-            update_log(_("Начало установки F5-TTS...", "Starting F5-TTS installation..."))
+            progress_cb(5)
+            log_cb(_("Начало установки F5-TTS...", "Starting F5-TTS installation..."))
 
             # PyTorch (если надо)
             if self.parent.provider == "NVIDIA" and not self.parent.is_cuda_available():
-                update_status(_("Установка PyTorch (cu124)...", "Installing PyTorch (cu124)..."))
-                update_progress(10)
+                status_cb(_("Установка PyTorch (cu124)...", "Installing PyTorch (cu124)..."))
+                progress_cb(10)
                 if not installer.install_package(
                     ["torch==2.7.1", "torchaudio==2.7.1"],
                     extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
                     description="Install PyTorch cu128"
                 ):
-                    update_status(_("Ошибка PyTorch", "PyTorch error"))
+                    status_cb(_("Ошибка PyTorch", "PyTorch error"))
                     return False
 
-            update_progress(25)
+            progress_cb(25)
 
             if not installer.install_package(
                 ["f5-tts", "google-api-core"],
@@ -157,7 +135,7 @@ class F5TTSModel(IVoiceModel):
                 ):
                     return False
 
-            update_progress(50)
+            progress_cb(50)
 
             # Скачиваем веса
             import requests, math, os
@@ -166,7 +144,7 @@ class F5TTSModel(IVoiceModel):
 
             def dl(url, dest, descr, start_prog, end_prog):
                 if os.path.exists(dest): return
-                update_status(descr)
+                status_cb(descr)
                 r = requests.get(url, stream=True, timeout=30)
                 r.raise_for_status()
                 total = int(r.headers.get("content-length", 0))
@@ -178,7 +156,7 @@ class F5TTSModel(IVoiceModel):
                         if total:
                             pct = done / total
                             prog = start_prog + (end_prog - start_prog) * pct
-                            update_progress(math.floor(prog))
+                            progress_cb(math.floor(prog))
 
             dl(
                 "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/"
@@ -196,21 +174,16 @@ class F5TTSModel(IVoiceModel):
                 80, 90
             )
 
-            update_progress(100)
-            update_status(_("Установка F5-TTS завершена.", "F5-TTS installation complete."))
+            progress_cb(100)
+            status_cb(_("Установка F5-TTS завершена.", "F5-TTS installation complete."))
             self._load_module()
             return True
 
         except Exception as e:
             logger.error(f"Ошибка установки F5-TTS: {e}", exc_info=True)
-            update_log(f"ERROR: {e}")
+            if hasattr(self.parent, '_external_log'):
+                self.parent._external_log(f"ERROR: {e}")
             return False
-
-        finally:
-            # закрываем своё окно, если оно было создано
-            if not have_external and progress_window:
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(3000, progress_window.close)
 
     def uninstall(self, model_id) -> bool:
         mode = model_id
@@ -279,7 +252,7 @@ class F5TTSModel(IVoiceModel):
             init_text = f"Инициализация модели {self.model_id}" if self.parent.voice_language == "ru" else f"{self.model_id} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {self.model_id}...")
             try:
-                main_loop = self.parent.parent.loop
+                main_loop = self.events.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
                 if not main_loop or not main_loop.is_running():
                     raise RuntimeError("Главный цикл событий asyncio недоступен.")
                 

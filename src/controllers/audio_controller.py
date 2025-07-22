@@ -53,7 +53,12 @@ class AudioController:
 
     def _on_get_triton_status(self, event: Event):
         if self.local_voice:
-            self._check_system_dependencies()
+            # Если есть метод _check_system_dependencies, вызываем его
+            if hasattr(self.local_voice, '_check_system_dependencies'):
+                try:
+                    self.local_voice._check_system_dependencies()
+                except Exception as e:
+                    logger.warning(f"Ошибка при проверке зависимостей: {e}")
             return self.local_voice.get_triton_status()
         return {}
         
@@ -160,10 +165,12 @@ class AudioController:
             loop = asyncio.get_running_loop()
             
             # Запускаем синхронную инициализацию в executor
+            # Используем правильный метод initialize_model вместо init_model
             success = await loop.run_in_executor(
                 None, 
-                self.local_voice.init_model, 
-                model_id
+                self.local_voice.initialize_model,  # Исправлено!
+                model_id,
+                True  # init=True
             )
             
             if success and not self.model_loading_cancelled:
@@ -312,7 +319,7 @@ class AudioController:
         self.event_bus.emit(Events.GUI.CHECK_TRITON_DEPENDENCIES)
 
     def init_model_thread(self, model_id, loading_window, status_label, progress):
-        """Совместимость со старым API - теперь запускает асинхронную инициализацию"""
+        """Совместимость со старым API - запускает асинхронную инициализацию через систему событий"""
         try:
             self.event_bus.emit(Events.Audio.UPDATE_MODEL_LOADING_STATUS, {
                 'status': _("Загрузка настроек...", "Loading settings...")
@@ -358,7 +365,7 @@ class AudioController:
                 # Запускаем синхронную инициализацию в executor
                 success = await loop.run_in_executor(
                     None,
-                    self.local_voice.initialize_model,
+                    self.local_voice.initialize_model,  # Правильный метод!
                     model_id,
                     True  # init=True
                 )

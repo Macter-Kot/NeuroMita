@@ -702,6 +702,11 @@ class ChatModel:
         self.clear_endline_sim(params)
 
         # ─── 2.   Формируем contents для Gemini ───────────────────────────
+        # Получаем текущую модель, чтобы передать ее в хелпер
+        # Применяем исправление для Gemini: последний system-промпт должен быть от user
+        self.change_last_message_to_user_for_gemini("gemini", combined_messages)
+
+
         contents = []
         for msg in combined_messages:
             role = "model" if msg["role"] == "assistant" else msg["role"]
@@ -1039,7 +1044,7 @@ class ChatModel:
 
     def change_last_message_to_user_for_gemini(self, api_model, combined_messages):
         if combined_messages and ("gemini" in api_model.lower() or "gemma" in api_model.lower()) and \
-                combined_messages[-1]["role"] == "system":
+                combined_messages[-1]["role"] in {"system","model","assistant"}:
             logger.info(f"Adjusting last message for {api_model}: system -> user with [SYSTEM INFO] prefix.")
             combined_messages[-1]["role"] = "user"
             combined_messages[-1]["content"] = f"[SYSTEM INFO] {combined_messages[-1]['content']}"

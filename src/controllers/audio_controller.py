@@ -49,6 +49,13 @@ class AudioController:
         self.event_bus.subscribe(Events.Audio.GET_WAITING_ANSWER, self._on_get_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.Audio.SET_WAITING_ANSWER, self._on_set_waiting_answer, weak=False)
         self.event_bus.subscribe(Events.Audio.OPEN_VOICE_MODEL_SETTINGS, self._on_open_voice_model_settings, weak=False)
+        self.event_bus.subscribe(Events.Audio.GET_TRITON_STATUS, self._on_get_triton_status, weak=False)
+
+    def _on_get_triton_status(self, event: Event):
+        if self.local_voice:
+            self._check_system_dependencies()
+            return self.local_voice.get_triton_status()
+        return {}
         
     def _on_open_voice_model_settings(self, event: Event):
         """

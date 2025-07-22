@@ -689,162 +689,34 @@ class LocalVoice:
             return None
 
     def _show_vc_redist_warning_dialog(self):
-        """Отображает диалоговое окно с предупреждением об установке VC Redist"""
-        if QThread.currentThread() != QApplication.instance().thread():
-            return _call_in_main_thread(self._show_vc_redist_warning_dialog)
+        from core.events import get_event_bus, Events
+        event_bus = get_event_bus()
         
-        dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
-        dialog.setWindowTitle(_("⚠️ Ошибка загрузки Triton", "⚠️ Triton Load Error"))
-        dialog.setModal(True)
-        dialog.setFixedSize(500, 250)
-        
-        dialog.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #ffffff; }
-            QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                border: none;
-                padding: 5px 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #555555; }
-            #RetryButton { background-color: #4CAF50; }
-            #RetryButton:hover { background-color: #45a049; }
-        """)
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Заголовок
-        title_label = QLabel(_("Ошибка импорта Triton (DLL Load Failed)", "Triton Import Error (DLL Load Failed)"))
-        title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        title_label.setStyleSheet("color: orange;")
-        layout.addWidget(title_label)
-        
-        # Текст
-        info_text = _(
-            "Не удалось загрузить библиотеку для Triton (возможно, отсутствует VC++ Redistributable).\n"
-            "Установите последнюю версию VC++ Redistributable (x64) с сайта Microsoft\n"
-            "или попробуйте импортировать снова, если вы только что его установили.",
-            "Failed to load the library for Triton (VC++ Redistributable might be missing).\n"
-            "Install the latest VC++ Redistributable (x64) from the Microsoft website\n"
-            "or try importing again if you just installed it."
-        )
-        info_label = QLabel(info_text)
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-        
-        layout.addStretch()
-        
-        # Кнопки
-        button_layout = QHBoxLayout()
-        
-        docs_button = QPushButton(_("Документация", "Documentation"))
-        docs_button.clicked.connect(lambda: self.docs_manager.open_doc("installation_guide.html#vc_redist"))
-        button_layout.addWidget(docs_button)
-        
-        button_layout.addStretch()
-        
-        close_button = QPushButton(_("Закрыть", "Close"))
-        close_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'close') or dialog.accept())
-        button_layout.addWidget(close_button)
-        
-        retry_button = QPushButton(_("Попробовать снова", "Retry"))
-        retry_button.setObjectName("RetryButton")
-        retry_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'retry') or dialog.accept())
-        button_layout.addWidget(retry_button)
-        
-        layout.addLayout(button_layout)
-        
-        dialog.exec()
-        return self._dialog_choice
+        result = event_bus.emit_and_wait(Events.Audio.SHOW_VC_REDIST_DIALOG, timeout=60.0)
+        return result[0] if result else 'close'
 
     def _show_triton_init_warning_dialog(self):
-        """Отображает диалоговое окно с предупреждением о зависимостях Triton."""
-        if QThread.currentThread() != QApplication.instance().thread():
-            return _call_in_main_thread(self._show_triton_init_warning_dialog)
+        from core.events import get_event_bus, Events
+        event_bus = get_event_bus()
         
-        dialog = QDialog(self.parent if self.parent and hasattr(self.parent, 'isVisible') else None)
-        dialog.setWindowTitle(_("⚠️ Зависимости Triton", "⚠️ Triton Dependencies"))
-        dialog.setModal(True)
-        dialog.setFixedSize(700, 350)
+        dependencies_data = {
+            'cuda_found': self.cuda_found,
+            'winsdk_found': self.winsdk_found,
+            'msvc_found': self.msvc_found
+        }
         
-        dialog.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #ffffff; }
-            QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                border: none;
-                padding: 5px 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #555555; }
-            #ContinueButton { background-color: #4CAF50; }
-            #ContinueButton:hover { background-color: #45a049; }
-        """)
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Заголовок
-        title_label = QLabel(_("Статус зависимостей Triton:", "Triton Dependency Status:"))
-        title_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        layout.addWidget(title_label)
-        
-        # Статусы
-        self.status_layout = QHBoxLayout()
-        self.status_labels = {}
-        self._update_status_display()
-        layout.addLayout(self.status_layout)
-        
-        # Предупреждение
-        self.warning_label = QLabel(_("⚠️ Модели Fish Speech+ / + RVC требуют всех компонентов!", 
-                                     "⚠️ Models Fish Speech+ / + RVC require all components!"))
-        self.warning_label.setStyleSheet("color: orange; font-weight: bold;")
-        self.warning_label.setVisible(not (self.cuda_found and self.winsdk_found and self.msvc_found))
-        layout.addWidget(self.warning_label)
-        
-        # Информация
-        info_text = _(
-            "Если компоненты не найдены, установите их согласно документации.\n"
-            "Вы также можете попробовать инициализировать модель вручную,\n"
-            "запустив `init_triton.bat` в корневой папке программы.",
-            "If components are not found, install them according to the documentation.\n"
-            "You can also try initializing the model manually\n"
-            "by running `init_triton.bat` in the program's root folder."
-        )
-        info_label = QLabel(info_text)
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-        
-        layout.addStretch()
-        
-        # Кнопки
-        button_layout = QHBoxLayout()
-        
-        docs_button = QPushButton(_("Открыть документацию", "Open Documentation"))
-        docs_button.clicked.connect(lambda: self.docs_manager.open_doc("installation_guide.html"))
-        button_layout.addWidget(docs_button)
-        
-        refresh_button = QPushButton(_("Обновить статус", "Refresh Status"))
-        refresh_button.clicked.connect(self._on_refresh_status)
-        button_layout.addWidget(refresh_button)
-        
-        button_layout.addStretch()
-        
-        skip_button = QPushButton(_("Пропустить инициализацию", "Skip Initialization"))
-        skip_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'skip') or dialog.accept())
-        button_layout.addWidget(skip_button)
-        
-        continue_button = QPushButton(_("Продолжить инициализацию", "Continue Initialization"))
-        continue_button.setObjectName("ContinueButton")
-        continue_button.clicked.connect(lambda: setattr(self, '_dialog_choice', 'continue') or dialog.accept())
-        button_layout.addWidget(continue_button)
-        
-        layout.addLayout(button_layout)
-        
-        dialog.exec()
-        return self._dialog_choice
+        result = event_bus.emit_and_wait(Events.Audio.SHOW_TRITON_DIALOG, dependencies_data, timeout=60.0)
+        return result[0] if result else 'skip'
+
+    def get_triton_status(self):
+        """Возвращает текущий статус зависимостей Triton"""
+        return {
+            'cuda_found': self.cuda_found,
+            'winsdk_found': self.winsdk_found,
+            'msvc_found': self.msvc_found,
+            'triton_installed': self.triton_installed,
+            'triton_checks_performed': self.triton_checks_performed
+        }
 
     def _update_status_display(self):
         """Обновляет отображение статусов в диалоге"""
@@ -892,60 +764,48 @@ class LocalVoice:
         logger.info(_("Статус обновлен.", "Status updated."))
 
     def _uninstall_component(self, component_name: str, main_package_to_remove: str) -> bool:
-        gui_elements = self._create_action_window(
-            title=_(f"Удаление {component_name}", f"Uninstalling {component_name}"),
-            initial_status=_(f"Удаление {main_package_to_remove}...", f"Uninstalling {main_package_to_remove}...")
-        )
-        if not gui_elements:
-            return False
-
         try:
-            update_status = gui_elements["update_status"]
-            update_log = gui_elements["update_log"]
+            status_cb = getattr(self, '_external_status', lambda *_: None)
+            log_cb = getattr(self, '_external_log', lambda *_: None)
 
             installer = PipInstaller(
                 script_path=r"libs\python\python.exe", libs_path="Lib",
-                update_status=update_status, update_log=update_log,
-                progress_window=gui_elements["window"]
+                update_status=status_cb, update_log=log_cb,
+                progress_window=None
             )
 
-            # Этап 1: Удаление основного пакета
-            update_log(_(f"Удаление '{main_package_to_remove}'...", f"Uninstalling '{main_package_to_remove}'..."))
+            log_cb(_(f"Удаление '{main_package_to_remove}'...", f"Uninstalling '{main_package_to_remove}'..."))
             uninstall_success = installer.uninstall_packages(
-                [main_package_to_remove],  # Позиционный аргумент: список пакетов
+                [main_package_to_remove],
                 _(f"Удаление {main_package_to_remove}...", f"Uninstalling {main_package_to_remove}...")
             )
 
             if not uninstall_success:
-                update_log(_(f"Не удалось удалить '{main_package_to_remove}'.", f"Failed to uninstall '{main_package_to_remove}'."))
-                update_status(_(f"Ошибка удаления {main_package_to_remove}", f"Error uninstalling {main_package_to_remove}"))
+                log_cb(_(f"Не удалось удалить '{main_package_to_remove}'.", f"Failed to uninstall '{main_package_to_remove}'."))
+                status_cb(_(f"Ошибка удаления {main_package_to_remove}", f"Error uninstalling {main_package_to_remove}"))
                 return False
 
-            # Этап 2: Очистка orphans
-            update_status(_("Очистка зависимостей...", "Cleaning up dependencies..."))
-            update_log(_("Поиск 'осиротевших' зависимостей...", "Finding 'orphaned' dependencies..."))
-            cleanup_success = self._cleanup_orphans(installer, update_log)
+            status_cb(_("Очистка зависимостей...", "Cleaning up dependencies..."))
+            log_cb(_("Поиск 'осиротевших' зависимостей...", "Finding 'orphaned' dependencies..."))
+            cleanup_success = self._cleanup_orphans(installer, log_cb)
 
-            # Финал
             if cleanup_success:
-                update_status(_("Удаление завершено.", "Uninstallation complete."))
-                update_log(_("Очистка завершена.", "Cleanup complete."))
+                status_cb(_("Удаление завершено.", "Uninstallation complete."))
+                log_cb(_("Очистка завершена.", "Cleanup complete."))
             else:
-                update_status(_("Ошибка очистки.", "Cleanup error."))
-                update_log(_("Не удалось удалить некоторые зависимости.", "Failed to remove some dependencies."))
+                status_cb(_("Ошибка очистки.", "Cleanup error."))
+                log_cb(_("Не удалось удалить некоторые зависимости.", "Failed to remove some dependencies."))
 
             self._cleanup_after_uninstall(main_package_to_remove)
-            if cleanup_success:
-                QTimer.singleShot(3000, gui_elements["window"].close)
             return uninstall_success and cleanup_success
 
         except Exception as e:
             logger.error(f"Ошибка при удалении {component_name}: {e}")
             traceback.print_exc()
-            if gui_elements and gui_elements["window"].isVisible():
-                gui_elements["update_log"](f"{_('Ошибка:', 'Error:')} {e}\n{traceback.format_exc()}")
-                gui_elements["update_status"](_("Критическая ошибка!", "Critical error!"))
-                QTimer.singleShot(5000, gui_elements["window"].close)
+            if hasattr(self, '_external_log'):
+                self._external_log(f"{_('Ошибка:', 'Error:')} {e}\n{traceback.format_exc()}")
+            if hasattr(self, '_external_status'):
+                self._external_status(_("Критическая ошибка!", "Critical error!"))
             return False
 
     def _cleanup_orphans(self, installer: PipInstaller, update_log_func) -> bool:

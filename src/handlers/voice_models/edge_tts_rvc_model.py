@@ -49,34 +49,25 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         return self.tts_rvc_module is not None
 
     def install(self, model_id) -> bool:
-        gui_elements = None
         try:
-            gui_elements = self.parent._create_installation_window(
-                title=_("Скачивание Edge-TTS + RVC", "Downloading Edge-TTS + RVC"),
-                initial_status=_("Подготовка...", "Preparing...")
-            )
-            if not gui_elements:
-                return False
-
-            progress_window = gui_elements["window"]
-            update_progress = gui_elements["update_progress"]
-            update_status = gui_elements["update_status"]
-            update_log = gui_elements["update_log"]
+            progress_cb = getattr(self.parent, '_external_progress', lambda *_: None)
+            status_cb = getattr(self.parent, '_external_status', lambda *_: None) 
+            log_cb = getattr(self.parent, '_external_log', lambda *_: None)
+            
+            progress_cb(10)
+            log_cb(_("Начало установки Edge-TTS + RVC...", "Starting Edge-TTS + RVC installation..."))
 
             installer = PipInstaller(
                 script_path=r"libs\python\python.exe",
                 libs_path="Lib",
-                update_status=update_status,
-                update_log=update_log,
-                progress_window=progress_window
+                update_status=status_cb,
+                update_log=log_cb,
+                progress_window=None
             )
 
-            update_progress(10)
-            update_log(_("Начало установки Edge-TTS + RVC...", "Starting Edge-TTS + RVC installation..."))
-
             if self.parent.provider in ["NVIDIA"] and not self.parent.is_cuda_available():
-                update_status(_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."))
-                update_progress(20)
+                status_cb(_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."))
+                progress_cb(20)
                 success = installer.install_package(
                     ["torch==2.7.1", "torchaudio==2.7.1"],
                     description=_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."),
@@ -84,24 +75,22 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 )
 
                 if not success:
-                    update_status(_("Ошибка при установке PyTorch", "Error installing PyTorch"))
-                    QTimer.singleShot(5000, progress_window.close)
+                    status_cb(_("Ошибка при установке PyTorch", "Error installing PyTorch"))
                     return False
-                update_progress(50)
+                progress_cb(50)
             else:
-                update_progress(50) 
+                progress_cb(50)
 
-            update_status(_("Установка зависимостей...", "Installing dependencies..."))
+            status_cb(_("Установка зависимостей...", "Installing dependencies..."))
             success = installer.install_package(
                 "omegaconf",
                 description=_("Установка omegaconf...", "Installing omegaconf...")
             )
             if not success:
-                update_status(_("Ошибка при установке omegaconf", "Error installing omegaconf"))
-                QTimer.singleShot(5000, progress_window.close)
+                status_cb(_("Ошибка при установке omegaconf", "Error installing omegaconf"))
                 return False
 
-            update_progress(70)
+            progress_cb(70)
 
             package_url = None
             desc = ""
@@ -112,20 +101,18 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 package_url = "tts_with_rvc_onnx[dml]"
                 desc = _("Установка основной библиотеки tts-with-rvc (AMD)...", "Installing main library tts-with-rvc (AMD)...")
             else:
-                update_log(_(f"Ошибка: не найдена подходящая видеокарта: {self.parent.provider}", f"Error: suitable graphics card not found: {self.parent.provider}"))
-                QTimer.singleShot(5000, progress_window.close)
+                log_cb(_(f"Ошибка: не найдена подходящая видеокарта: {self.parent.provider}", f"Error: suitable graphics card not found: {self.parent.provider}"))
                 return False
 
             success = installer.install_package(package_url, description=desc)
 
             if not success:
-                update_status(_("Ошибка при установке tts-with-rvc", "Error installing tts-with-rvc"))
-                QTimer.singleShot(5000, progress_window.close)
+                status_cb(_("Ошибка при установке tts-with-rvc", "Error installing tts-with-rvc"))
                 return False
 
             libs_path_abs = os.path.abspath("Lib")
-            update_progress(95)
-            update_status(_("Применение патчей...", "Applying patches..."))
+            progress_cb(95)
+            status_cb(_("Применение патчей...", "Applying patches..."))
             config_path = os.path.join(libs_path_abs, "fairseq", "dataclass", "configs.py")
             if os.path.exists(config_path):
                 try:
@@ -134,21 +121,17 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                     patched_source = re.sub(r"metadata=\{(.*?)help:", r'metadata={\1"help":', source)
                     with open(config_path, "w", encoding="utf-8") as f:
                         f.write(patched_source)
-                    update_log(_("Патч успешно применен к configs.py", "Patch successfully applied to configs.py"))
+                    log_cb(_("Патч успешно применен к configs.py", "Patch successfully applied to configs.py"))
                 except Exception as e:
-                    update_log(_(f"Ошибка при патче configs.py: {e}", f"Error patching configs.py: {e}"))
+                    log_cb(_(f"Ошибка при патче configs.py: {e}", f"Error patching configs.py: {e}"))
             
-            update_progress(100)
-            update_status(_("Установка успешно завершена!", "Installation successful!"))
+            progress_cb(100)
             
             self._load_module()
             
-            QTimer.singleShot(3000, progress_window.close)
             return True
         except Exception as e:
             logger.error(f"Ошибка при установке Edge-TTS + RVC: {e}", exc_info=True)
-            
-            QTimer.singleShot(5000, progress_window.close)
             return False
 
     def uninstall(self, model_id) -> bool:

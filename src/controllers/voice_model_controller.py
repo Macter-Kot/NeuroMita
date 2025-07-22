@@ -151,12 +151,24 @@ class VoiceModelController:
         return self.is_gpu_rtx30_or_40()
 
     def _handle_install_model(self, event):
-        model_id = event.data
-        self.handle_install_request(model_id)
+        data = event.data
+        model_id = data.get('model_id') if isinstance(data, dict) else data
+        progress_cb = data.get('progress_callback') if isinstance(data, dict) else None
+        status_cb = data.get('status_callback') if isinstance(data, dict) else None
+        log_cb = data.get('log_callback') if isinstance(data, dict) else None
+        window = data.get('window') if isinstance(data, dict) else None
+        
+        self.handle_install_request(model_id, progress_cb, status_cb, log_cb, window)
+
 
     def _handle_uninstall_model(self, event):
-        model_id = event.data
-        self.handle_uninstall_request(model_id)
+        data = event.data
+        model_id = data.get('model_id') if isinstance(data, dict) else data
+        status_cb = data.get('status_callback') if isinstance(data, dict) else None
+        log_cb = data.get('log_callback') if isinstance(data, dict) else None
+        window = data.get('window') if isinstance(data, dict) else None
+        
+        self.handle_uninstall_request(model_id, status_cb, log_cb, window)
 
     def _handle_save_settings(self, event):
         self.save_and_continue()
@@ -397,10 +409,12 @@ class VoiceModelController:
                 return True
         return False
 
-    def handle_install_request(self, model_id):
+    def handle_install_request(self, model_id, progress_cb=None, status_cb=None, log_cb=None, window=None):
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
         if not model_data:
             self.view.show_critical(_("Ошибка", "Error"), _("Модель не найдена.", "Model not found."))
+            if window:
+                QTimer.singleShot(0, window.close)
             return
 
         requires_rtx30plus = model_data.get("rtx30plus", False)
@@ -426,7 +440,9 @@ class VoiceModelController:
             proceed = self.view.show_question(_("Предупреждение", "Warning"), message)
 
         if proceed:
-            self.start_download(model_id)
+            self.start_download(model_id, progress_cb, status_cb, log_cb, window)
+        elif window:
+            QTimer.singleShot(0, window.close)
 
     def handle_uninstall_request(self, model_id):
         model_name = next((m["name"] for m in self.local_voice_models if m["id"] == model_id), model_id)
@@ -453,46 +469,47 @@ class VoiceModelController:
         if self.view.show_question(_("Подтверждение Удаления", "Confirm Uninstallation"), message):
             self.start_uninstall(model_id)
 
-    def start_download(self, model_id):
+    def start_download(self, model_id, progress_cb=None, status_cb=None, log_cb=None, window=None):
         if self.installation_in_progress:
             return
 
         self.installation_in_progress = True
         
-        # Уведомляем View о начале установки через сигнал
         self.view.install_started_signal.emit(model_id)
         
-        # Определяем установленные компоненты
         installed_components = set()
         if self.check_installed_func:
             for component in ["tts_with_rvc", "fish_speech_lib", "triton", "f5_tts"]:
                 if self.check_installed_func(component):
                     installed_components.add(component)
         
-        # Новые компоненты для этой модели
         model_new_components = set(self.model_components.get(model_id, []))
-        
-        # Модели, которые станут доступны после установки
         models_to_mark_installed = self._get_installable_models(model_id, installed_components, model_new_components)
         
-        # Обновляем UI для всех моделей
         for mid in models_to_mark_installed:
             if mid != model_id:
                 QTimer.singleShot(0, lambda m=mid: self.view.set_button_text(m, _("Ожидание...", "Waiting...")))
                 QTimer.singleShot(0, lambda m=mid: self.view.set_button_enabled(m, False))
         
-        # Запускаем установку
         success = False
         try:
-            success = self.local_voice.download_model(model_id)
+            success = self.local_voice.download_model(model_id, progress_cb, status_cb, log_cb)
         except Exception as e:
             logger.exception(f"download_model exception for {model_id}: {e}")
+            if log_cb:
+                log_cb(f"Ошибка: {str(e)}")
         
-        # Обработка результата
         self.handle_download_result(success, model_id, models_to_mark_installed)
         
         self.installation_in_progress = False
         self.view.install_finished_signal.emit({"model_id": model_id, "success": success})
+        
+        if window and success:
+            if status_cb:
+                status_cb(_("Установка успешно завершена!", "Installation successful!"))
+            QTimer.singleShot(3000, window.close)
+        elif window:
+            QTimer.singleShot(5000, window.close)
 
     def _get_installable_models(self, model_id, installed_components, new_components):
         all_components = installed_components | new_components

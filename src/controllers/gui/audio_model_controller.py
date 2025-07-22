@@ -3,17 +3,29 @@ from PyQt6.QtWidgets import QMessageBox
 from main_logger import logger
 from core.events import Events, Event
 from .base_controller import BaseController
-
+from ui.windows.voice_action_windows import VoiceInstallationWindow, VoiceActionWindow
+from ui.windows.voice_action_windows import VCRedistWarningDialog, TritonDependenciesDialog
+from PyQt6.QtCore import pyqtSignal
 from utils import getTranslationVariant as _
 
 class AudioModelController(BaseController):
+
+    create_triton_dialog_signal = pyqtSignal(dict)
+    create_vc_redist_dialog_signal = pyqtSignal(dict)
+    show_vc_redist_dialog_signal = pyqtSignal()
+    show_triton_dialog_signal = pyqtSignal(dict)
+
     def subscribe_to_events(self):
         self.event_bus.subscribe(Events.GUI.CHECK_TRITON_DEPENDENCIES, self._on_check_triton_dependencies, weak=False)
         self.event_bus.subscribe(Events.Audio.UPDATE_MODEL_LOADING_STATUS, self._on_update_model_loading_status, weak=False)
         self.event_bus.subscribe(Events.Audio.FINISH_MODEL_LOADING, self._on_finish_model_loading, weak=False)
         self.event_bus.subscribe(Events.Audio.CANCEL_MODEL_LOADING, self._on_cancel_model_loading, weak=False)
         self.event_bus.subscribe(Events.Audio.OPEN_VOICE_MODEL_SETTINGS_DIALOG, self._on_open_voice_model_settings_dialog, weak=False)
-        
+        self.event_bus.subscribe(Events.Audio.SHOW_VC_REDIST_DIALOG, self._on_show_vc_redist_dialog, weak=False)
+        self.event_bus.subscribe(Events.Audio.SHOW_TRITON_DIALOG, self._on_show_triton_dialog, weak=False)
+        self.event_bus.subscribe(Events.Audio.REFRESH_TRITON_STATUS, self._on_refresh_triton_status, weak=False)
+
+
     def _on_check_triton_dependencies(self, event: Event):
         if self.view and hasattr(self.view, 'check_triton_dependencies_signal') and self.view.check_triton_dependencies_signal:
             self.view.check_triton_dependencies_signal.emit()
@@ -117,3 +129,57 @@ class AudioModelController(BaseController):
             
         except Exception as e:
             logger.error(f"Ошибка при обработке запроса на открытие окна настроек: {e}", exc_info=True)
+
+    def _on_show_vc_redist_dialog(self, event: Event):
+        if not self.view:
+            return 'close'
+        
+        result_holder = {'choice': 'close'}
+        
+        def _show_dialog():
+            dialog = VCRedistWarningDialog(self.view.window() if hasattr(self.view, 'window') else None)
+            dialog.exec()
+            result_holder['choice'] = dialog.get_choice()
+        
+        if QThread.currentThread() == QApplication.instance().thread():
+            _show_dialog()
+        else:
+            QTimer.singleShot(0, _show_dialog)
+            import time
+            time.sleep(0.1)
+            while not hasattr(result_holder, 'choice'):
+                QApplication.processEvents()
+                time.sleep(0.05)
+        
+        return result_holder['choice']
+
+    def _on_show_triton_dialog(self, event: Event):
+        if not self.view:
+            return 'skip'
+        
+        dependencies_status = event.data
+        result_holder = {'choice': 'skip'}
+        
+        def _show_dialog():
+            dialog = TritonDependenciesDialog(
+                self.view.window() if hasattr(self.view, 'window') else None,
+                dependencies_status
+            )
+            dialog.exec()
+            result_holder['choice'] = dialog.get_choice()
+        
+        if QThread.currentThread() == QApplication.instance().thread():
+            _show_dialog()
+        else:
+            QTimer.singleShot(0, _show_dialog)
+            import time
+            time.sleep(0.1)
+            while not hasattr(result_holder, 'choice'):
+                QApplication.processEvents()
+                time.sleep(0.05)
+        
+        return result_holder['choice']
+
+    def _on_refresh_triton_status(self, event: Event):
+        result = self.event_bus.emit_and_wait(Events.Audio.GET_TRITON_STATUS, timeout=1.0)
+        return result[0] if result else None

@@ -381,6 +381,10 @@ class Events:
         VOICEOVER_REQUESTED = "voiceover_requested"
         OPEN_VOICE_MODEL_SETTINGS = "open_voice_model_settings"
         OPEN_VOICE_MODEL_SETTINGS_DIALOG = "open_voice_model_settings_dialog"
+        SHOW_VC_REDIST_DIALOG = "show_vc_redist_dialog"
+        SHOW_TRITON_DIALOG = "show_triton_dialog"  
+        REFRESH_TRITON_STATUS = "refresh_triton_status"
+        GET_TRITON_STATUS = "get_triton_status"
 
     class Speech:
         """События для распознавания речи и управления микрофоном"""

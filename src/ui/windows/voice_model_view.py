@@ -12,6 +12,7 @@ from styles.voice_model_styles import get_stylesheet
 from main_logger import logger
 from utils import getTranslationVariant as _
 from core.events import get_event_bus, Events
+from ui.windows.voice_action_windows import VoiceInstallationWindow, VoiceActionWindow
 
 class VoiceCollapsibleSection(QFrame):
     def __init__(self, parent, title, collapsed=False, update_scrollregion_func=None, clear_description_func=None):
@@ -390,10 +391,53 @@ class VoiceModelSettingsView(QWidget):
         main_widget_layout.addWidget(bottom_widget)
 
     def _on_install_clicked(self, model_id):
-        self.event_bus.emit(Events.VoiceModel.INSTALL_MODEL, model_id)
+        models_data = self._get_models_data()
+        model_data = next((m for m in models_data if m["id"] == model_id), None)
+        if not model_data:
+            return
+            
+        model_name = model_data.get("name", model_id)
+        
+        window = VoiceInstallationWindow(
+            self.window() if self.window() else self,
+            _(f"Скачивание {model_name}", f"Downloading {model_name}"),
+            _("Подготовка...", "Preparing...")
+        )
+        
+        window.show()
+        QApplication.processEvents()
+        
+        self.event_bus.emit(Events.VoiceModel.INSTALL_MODEL, {
+            'model_id': model_id,
+            'progress_callback': window.update_progress,
+            'status_callback': window.update_status,
+            'log_callback': window.update_log,
+            'window': window
+        })
 
     def _on_uninstall_clicked(self, model_id):
-        self.event_bus.emit(Events.VoiceModel.UNINSTALL_MODEL, model_id)
+        models_data = self._get_models_data()
+        model_data = next((m for m in models_data if m["id"] == model_id), None)
+        if not model_data:
+            return
+            
+        model_name = model_data.get("name", model_id)
+        
+        window = VoiceActionWindow(
+            self.window() if self.window() else self,
+            _(f"Удаление {model_name}", f"Uninstalling {model_name}"),
+            _(f"Удаление {model_name}...", f"Uninstalling {model_name}...")
+        )
+        
+        window.show()
+        QApplication.processEvents()
+        
+        self.event_bus.emit(Events.VoiceModel.UNINSTALL_MODEL, {
+            'model_id': model_id,
+            'status_callback': window.update_status,
+            'log_callback': window.update_log,
+            'window': window
+        })
 
     def _on_save_clicked(self):
         self.event_bus.emit(Events.VoiceModel.SAVE_SETTINGS)

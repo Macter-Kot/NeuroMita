@@ -11,7 +11,7 @@ from typing import Optional, Any
 from main_logger import logger
 
 from managers.settings_manager import SettingsManager
-from utils import getTranslationVariant as _
+from utils import getTranslationVariant as _, get_character_voice_paths
 
 from core.events import get_event_bus, Events
 
@@ -281,18 +281,16 @@ class F5TTSModel(IVoiceModel):
             remove_silence_key = "f5rvc_f5_remove_silence" if is_combined_model else "remove_silence"
             nfe_step_key = "f5rvc_f5_nfe_step" if is_combined_model else "nfe_step"
             seed_key = "f5rvc_f5_seed" if is_combined_model else "seed"
-            
-            
-            # logger.info("-"*100)
-            # logger.info(int(settings.get(nfe_step_key, 32)))
-            # logger.info(nfe_step_key)
-            # logger.info(is_combined_model)
-            # logger.info("-"*100)
 
             reference_postfix = kwargs.get("reference_postfix", "default")
 
+            # Используем get_character_voice_paths для получения путей
+            voice_paths = get_character_voice_paths(character, self.parent.provider)
+            
             ref_audio_path = None
             ref_text_content = ""
+            
+            # Пробуем найти файлы персонажа с постфиксом
             if character and hasattr(character, 'short_name'):
                 char_name = character.short_name
                 potential_audio_path = os.path.join("Models", f"{char_name}_Cuts", f"{char_name}_{reference_postfix}.wav")
@@ -303,14 +301,21 @@ class F5TTSModel(IVoiceModel):
                         with open(potential_text_path, "r", encoding="utf-8") as f: 
                             ref_text_content = f.read().strip()
             
+            # Если не нашли с постфиксом, используем стандартные пути
             if not ref_audio_path:
-                default_audio_path = os.path.join("Models", "Mila.wav")
-                default_text_path = os.path.join("Models", "Mila.txt")
-                if os.path.exists(default_audio_path):
-                    ref_audio_path = default_audio_path
-                    if os.path.exists(default_text_path):
-                        with open(default_text_path, "r", encoding="utf-8") as f: 
+                if os.path.exists(voice_paths['clone_voice_filename']):
+                    ref_audio_path = voice_paths['clone_voice_filename']
+                    if os.path.exists(voice_paths['clone_voice_text']):
+                        with open(voice_paths['clone_voice_text'], "r", encoding="utf-8") as f: 
                             ref_text_content = f.read().strip()
+                else:
+                    # Fallback на Mila если персонаж не найден
+                    default_voice_paths = get_character_voice_paths(None, self.parent.provider)
+                    if os.path.exists(default_voice_paths['clone_voice_filename']):
+                        ref_audio_path = default_voice_paths['clone_voice_filename']
+                        if os.path.exists(default_voice_paths['clone_voice_text']):
+                            with open(default_voice_paths['clone_voice_text'], "r", encoding="utf-8") as f: 
+                                ref_text_content = f.read().strip()
             
             if not ref_audio_path:
                 raise FileNotFoundError("Для F5-TTS требуется референсное аудио, но оно не найдено.")
@@ -319,7 +324,6 @@ class F5TTSModel(IVoiceModel):
             output_path = os.path.join("temp", f"f5_raw_{hash_object.hexdigest()[:10]}.wav")
             os.makedirs("temp", exist_ok=True)
 
-            
             seed_processed = int(settings.get(seed_key, 0))
             vol = str(settings.get("volume", "1.0"))
             if seed_processed <= 0 or seed_processed > 2**31 - 1: seed_processed = 42
@@ -356,6 +360,7 @@ class F5TTSModel(IVoiceModel):
                     # Получаем f5_rvc параметры из настроек
                     rvc_output_path = await self.rvc_handler.apply_rvc_to_file(
                         filepath=final_output_path,
+                        character=character,  # Передаем персонажа
                         pitch=float(settings.get("f5rvc_rvc_pitch", 0)),
                         index_rate=float(settings.get("f5rvc_index_rate", 0.75)),
                         protect=float(settings.get("f5rvc_protect", 0.33)),
@@ -363,7 +368,8 @@ class F5TTSModel(IVoiceModel):
                         rms_mix_rate=float(settings.get("f5rvc_rvc_rms_mix_rate", 0.5)),
                         is_half=settings.get("f5rvc_is_half", "True").lower() == "true",
                         f0method=settings.get("f5rvc_f0method", None),
-                        use_index_file=settings.get("f5rvc_use_index_file", True)
+                        use_index_file=settings.get("f5rvc_use_index_file", True),
+                        volume=vol
                     )
                     
                     if rvc_output_path and os.path.exists(rvc_output_path):
@@ -379,7 +385,6 @@ class F5TTSModel(IVoiceModel):
             connected_to_game = self.events.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game:
                 self.events.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, final_output_path)
-    
 
             return final_output_path
         except Exception as e:

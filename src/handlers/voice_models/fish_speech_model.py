@@ -20,7 +20,7 @@ from utils.pip_installer import PipInstaller
 
 from managers.settings_manager import SettingsManager
 
-from utils import getTranslationVariant as _
+from utils import getTranslationVariant as _, get_character_voice_paths
 
 from core.events import get_event_bus, Events
 
@@ -40,21 +40,19 @@ class FishSpeechModel(IVoiceModel):
             self.fish_speech_module = None
             logger.info(ex)
 
-
-    def get_display_name(self, model_id) -> str:
+    def get_display_name(self) -> str:
         mode = self._mode()
-        if mode in "medium":
+        if mode == "medium":
             return "Fish Speech"
-        elif mode in "medium+":
+        elif mode == "medium+":
             return "Fish Speech+"
-        if mode in "medium+low":
+        elif mode == "medium+low":
             return "Fish Speech+ + RVC"
         return None
     
     def is_installed(self, model_id) -> bool:
         self._load_module()
         mode = model_id
-
         
         if self.fish_speech_module is None:
             return False
@@ -662,11 +660,17 @@ class FishSpeechModel(IVoiceModel):
             max_tokens_key = "fsprvc_fsp_max_tokens" if is_combined_model else "max_new_tokens"
             seed_key = "fsprvc_fsp_seed" if is_combined_model else "seed"
 
-            reference_audio_path = self.parent.clone_voice_filename if self.parent.clone_voice_filename and os.path.exists(self.parent.clone_voice_filename) else None
+            # Используем get_character_voice_paths для получения путей
+            voice_paths = get_character_voice_paths(character, self.parent.provider)
+            
+            reference_audio_path = None
             reference_text = ""
-            if reference_audio_path and self.parent.clone_voice_text and os.path.exists(self.parent.clone_voice_text):
-                with open(self.parent.clone_voice_text, "r", encoding="utf-8") as file:
-                    reference_text = file.read().strip()
+            
+            if os.path.exists(voice_paths['clone_voice_filename']):
+                reference_audio_path = voice_paths['clone_voice_filename']
+                if os.path.exists(voice_paths['clone_voice_text']):
+                    with open(voice_paths['clone_voice_text'], "r", encoding="utf-8") as file:
+                        reference_text = file.read().strip()
 
             seed_processed = int(settings.get(seed_key, 0))
             if seed_processed <= 0 or seed_processed > 2**31 - 1: seed_processed = 42
@@ -714,6 +718,7 @@ class FishSpeechModel(IVoiceModel):
                     # Получаем fsp_rvc параметры из настроек
                     rvc_output_path = await self.rvc_handler.apply_rvc_to_file(
                         filepath=final_output_path,
+                        character=character,  # Передаем персонажа
                         pitch=float(settings.get("fsprvc_rvc_pitch", 0)),
                         index_rate=float(settings.get("fsprvc_index_rate", 0.75)),
                         protect=float(settings.get("fsprvc_protect", 0.33)),
@@ -721,7 +726,8 @@ class FishSpeechModel(IVoiceModel):
                         rms_mix_rate=float(settings.get("fsprvc_rvc_rms_mix_rate", 0.5)),
                         is_half=settings.get("fsprvc_is_half", "True").lower() == "true",
                         f0method=settings.get("fsprvc_f0method", None),
-                        use_index_file=settings.get("fsprvc_use_index_file", True)
+                        use_index_file=settings.get("fsprvc_use_index_file", True),
+                        volume=vol
                     )
                     
                     if rvc_output_path and os.path.exists(rvc_output_path):
@@ -734,11 +740,10 @@ class FishSpeechModel(IVoiceModel):
                 else:
                     logger.warning("Модель 'medium+low' требует RVC, но обработчик не был предоставлен.")
 
-            
             connected_to_game = self.events.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
             if connected_to_game:
                 self.events.emit(Events.Server.SET_PATCH_TO_SOUND_FILE, final_output_path)
-            # self.events.emit(Events.Server.SET_ID_SOUND, id_sound)
+            
             return final_output_path
         except Exception as error:
             traceback.print_exc()

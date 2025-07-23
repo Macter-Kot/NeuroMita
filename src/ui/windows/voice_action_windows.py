@@ -110,10 +110,19 @@ class VoiceInstallationWindow(QDialog):
 
 class VoiceActionWindow(QDialog):
     
+
+    
     status_updated = pyqtSignal(str)
     log_updated = pyqtSignal(str)
     window_closed = pyqtSignal()
     
+    def get_threadsafe_callbacks(self):
+            return (
+                None,
+                self.status_updated.emit,
+                self.log_updated.emit
+            )
+
     def __init__(self, parent, title, initial_status=None):
         super().__init__(parent)
         self.setWindowTitle(title)

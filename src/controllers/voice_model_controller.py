@@ -13,7 +13,7 @@ from utils import getTranslationVariant as _
 
 from ui.windows.voice_model_view import VoiceModelSettingsView, VoiceCollapsibleSection
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, QEventLoop
 
 from core.events import get_event_bus, Events
 
@@ -424,7 +424,13 @@ class VoiceModelController:
     def handle_install_request(self, model_id, progress_cb=None, status_cb=None, log_cb=None, window=None):
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
         if not model_data:
-            self.view.show_critical(_("Ошибка", "Error"), _("Модель не найдена.", "Model not found."))
+            self.event_bus.emit(
+                Events.GUI.SHOW_ERROR_MESSAGE,
+                {
+                    "title": _("Ошибка", "Error"),
+                    "message": _("Модель не найдена.", "Model not found.")
+                }
+            )
             if window:
                 QTimer.singleShot(0, window.close)
             return
@@ -449,6 +455,7 @@ class VoiceModelController:
                 "Continue installation?"
             )
             
+            # МОЖЕТ вызывать Thread ошибку по смене parent
             proceed = self.view.show_question(_("Предупреждение", "Warning"), message)
 
         if proceed:
@@ -457,9 +464,11 @@ class VoiceModelController:
             QTimer.singleShot(0, window.close)
 
     def handle_uninstall_request(self, model_id, status_cb=None, log_cb=None, window=None):
-        model_name = next((m["name"] for m in self.local_voice_models if m["id"] == model_id), model_id)
+        model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
+        model_name = model_data.get("name", model_id) if model_data else model_id
 
         if self.local_voice.is_model_initialized(model_id):
+            # МОЖЕТ вызывать Thread ошибку по смене parent
             self.view.show_critical(
                 _("Модель Активна", "Model Active"),
                 _(f"Модель '{model_name}' сейчас используется или инициализирована.\n\n"
@@ -469,8 +478,6 @@ class VoiceModelController:
                 "Please restart the application completely to free up resources "
                 "before uninstalling this model.")
             )
-            if window:
-                QTimer.singleShot(0, window.close)
             return
 
         message = _(f"Вы уверены, что хотите удалить модель '{model_name}'?\n\n"
@@ -479,11 +486,27 @@ class VoiceModelController:
                     f"Are you sure you want to uninstall the model '{model_name}'?\n\n"
                     "The main model package and all dependencies no longer used by other installed models (except g4f) will be removed.\n\n"
                     "This action is irreversible!")
-        
-        if self.view.show_question(_("Подтверждение Удаления", "Confirm Uninstallation"), message):
-            self.start_uninstall(model_id, status_cb, log_cb, window)
-        elif window:
-            QTimer.singleShot(0, window.close)
+
+        result_holder = {"answer": False}
+        loop = QEventLoop()
+        self.view.ask_question_signal.emit(
+            _("Подтверждение Удаления", "Confirm Uninstallation"),
+            message, result_holder, loop)
+        loop.exec()
+
+        if not result_holder["answer"]:
+            return
+
+        win_holder = {}
+        win_loop = QEventLoop()
+        self.view.create_voice_action_window_signal.emit(
+            _(f"Удаление {model_name}", f"Uninstalling {model_name}"),
+            _(f"Удаление {model_name}...", f"Uninstalling {model_name}..."),
+            win_holder, win_loop)
+        win_loop.exec()
+        window = win_holder["window"]
+        __, status_cb, log_cb = window.get_threadsafe_callbacks()
+        self.start_uninstall(model_id, status_cb, log_cb, window)
 
     def start_download(self, model_id, progress_cb=None, status_cb=None, log_cb=None, window=None):
         if self.installation_in_progress:
@@ -548,25 +571,14 @@ class VoiceModelController:
 
         success = False
         try:
-            if status_cb or log_cb:
-                success = self.local_voice.download_model(model_id, None, status_cb, log_cb)
-            else:
-                if model_id in ("low", "low+"):
-                    success = self.local_voice.uninstall_edge_tts_rvc()
-                elif model_id == "medium":
-                    success = self.local_voice.uninstall_fish_speech()
-                elif model_id in ("medium+", "medium+low"):
-                    success = self.local_voice.uninstall_triton_component()
-                elif model_id in ("high", "high+low"):
-                    success = self.local_voice.uninstall_f5_tts()
-                else:
-                    logger.error(f"Unknown model_id for uninstall: {model_id}")
-                    success = False
+            success = self.local_voice.uninstall_model(model_id, status_cb, log_cb)
         except Exception as e:
             logger.error(f"Uninstall exception for {model_id}: {e}", exc_info=True)
             success = False
 
+        logger.warning("СЮДА Я ПРОШЁЛ! ХЕНДЛЮ")
         self.handle_uninstall_result(success, model_id)
+        logger.warning("ПРОШЁЛ ХЕНДЛ")
         
         self.installation_in_progress = False
         self.view.uninstall_finished_signal.emit({"model_id": model_id, "success": success})
@@ -574,6 +586,9 @@ class VoiceModelController:
         if window:
             if success and status_cb:
                 status_cb(_("Удаление завершено!", "Uninstallation complete!"))
+            elif status_cb:
+                status_cb(_("Удаление завершено с ОШИБКОЙ!", "Uninstallation failed!"))
+
             QTimer.singleShot(3000 if success else 5000, window.close)
 
     def handle_download_result(self, success, model_id, models_to_mark_installed):
@@ -601,26 +616,36 @@ class VoiceModelController:
             logger.info(f"{_('Ошибка установки модели', 'Error installing model')} {model_id}.")
 
     def handle_uninstall_result(self, success, model_id):
+        logger.warning("Зашел в хендлер")
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
         model_name = model_data.get("name", model_id) if model_data else model_id
-
+        
+        logger.warning("Ну сюда надо зайти")
         if success:
             logger.info(f"{_('Удаление модели', 'Uninstallation of model')} {model_id} {_('завершено успешно.', 'completed successfully.')}")
             if model_id in self.installed_models:
                 self.installed_models.remove(model_id)
                 logger.info(f"Удалена модель {model_id} из installed_models.")
-
+            
+            logger.warning("щас как сохраню")
             self.save_installed_models_list()
+            logger.warning("сохранил!")
             
             if self.on_save_callback:
+                logger.warning("on_save_callback ЗАШЕЛ")
                 callback_data = {"installed_models": list(self.installed_models), "models_data": self.local_voice_models}
                 self.on_save_callback(callback_data)
 
         else:
             logger.error(f"{_('Ошибка при удалении модели', 'Error uninstalling model')} {model_id}.")
-            self.view.show_critical(_("Ошибка Удаления", "Uninstallation Error"), 
-                                    _(f"Не удалось удалить модель '{model_name}'.\nСм. лог для подробностей.", 
-                                    f"Could not uninstall model '{model_name}'.\nSee log for details."))
+            self.event_bus.emit(
+                Events.GUI.SHOW_ERROR_MESSAGE,
+                {
+                    "title": _("Ошибка Удаления", "Uninstallation Error"),
+                    "message": _(f"Не удалось удалить модель '{model_name}'.\nСм. лог для подробностей.",
+                                f"Could not uninstall model '{model_name}'.\nSee log for details.")
+                }
+            )
 
     def save_installed_models_list(self):
         try:

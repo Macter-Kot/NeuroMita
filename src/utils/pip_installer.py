@@ -3,14 +3,15 @@ PipInstaller 3.0
 """
 
 from __future__ import annotations
-import subprocess, sys, os, queue, threading, time, json, shutil, gc
+import subprocess, sys, os, queue, threading, time, json, shutil, gc, importlib.util
 from pathlib import Path
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name, NormalizedName
 from packaging.version import parse as parse_version
 from main_logger import logger
-from PyQt6.QtWidgets import QApplication  # Для processEvents()
-
+from PyQt6.QtWidgets import QApplication
+from typing import Set, List, Tuple, Optional
+from PyQt6.QtCore import QThread, QCoreApplication
 
 class DependencyResolver:
     def __init__(self, libs_path_abs, update_log_func):
@@ -167,22 +168,25 @@ class PipInstaller:
         update_status=None,
         update_log=None,
         progress_window=None,
-        update_progress=None
+        update_progress=None,
+        protected_packages: Optional[List[str]] = None
     ):
         self.script_path = script_path
         self.libs_path = libs_path
         self.python_root = Path(script_path).resolve().parent
-        self.libs_path_abs = os.path.abspath(self.libs_path)  # Абсолютный путь к "./Lib"
+        self.libs_path_abs = os.path.abspath(self.libs_path)
         self.update_status = update_status or (lambda m: logger.info(f"STATUS: {m}"))
         self.update_log = update_log or (lambda m: logger.info(f"LOG: {m}"))
         self.update_progress = update_progress or (lambda *_: None)
         self.progress_window = progress_window
+        # Защищенные пакеты по умолчанию
+        self.protected_packages = protected_packages or ["g4f", "gigaam", "pillow", "silero-vad"]
         self._ensure_libs_path()
 
     def install_package(self, package_spec, description="Установка пакета...", extra_args=None) -> bool:
         cmd = [
             self.script_path, "-m", "uv", "pip", "install",
-            "--target", str(self.libs_path_abs),  # Абсолютный путь
+            "--target", str(self.libs_path_abs),
             "--no-cache-dir"
         ]
         if extra_args:
@@ -193,57 +197,170 @@ class PipInstaller:
             cmd.append(package_spec)
         return self._run_pip_process(cmd, description)
 
-    def uninstall_packages(self, packages: list[str], description="Удаление пакетов...") -> bool:
+    def _unload_module_from_sys(self, module_name: str):
+        """Выгружает модуль и все его подмодули из sys.modules"""
+        to_remove = []
+        
+        # Ищем все модули, которые начинаются с module_name
+        for loaded_name in list(sys.modules.keys()):
+            if loaded_name == module_name or loaded_name.startswith(module_name + "."):
+                to_remove.append(loaded_name)
+        
+        # Также проверяем вариант с заменой - на _
+        alt_name = module_name.replace("-", "_") if "-" in module_name else module_name.replace("_", "-")
+        if alt_name != module_name:
+            for loaded_name in list(sys.modules.keys()):
+                if loaded_name == alt_name or loaded_name.startswith(alt_name + "."):
+                    to_remove.append(loaded_name)
+        
+        # Удаляем найденные модули
+        for mod_name in to_remove:
+            try:
+                if mod_name in sys.modules:
+                    self.update_log(f"Выгружаем модуль из памяти: {mod_name}")
+                    del sys.modules[mod_name]
+            except Exception as e:
+                logger.warning(f"Не удалось выгрузить модуль {mod_name}: {e}")
+        
+        # Принудительная сборка мусора
+        gc.collect()
+
+    def _is_protected_dependency(self, package_canon: NormalizedName, protected_deps: Set[NormalizedName]) -> bool:
+        """Проверяет, является ли пакет защищенной зависимостью"""
+        return package_canon in protected_deps
+
+    def uninstall_packages(self, packages: List[str], description="Удаление пакетов...") -> bool:
         if not packages:
             self.update_log("Список пакетов для удаления пуст.")
             return True
 
-        # Проверка на повреждённые dist-info (fallback для ошибок вроде 'RECORD not found')
-        for pkg in packages:
+        resolver = DependencyResolver(self.libs_path_abs, self.update_log)
+        requested: Set[NormalizedName] = {canonicalize_name(p) for p in packages}
+        
+        # Основные пакеты для удаления
+        main_packages_to_remove = packages.copy()
+        self.update_log(f"Запрошено удаление пакетов: {main_packages_to_remove}")
+
+        # Собираем защищенные пакеты и их зависимости
+        protected_canon = {canonicalize_name(p) for p in self.protected_packages}
+        protected_deps: Set[NormalizedName] = set()
+        
+        all_installed = resolver.get_all_installed_packages()
+        
+        for prot_pkg in self.protected_packages:
+            prot_canon = canonicalize_name(prot_pkg)
+            if prot_canon in all_installed:
+                deps = resolver.get_dependency_tree(prot_pkg) or {prot_canon}
+                protected_deps.update(deps)
+                self.update_log(f"Защищенный пакет {prot_pkg} и его зависимости: {deps}")
+
+        # Собираем все зависимости удаляемых пакетов
+        candidates: Set[NormalizedName] = set()
+        for pkg in requested:
+            candidates.update(resolver.get_dependency_tree(str(pkg)))
+        candidates.update(requested)
+        
+        # Исключаем защищенные пакеты из кандидатов на удаление
+        final_remove = sorted(candidates - protected_deps)
+        
+        self.update_log(f"Кандидаты на удаление (исключая защищенные): {final_remove}")
+
+        if not final_remove:
+            self.update_log("Нечего удалять: все пакеты либо защищены, либо не найдены.")
+            return True
+
+        # Переменные для отслеживания успеха
+        main_packages_removed = []
+        dependencies_failed = []
+        
+        # Сначала выгружаем все модули из памяти (кроме защищенных)
+        self.update_log("Выгружаем модули из памяти...")
+        for pkg in final_remove:
+            if not self._is_protected_dependency(canonicalize_name(pkg), protected_deps):
+                self._unload_module_from_sys(str(pkg))
+
+        # Удаляем пакеты
+        for pkg in final_remove:
             canon = canonicalize_name(pkg)
+            is_main_package = str(pkg) in main_packages_to_remove or canon in requested
+            
             dist_path = self._find_dist_info_path(canon)
-            if dist_path and not os.path.exists(os.path.join(dist_path, "RECORD")):
-                logger.warning(f"RECORD файл отсутствует для {pkg}. Пытаемся удалить dist-info вручную: {dist_path}")
-                try:
-                    shutil.rmtree(dist_path)
-                    logger.info(f"Вручную удалена dist-info для {pkg}")
-                except Exception as ex:
-                    logger.error(f"Ошибка ручного удаления dist-info для {pkg}: {ex}")
-                    # Продолжаем, не возвращаем False
+            
+            if dist_path:
+                # Пробуем удалить через uv
+                cmd = [
+                    self.script_path, "-m", "uv", "pip", "uninstall",
+                    "--target", str(self.libs_path_abs), str(pkg)
+                ]
+                success = self._run_pip_process(cmd, f"Удаление {pkg}")
+                
+                if not success:
+                    # Если не удалось через uv, пробуем ручное удаление
+                    self.update_log(f"uv pip не смог удалить {pkg}, пробуем ручное удаление...")
+                    success = self._manual_remove(dist_path, str(pkg))
+                
+                if success and is_main_package:
+                    main_packages_removed.append(str(pkg))
+                elif not success and not is_main_package:
+                    dependencies_failed.append(str(pkg))
+                elif not success and is_main_package:
+                    # Основной пакет не удалился - это ошибка
+                    self.update_log(f"ОШИБКА: Не удалось удалить основной пакет {pkg}")
+                    return False
+            else:
+                self.update_log(f"{pkg}: dist-info не найден, считаем удалённым.")
+                if is_main_package:
+                    main_packages_removed.append(str(pkg))
 
-        # Удаление по одному пакету, чтобы ошибка на одном не рушила все
-        for pkg in packages:
-            # Проверяем, импортирован ли пакет (если да, выгружаем для разблокировки .pyd)
-            canon = canonicalize_name(pkg)
-            if canon in sys.modules:
-                logger.warning(f"Пакет {pkg} импортирован. Выгружаем для разблокировки...")
-                del sys.modules[canon]
-                gc.collect()  # Освобождаем handles
+        # Проверяем результат
+        if main_packages_removed:
+            self.update_log(f"Успешно удалены основные пакеты: {main_packages_removed}")
+            if dependencies_failed:
+                self.update_log(f"Некоторые зависимости не удалились (это нормально): {dependencies_failed}")
+            self.update_log("Удаление завершено успешно.")
+            return True
+        else:
+            self.update_log("ОШИБКА: Не удалось удалить ни одного основного пакета.")
+            return False
 
-            cmd = [self.script_path, "-m", "uv", "pip", "uninstall", "--target", str(self.libs_path_abs), pkg]
-            success = self._run_pip_process(cmd, f"Удаление {pkg}")
+    def _manual_remove(self, path: str, pkg_name: str) -> bool:
+        if not os.path.exists(path):
+            return True
 
-            if not success:
-                logger.warning(f"uv pip не удался для {pkg} (код 2). Пытаемся ручное удаление...")
-                dist_path = self._find_dist_info_path(canon)
-                if dist_path:
-                    self._manual_remove(dist_path, pkg)
-                logger.info(f"Пакет {pkg} пропущен (занят или ошибка) — продолжаем.")
-
-        logger.info("Удаление завершено (с пропусками ошибок).")
-        return True  # Всегда успех, даже если некоторые пакеты не удалились
-
-    def _manual_remove(self, path: str, pkg_name: str):
-        retries = 3
+        retries = 5
+        wait = [0.5, 1, 2, 3, 5]
+        
+        # Попытки удаления с задержками
         for attempt in range(retries):
             try:
-                shutil.rmtree(path, ignore_errors=True)
-                logger.info(f"Ручное удаление успешно для {pkg_name}")
-                return
-            except Exception as e:
-                logger.warning(f"Ошибка ручного удаления {pkg_name} (attempt {attempt+1}): {e}. Retry...")
-                time.sleep(0.5)
-        logger.warning(f"Не удалось удалить {pkg_name} после {retries} попыток. Пропускаем.")
+                # Сначала пробуем обычное удаление
+                shutil.rmtree(path, ignore_errors=False)
+                if not os.path.exists(path):
+                    logger.info(f"{pkg_name}: каталог {path} удалён.")
+                    return True
+            except Exception as ex:
+                logger.warning(
+                    f"{pkg_name}: не удалось удалить (попытка {attempt+1}/{retries}): {ex}"
+                )
+                
+                # Дополнительная очистка перед следующей попыткой
+                self._unload_module_from_sys(pkg_name)
+                gc.collect()
+                time.sleep(wait[attempt])
+
+        # Последняя попытка с игнорированием ошибок
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+
+        # Финальная проверка
+        if os.path.exists(path):
+            logger.error(f"{pkg_name}: не удалось удалить каталог {path} после всех попыток.")
+            return False
+        
+        logger.info(f"{pkg_name}: каталог {path} удалён после нескольких попыток.")
+        return True
 
     def _find_dist_info_path(self, package_name_canon: NormalizedName) -> str | None:
         if not os.path.exists(self.libs_path_abs):
@@ -268,6 +385,7 @@ class PipInstaller:
         self.update_status(description)
         self.update_log("Выполняем: " + " ".join(cmd))
         env = os.environ.copy()
+        
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -282,10 +400,11 @@ class PipInstaller:
             )
         except FileNotFoundError:
             self.update_log("ОШИБКА: не найден интерпретатор Python.")
-            return True  # Пропуск
+            return False
         except Exception as e:
             self.update_log(f"ОШИБКА запуска subprocess: {e}")
-            return True  # Пропуск
+            return False
+            
         q_out, q_err = queue.Queue(), queue.Queue()
 
         def _reader(pipe, q):
@@ -297,51 +416,70 @@ class PipInstaller:
 
         threading.Thread(target=_reader, args=(proc.stdout, q_out), daemon=True).start()
         threading.Thread(target=_reader, args=(proc.stderr, q_err), daemon=True).start()
+        
         start = time.time()
         last_activity = start
-        TIMEOUT_SEC = 7200000 # надеюсь столько хватит. 7200000 секунд = 2000 часов
-        NO_ACTIVITY_SEC = 3600000 # надеюсь хватит для установки 3 гигов = 1000 часов
+        TIMEOUT_SEC = 7200000
+        NO_ACTIVITY_SEC = 3600000
         progress_sofar = 0
+        
         while proc.poll() is None:
             if is_qt_window and not self.progress_window.isVisible():
                 self.update_log("Окно закрыто, прерываем процесс.")
                 proc.terminate()
                 time.sleep(0.5)
-                proc.kill()
-                return True  # Пропуск
+                if proc.poll() is None:
+                    proc.kill()
+                return False
+                
             msgs = 0
             while not q_out.empty():
                 self.update_log(q_out.get_nowait())
                 msgs += 0.4
             while not q_err.empty():
-                self.update_log(q_err.get_nowait())
+                msg = q_err.get_nowait()
+                self.update_log(msg)
+                if "not installed" in msg.lower() or "no such" in msg.lower():
+                    logger.debug(f"UV сообщает что пакет не установлен: {msg}")
                 msgs += 0.4
+                
             if msgs:
                 last_activity = time.time()
                 progress_sofar = min(round(progress_sofar + msgs), 95)
                 self.update_progress(progress_sofar)
+                
             now = time.time()
             if now - last_activity > NO_ACTIVITY_SEC:
                 self.update_log("Предупреждение: процесс неактивен, прерываем.")
                 proc.terminate()
                 time.sleep(0.5)
-                proc.kill()
-                return True  # Пропуск
+                if proc.poll() is None:
+                    proc.kill()
+                return False
+                
             if now - start > TIMEOUT_SEC:
                 self.update_log("Таймаут > 2000 часов, прерываем.")
                 proc.terminate()
                 time.sleep(0.5)
-                proc.kill()
-                return True  # Пропуск
-            QApplication.processEvents()
+                if proc.poll() is None:
+                    proc.kill()
+                return False
+                
+            if QCoreApplication.instance() and QThread.currentThread() == QCoreApplication.instance().thread():
+                QApplication.processEvents()
             time.sleep(0.05)
+            
         while not q_out.empty():
             self.update_log(q_out.get_nowait())
         while not q_err.empty():
             self.update_log(q_err.get_nowait())
+            
         self.update_progress(100)
         ret = proc.returncode
         self.update_log(f"pip завершился с кодом {ret}")
-        if ret != 0:
-            logger.warning(f"Ошибка с кодом {ret} — пропускаем и считаем успехом.")
-        return True  # Всегда успех
+        
+        if "uninstall" in cmd and ret in (1, 2):
+            logger.info(f"UV вернул код {ret} при удалении - возможно пакет не был установлен")
+            return True
+        
+        return ret == 0

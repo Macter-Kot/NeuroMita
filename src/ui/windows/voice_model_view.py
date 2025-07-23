@@ -5,7 +5,7 @@ import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                              QFrame, QScrollArea, QLineEdit, QComboBox, QCheckBox,
                              QSizePolicy, QMessageBox, QApplication, QToolTip)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QEvent, QPoint
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QEvent, QPoint, pyqtSlot
 from PyQt6.QtGui import QFont, QCursor
 
 from styles.voice_model_styles import get_stylesheet
@@ -220,6 +220,9 @@ class VoiceModelSettingsView(QWidget):
     refresh_panels_signal = pyqtSignal()
     refresh_settings_signal = pyqtSignal()
 
+    ask_question_signal = pyqtSignal(str, str, object, object)
+    create_voice_action_window_signal = pyqtSignal(str, str, object, object)
+
 
     def __init__(self):
         super().__init__()
@@ -253,10 +256,29 @@ class VoiceModelSettingsView(QWidget):
         self.uninstall_started_signal.connect(self._on_uninstall_started)
         self.uninstall_finished_signal.connect(self._on_uninstall_finished)
         self.refresh_panels_signal.connect(self._on_refresh_panels)
-        self.refresh_settings_signal.connect(self._on_refresh_settings)
+        self.refresh_settings_signal.connect(self._on_refresh_settings)        
+        self.ask_question_signal.connect(self._on_ask_question)
+        self.create_voice_action_window_signal.connect(self._on_create_voice_action_window)
         
         # Инициализируем данные
         self._initialize_data()
+
+    @pyqtSlot(str, str, object, object)
+    def _on_ask_question(self, title, message, result_holder, local_loop):
+        reply = QMessageBox.question(
+            self, title, message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        result_holder["answer"] = (reply == QMessageBox.StandardButton.Yes)
+        local_loop.quit()
+
+    @pyqtSlot(str, str, object, object)
+    def _on_create_voice_action_window(self, title, status, result_holder, local_loop):
+        from ui.windows.voice_action_windows import VoiceActionWindow
+        window = VoiceActionWindow(self.window() or self, title, status)
+        window.show()
+        result_holder["window"] = window
+        local_loop.quit()
 
     def _initialize_data(self):
         # Получаем данные через события
@@ -405,7 +427,6 @@ class VoiceModelSettingsView(QWidget):
         )
         
         window.show()
-        QApplication.processEvents()
         
         self.event_bus.emit(Events.VoiceModel.INSTALL_MODEL, {
             'model_id': model_id,
@@ -416,28 +437,7 @@ class VoiceModelSettingsView(QWidget):
         })
 
     def _on_uninstall_clicked(self, model_id):
-        models_data = self._get_models_data()
-        model_data = next((m for m in models_data if m["id"] == model_id), None)
-        if not model_data:
-            return
-            
-        model_name = model_data.get("name", model_id)
-        
-        window = VoiceActionWindow(
-            self.window() if self.window() else self,
-            _(f"Удаление {model_name}", f"Uninstalling {model_name}"),
-            _(f"Удаление {model_name}...", f"Uninstalling {model_name}...")
-        )
-        
-        window.show()
-        QApplication.processEvents()
-        
-        self.event_bus.emit(Events.VoiceModel.UNINSTALL_MODEL, {
-            'model_id': model_id,
-            'status_callback': window.update_status,
-            'log_callback': window.update_log,
-            'window': window
-        })
+        self.event_bus.emit(Events.VoiceModel.UNINSTALL_MODEL, {'model_id': model_id})
 
     def _on_save_clicked(self):
         self.event_bus.emit(Events.VoiceModel.SAVE_SETTINGS)

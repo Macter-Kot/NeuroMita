@@ -134,6 +134,41 @@ class LocalVoice:
                 if hasattr(self, attr):
                     delattr(self, attr)
 
+    def uninstall_model(self, model_id: str, status_cb=None, log_cb=None) -> bool:
+        """
+        Удаляет модель по ID с поддержкой колбеков для GUI
+        status_cb(str), log_cb(str) передаются из GUI-потока
+        """
+        logger.info(f"LocalVoice.uninstall_model('{model_id}') вызван")
+        
+        self._external_status = status_cb or (lambda *_: None)
+        self._external_log = log_cb or (lambda *_: None)
+        
+        try:
+            if model_id in ("low", "low+"):
+                return self.uninstall_edge_tts_rvc()
+            elif model_id == "medium":
+                return self.uninstall_fish_speech()
+            elif model_id in ("medium+", "medium+low"):
+                return self.uninstall_triton_component()
+            elif model_id in ("high", "high+low"):
+                return self.uninstall_f5_tts()
+            else:
+                logger.error(f"Unknown model_id for uninstall: {model_id}")
+                self._external_log(_(f"Неизвестная модель: {model_id}", f"Unknown model: {model_id}"))
+                return False
+                
+        except Exception as e:
+            logger.error(f"Ошибка при удалении модели {model_id}: {e}", exc_info=True)
+            if self._external_log:
+                self._external_log(f"{_('Ошибка:', 'Error:')} {str(e)}")
+            return False
+            
+        finally:
+            for attr in ("_external_status", "_external_log"):
+                if hasattr(self, attr):
+                    delattr(self, attr)
+
     def get_all_model_configs(self) -> List[Dict[str, Any]]:
         """Собирает все конфигурации моделей от всех обработчиков"""
         all_configs = []

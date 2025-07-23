@@ -319,7 +319,7 @@ class VoiceModelController:
                 setting_key = setting.get("key")
                 widget_type = setting.get("type")
                 is_device_setting = "device" in str(setting_key).lower()
-                is_half_setting = setting_key in ["is_half", "fsprvc_is_half", "half", "fsprvc_fsp_half"]
+                is_half_setting = setting_key in ["is_half", "silero_rvc_is_half", "fsprvc_is_half", "half", "fsprvc_fsp_half"]
 
                 final_values_list = None
                 adapt_key_suffix = ""

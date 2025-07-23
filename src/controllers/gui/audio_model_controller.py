@@ -7,7 +7,7 @@ from ui.windows.voice_action_windows import VCRedistWarningDialog, TritonDepende
 from utils import getTranslationVariant as _
 
 from PyQt6.QtWidgets import (QApplication, QMessageBox)
-from PyQt6.QtCore import QTimer, pyqtSignal, QThread
+from PyQt6.QtCore import QTimer, pyqtSignal, QThread, QEventLoop
 
 class AudioModelController(BaseController):
 
@@ -147,51 +147,38 @@ class AudioModelController(BaseController):
     def _on_show_vc_redist_dialog(self, event: Event):
         if not self.view:
             return 'close'
-        
+
         result_holder = {'choice': 'close'}
-        
+        loop = QEventLoop()
+
         def _show_dialog():
-            dialog = VCRedistWarningDialog(self.view.window() if hasattr(self.view, 'window') else None)
+            dialog = VCRedistWarningDialog(self.view.window())
+            dialog.finished.connect(loop.quit)
             dialog.exec()
             result_holder['choice'] = dialog.get_choice()
-        
-        if QThread.currentThread() == QApplication.instance().thread():
-            _show_dialog()
-        else:
-            QTimer.singleShot(0, _show_dialog)
-            import time
-            time.sleep(0.1)
-            while not hasattr(result_holder, 'choice'):
-                QApplication.processEvents()
-                time.sleep(0.05)
-        
+
+        QTimer.singleShot(0, _show_dialog)
+        loop.exec()
+
         return result_holder['choice']
 
     def _on_show_triton_dialog(self, event: Event):
         if not self.view:
             return 'skip'
-        
+
         dependencies_status = event.data
         result_holder = {'choice': 'skip'}
-        
+        loop = QEventLoop()
+
         def _show_dialog():
-            dialog = TritonDependenciesDialog(
-                self.view.window() if hasattr(self.view, 'window') else None,
-                dependencies_status
-            )
+            dialog = TritonDependenciesDialog(self.view.window(), dependencies_status)
+            dialog.finished.connect(loop.quit)
             dialog.exec()
             result_holder['choice'] = dialog.get_choice()
-        
-        if QThread.currentThread() == QApplication.instance().thread():
-            _show_dialog()
-        else:
-            QTimer.singleShot(0, _show_dialog)
-            import time
-            time.sleep(0.1)
-            while not hasattr(result_holder, 'choice'):
-                QApplication.processEvents()
-                time.sleep(0.05)
-        
+
+        QTimer.singleShot(0, _show_dialog)
+        loop.exec()
+
         return result_holder['choice']
 
     def _on_refresh_triton_status(self, event: Event):

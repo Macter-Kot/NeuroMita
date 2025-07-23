@@ -22,7 +22,7 @@ import gc
 import soundfile as sf
 import re
 from xml.sax.saxutils import escape
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 
 from packaging.utils import canonicalize_name, NormalizedName
 from utils.pip_installer import PipInstaller, DependencyResolver
@@ -133,6 +133,20 @@ class LocalVoice:
             for attr in ("_external_progress", "_external_status", "_external_log"):
                 if hasattr(self, attr):
                     delattr(self, attr)
+
+    def get_all_model_configs(self) -> List[Dict[str, Any]]:
+        """Собирает все конфигурации моделей от всех обработчиков"""
+        all_configs = []
+        seen_ids = set()
+        
+        for model_id, model_handler in self.models.items():
+            if model_handler and hasattr(model_handler, 'get_model_configs'):
+                for config in model_handler.get_model_configs():
+                    if config['id'] not in seen_ids:
+                        all_configs.append(config)
+                        seen_ids.add(config['id'])
+        
+        return all_configs
 
     def initialize_model(self, model_id: str, init: bool = False) -> bool:
         model_to_init = self.models.get(model_id)

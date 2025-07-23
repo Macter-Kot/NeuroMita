@@ -1,5 +1,3 @@
-# voice_model_controller.py
-
 import os
 import platform
 import time
@@ -29,8 +27,6 @@ except ImportError:
 from core.constants import (model_descriptions, model_descriptions_en, 
                             setting_descriptions, setting_descriptions_en,
                             default_description_text, default_description_text_en)
-
-from core.models_settings import get_default_model_structure
 
 class VoiceModelController:
     def __init__(self, view_parent, config_dir, on_save_callback, local_voice, check_installed_func):
@@ -76,7 +72,6 @@ class VoiceModelController:
         
         self.event_bus = get_event_bus()
         
-        # Подписываемся на события запросов данных
         self.event_bus.subscribe(Events.VoiceModel.GET_MODEL_DATA, self._handle_get_model_data, weak=False)
         self.event_bus.subscribe(Events.VoiceModel.GET_INSTALLED_MODELS, self._handle_get_installed_models, weak=False)
         self.event_bus.subscribe(Events.VoiceModel.GET_DEPENDENCIES_STATUS, self._handle_get_dependencies_status, weak=False)
@@ -93,16 +88,12 @@ class VoiceModelController:
         self.event_bus.subscribe(Events.VoiceModel.UPDATE_DESCRIPTION, self._handle_update_description, weak=False)
         self.event_bus.subscribe(Events.VoiceModel.CLEAR_DESCRIPTION, self._handle_clear_description, weak=False)
         
-        # Создаем View
         self.view = None
-        
         
         if view_parent:
             self._create_view()
     
     def _create_view(self):
-        """Создает View и добавляет его в родительский виджет"""
-        # Удаляем старый View если он есть
         if self.view:
             try:
                 if self.view.parent():
@@ -112,12 +103,9 @@ class VoiceModelController:
                 pass
             self.view = None
             
-        # Создаем новый View
         self.view = VoiceModelSettingsView()
         
-        # Если есть родитель, добавляем View в его layout
         if self.view_parent and hasattr(self.view_parent, 'layout'):
-            # Очищаем layout перед добавлением
             layout = self.view_parent.layout()
             while layout.count():
                 child = layout.takeAt(0)
@@ -126,11 +114,9 @@ class VoiceModelController:
             
             layout.addWidget(self.view)
         
-        # Инициализируем данные во View
         self.view._initialize_data()
 
     def set_view_parent(self, parent):
-        """Устанавливает родителя для View и создает View если нужно"""
         self.view_parent = parent
         if not self.view:
             self._create_view()
@@ -174,7 +160,6 @@ class VoiceModelController:
         
         self.handle_install_request(model_id, progress_cb, status_cb, log_cb, window)
 
-
     def _handle_uninstall_model(self, event):
         data = event.data
         model_id = data.get('model_id') if isinstance(data, dict) else data
@@ -202,7 +187,11 @@ class VoiceModelController:
         self.handle_clear_description()
 
     def get_default_model_structure(self):
-        return get_default_model_structure()
+        if self.local_voice and hasattr(self.local_voice, 'get_all_model_configs'):
+            return self.local_voice.get_all_model_configs()
+        else:
+            from core.models_settings import get_default_model_structure
+            return get_default_model_structure()
         
     def load_settings(self):
         default_model_structure = self.get_default_model_structure()
@@ -246,26 +235,28 @@ class VoiceModelController:
             for model_data in self.get_default_model_structure():
                 model_id = model_data.get("id")
                 if model_id:
-                    # Проверяем напрямую через local_voice для более надежной проверки
                     is_installed = False
                     try:
                         if hasattr(self.local_voice, 'is_model_installed'):
                             is_installed = self.local_voice.is_model_installed(model_id)
                         else:
-                            # Fallback на старый метод
-                            if model_id == "low": is_installed = self.check_installed_func("tts_with_rvc")
-                            elif model_id == "low+": is_installed = self.check_installed_func("tts_with_rvc")
-                            elif model_id == "medium": is_installed = self.check_installed_func("fish_speech_lib")
-                            elif model_id == "medium+": is_installed = self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
-                            elif model_id == "medium+low": is_installed = self.check_installed_func("tts_with_rvc") and self.check_installed_func("fish_speech_lib") and self.check_installed_func("triton")
-                            elif model_id == "high": is_installed = self.check_installed_func("f5_tts")
-                            elif model_id == "high+low": is_installed = self.check_installed_func("f5_tts") and self.check_installed_func("tts_with_rvc")
+                            is_installed = self._check_model_installed_by_components(model_id)
                     except Exception as e:
                         logger.error(f"Ошибка при проверке установки модели {model_id}: {e}")
 
                     if is_installed:
                         self.installed_models.add(model_id)
             logger.info(f"{_('Актуальный список установленных моделей:', 'Current list of installed models:')} {self.installed_models}")
+
+    def _check_model_installed_by_components(self, model_id):
+        required_components = self.model_components.get(model_id, [])
+        if not required_components:
+            return False
+        
+        for component in required_components:
+            if not self.check_installed_func(component):
+                return False
+        return True
 
     def save_settings(self):
         settings_to_save = {}
@@ -369,7 +360,6 @@ class VoiceModelController:
         return final_models
 
     def _check_system_dependencies(self):
-        """Check system dependencies and return status dict for View"""
         status = {
             'cuda_found': False,
             'winsdk_found': False,
@@ -554,12 +544,10 @@ class VoiceModelController:
 
         self.installation_in_progress = True
         
-        # Уведомляем View о начале удаления через сигнал
         self.view.uninstall_started_signal.emit(model_id)
 
         success = False
         try:
-            # Передаем колбэки в local_voice если они есть
             if status_cb or log_cb:
                 success = self.local_voice.download_model(model_id, None, status_cb, log_cb)
             else:
@@ -643,7 +631,6 @@ class VoiceModelController:
             logger.info(f"{_('Ошибка сохранения списка установленных моделей в', 'Error saving list of installed models to')} {self.installed_models_file}: {e}")
 
     def handle_description_update(self, key):
-        """Обновляет описание для модели или настройки"""
         if key in self.model_descriptions:
             self.view.update_description_signal.emit(self.model_descriptions[key])
         elif key in self.setting_descriptions:
@@ -659,11 +646,9 @@ class VoiceModelController:
 
     def save_and_quit(self):
         self.save_settings()
-        # Ищем родительский диалог
         if self.view:
             dialog = self.view.window()
             if dialog and hasattr(dialog, 'close'):
-                # Используем QTimer чтобы избежать блокировки
                 QTimer.singleShot(0, dialog.close)
 
     def open_doc(self, doc_name):

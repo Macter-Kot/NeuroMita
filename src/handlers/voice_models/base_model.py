@@ -1,5 +1,5 @@
 import abc
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 
 class IVoiceModel(abc.ABC):
     """
@@ -48,6 +48,11 @@ class IVoiceModel(abc.ABC):
         :param kwargs: Дополнительные параметры.
         :return: Путь к сгенерированному аудиофайлу или None в случае ошибки.
         """
+        pass
+
+    @abc.abstractmethod
+    def get_model_configs(self) -> List[Dict[str, Any]]:
+        """Возвращает конфигурации моделей, которые обрабатывает данный класс."""
         pass
     
     def cleanup_state(self):

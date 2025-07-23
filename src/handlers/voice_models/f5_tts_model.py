@@ -7,7 +7,7 @@ from datetime import datetime
 import asyncio
 
 from .base_model import IVoiceModel
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 from main_logger import logger
 
 from managers.settings_manager import SettingsManager
@@ -27,6 +27,51 @@ class F5TTSModel(IVoiceModel):
         self.current_f5_pipeline = None
         self.events = get_event_bus()
         self.rvc_handler = rvc_handler
+
+    MODEL_CONFIGS = [
+        {
+            "id": "high",
+            "name": "F5-TTS",
+            "min_vram": 4,
+            "rec_vram": 8,
+            "gpu_vendor": ["NVIDIA"],
+            "size_gb": 4,
+            "settings": [
+                {"key": "speed", "label": _("Скорость речи", "Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
+                {"key": "nfe_step", "label": _("Шаги диффузии", "Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
+                {"key": "remove_silence", "label": _("Удалять тишину", "Remove Silence"), "type": "checkbutton", "options": {"default": True}},
+                {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
+                {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
+            ]
+        },
+        {
+            "id": "high+low",
+            "name": "F5-TTS + RVC",
+            "min_vram": 6,
+            "rec_vram": 8,
+            "gpu_vendor": ["NVIDIA"],
+            "size_gb": 7,
+            "settings": [
+                {"key": "f5rvc_f5_device", "label": _("[F5] Устройство", "[F5] Device"), "type": "combobox", "options": {"values": ["cuda", "cpu"], "default": "cuda"}},
+                {"key": "f5rvc_f5_speed", "label": _("[F5] Скорость речи", "[F5] Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
+                {"key": "f5rvc_f5_nfe_step", "label": _("[F5] Шаги диффузии", "[F5] Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
+                {"key": "f5rvc_f5_seed", "label": _("[F5] Seed", "[F5] Seed"), "type": "entry", "options": {"default": "0"}},
+                {"key": "f5rvc_f5_remove_silence", "label": _("[F5] Удалять тишину", "[F5] Remove Silence"), "type": "checkbutton", "options": {"default": True}},
+                {"key": "f5rvc_rvc_pitch", "label": _("[RVC] Высота голоса (пт)", "[RVC] Pitch (semitones)"), "type": "entry", "options": {"default": "0"}},
+                {"key": "f5rvc_index_rate", "label": _("[RVC] Соотн. индекса", "[RVC] Index Rate"), "type": "entry", "options": {"default": "0.75"}},
+                {"key": "f5rvc_protect", "label": _("[RVC] Защита согласных", "[RVC] Consonant Protection"), "type": "entry", "options": {"default": "0.33"}},
+                {"key": "f5rvc_filter_radius", "label": _("[RVC] Радиус фильтра F0", "[RVC] F0 Filter Radius"), "type": "entry", "options": {"default": "3"}},
+                {"key": "f5rvc_rvc_rms_mix_rate", "label": _("[RVC] Смешивание RMS", "[RVC] RMS Mixing"), "type": "entry", "options": {"default": "0.5"}},
+                {"key": "f5rvc_is_half", "label": _("[RVC] Half-precision", "[RVC] Half-precision"), "type": "combobox", "options": {"values": ["True", "False"], "default": "True"}},
+                {"key": "f5rvc_f0method", "label": _("[RVC] Метод F0", "[RVC] F0 Method"), "type": "combobox", "options": {"values": ["pm", "rmvpe", "crepe", "harvest", "fcpe", "dio"], "default": "rmvpe"}},
+                {"key": "f5rvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}},
+                {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
+            ]
+        }
+    ]
+
+    def get_model_configs(self) -> List[Dict[str, Any]]:
+        return self.MODEL_CONFIGS
 
     def _load_module(self):
         try:

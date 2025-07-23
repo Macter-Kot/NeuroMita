@@ -34,6 +34,19 @@ setting_descriptions = {
     
     "seed": "Сид для озвучки.",
     
+
+    "silero_rvc_device": "Устройство для вычислений (GPU или CPU). 'cuda:0' - первая GPU NVIDIA, 'cpu' - центральный процессор, 'mps:0' - GPU Apple Silicon.",
+    "silero_rvc_pitch": "Изменение высоты голоса в полутонах. Положительные значения - выше, отрицательные - ниже. 0 - без изменений.",
+    "silero_rvc_is_half": "Использовать вычисления с половинной точностью (float16). Ускоряет работу на совместимых GPU (NVIDIA RTX и новее) и экономит видеопамять, может незначительно повлиять на качество.",
+    "silero_rvc_output_gain": "Усиление громкости финального аудиофайла. Значение 1.0 - без изменений, <1 тише, >1 громче. Полезно для нормализации громкости разных голосов.",
+    "silero_rvc_f0method": "[RVC] Алгоритм извлечения основного тона (F0). Определяет высоту голоса. 'rmvpe' и 'crepe' точные, но медленные. 'pm', 'harvest' быстрее. Влияет на естественность интонаций.",
+    "silero_rvc_use_index_file": "[RVC] Использовать файл .index для улучшения соответствия тембра голоса модели. Отключение может быть полезно, если индексный файл низкого качества или вызывает артефакты.",
+    "silero_rvc_index_rate": "[RVC] Степень использования индексного файла (.index) для сохранения тембра голоса RVC (0 до 1). Выше значение = больше похоже на голос из модели, но может добавить артефакты, если индекс некачественный.",
+    "silero_rvc_filter_radius": "[RVC] Радиус медианного фильтра для сглаживания кривой F0 (высоты тона). Убирает резкие скачки, делает речь более плавной. Рекомендуется значение >= 3.",
+    "silero_rvc_rms_mix_rate": "[RVC] Степень смешивания RMS (громкости) исходного аудио (из TTS/FSP) и результата RVC (0 до 1). 0 = полностью громкость RVC, 1 = полностью громкость оригинала. Помогает сохранить исходную динамику речи.",
+    "silero_rvc_protect": "[RVC] Защита глухих согласных (ш, щ, с, ...) от искажения высотой тона (0 до 0.5). Меньшие значения обеспечивают большую защиту (согласные звучат чище), но могут немного повлиять на интонацию гласных рядом. Рекомендуется 0.3-0.4.",
+    "tts_rate": "[EdgeTTS] Изменение скорости речи базового синтезатора Edge-TTS (до RVC) в процентах. 0 - стандартная скорость.",
+    "tts_volume": "[EdgeTTS] Изменение громкости речи базового синтезатора Edge-TTS (до RVC) в процентах. 0 - стандартная громкость.",
     "silero_device": "[Silero] Устройство для генерации речи Silero (CPU или GPU).",
     "silero_sample_rate": "[Silero] Частота дискретизации для генерации речи Silero.", 
     "silero_put_accent": "[Silero] Автоматическая расстановка ударений.", 
@@ -110,10 +123,26 @@ setting_descriptions_en = {
     "protect": "[RVC] Protection of voiceless consonants (sh, shch, s, ...) from pitch distortion (0 to 0.5). Lower values provide more protection (consonants sound cleaner), but may slightly affect the intonation of nearby vowels. Recommended 0.3-0.4.",
     "tts_rate": "[EdgeTTS] Change the speech rate of the base Edge-TTS synthesizer (before RVC) in percent. 0 - standard speed.",
     "tts_volume": "[EdgeTTS] Change the speech volume of the base Edge-TTS synthesizer (before RVC) in percent. 0 - standard volume.",
+    
+    "silero_rvc_device": "Устройство для вычислений (GPU или CPU). 'cuda:0' - первая GPU NVIDIA, 'cpu' - центральный процессор, 'mps:0' - GPU Apple Silicon.",
+    "silero_rvc_pitch": "Изменение высоты голоса в полутонах. Положительные значения - выше, отрицательные - ниже. 0 - без изменений.",
+    "silero_rvc_is_half": "Использовать вычисления с половинной точностью (float16). Ускоряет работу на совместимых GPU (NVIDIA RTX и новее) и экономит видеопамять, может незначительно повлиять на качество.",
+    "silero_rvc_output_gain": "Усиление громкости финального аудиофайла. Значение 1.0 - без изменений, <1 тише, >1 громче. Полезно для нормализации громкости разных голосов.",
+    "silero_rvc_f0method": "[RVC] Алгоритм извлечения основного тона (F0). Определяет высоту голоса. 'rmvpe' и 'crepe' точные, но медленные. 'pm', 'harvest' быстрее. Влияет на естественность интонаций.",
+    "silero_rvc_use_index_file": "[RVC] Использовать файл .index для улучшения соответствия тембра голоса модели. Отключение может быть полезно, если индексный файл низкого качества или вызывает артефакты.",
+    "silero_rvc_index_rate": "[RVC] Степень использования индексного файла (.index) для сохранения тембра голоса RVC (0 до 1). Выше значение = больше похоже на голос из модели, но может добавить артефакты, если индекс некачественный.",
+    "silero_rvc_filter_radius": "[RVC] Радиус медианного фильтра для сглаживания кривой F0 (высоты тона). Убирает резкие скачки, делает речь более плавной. Рекомендуется значение >= 3.",
+    "silero_rvc_rms_mix_rate": "[RVC] Степень смешивания RMS (громкости) исходного аудио (из TTS/FSP) и результата RVC (0 до 1). 0 = полностью громкость RVC, 1 = полностью громкость оригинала. Помогает сохранить исходную динамику речи.",
+    "silero_rvc_protect": "[RVC] Защита глухих согласных (ш, щ, с, ...) от искажения высотой тона (0 до 0.5). Меньшие значения обеспечивают большую защиту (согласные звучат чище), но могут немного повлиять на интонацию гласных рядом. Рекомендуется 0.3-0.4.",
+    "silero_rvc_tts_rate": "[EdgeTTS] Изменение скорости речи базового синтезатора Edge-TTS (до RVC) в процентах. 0 - стандартная скорость.",
+    "silero_rvc_tts_volume": "[EdgeTTS] Изменение громкости речи базового синтезатора Edge-TTS (до RVC) в процентах. 0 - стандартная громкость.",
+    
+
     "silero_device": "[Silero] Device for Silero speech generation (CPU or GPU).",
     "silero_sample_rate": "[Silero] Sample rate for Silero speech generation.",
     "silero_put_accent": "[Silero] Automatic stress placement.",
     "silero_put_yo": "[Silero] Automatic replacement of 'e' with 'yo'.",
+
     "half": "[FS/FSP] Use FP16 (half-precision). Recommended for speed and memory saving on GPU.",
     "temperature": "[FS/FSP] Sampling temperature (>0). Controls the randomness/diversity of generated speech. Higher = more diverse, but more errors. Lower = more stable.",
     "top_p": "[FS/FSP] Nucleus sampling (Top-P, 0-1). Limits the choice of the next token to only the most likely options. Reduces the probability of generating 'nonsense'.",

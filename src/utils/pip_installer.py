@@ -299,8 +299,8 @@ class PipInstaller:
         threading.Thread(target=_reader, args=(proc.stderr, q_err), daemon=True).start()
         start = time.time()
         last_activity = start
-        TIMEOUT_SEC = 7200
-        NO_ACTIVITY_SEC = 3600
+        TIMEOUT_SEC = 7200000 # надеюсь столько хватит. 7200000 секунд = 2000 часов
+        NO_ACTIVITY_SEC = 3600000 # надеюсь хватит для установки 3 гигов = 1000 часов
         progress_sofar = 0
         while proc.poll() is None:
             if is_qt_window and not self.progress_window.isVisible():
@@ -328,7 +328,7 @@ class PipInstaller:
                 proc.kill()
                 return True  # Пропуск
             if now - start > TIMEOUT_SEC:
-                self.update_log("Таймаут > 2 ч, прерываем.")
+                self.update_log("Таймаут > 2000 часов, прерываем.")
                 proc.terminate()
                 time.sleep(0.5)
                 proc.kill()

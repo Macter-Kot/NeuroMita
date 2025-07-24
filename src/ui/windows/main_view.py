@@ -166,6 +166,11 @@ class ChatGUI(QMainWindow):
 
     create_dialog_signal = pyqtSignal(dict)
 
+    
+    asr_install_progress_signal = pyqtSignal(dict)
+    asr_install_finished_signal = pyqtSignal(dict)
+    asr_install_failed_signal = pyqtSignal(dict)
+
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
@@ -265,6 +270,10 @@ class ChatGUI(QMainWindow):
         self.finish_model_loading_signal.connect(self._on_finish_model_loading)
         self.cancel_model_loading_signal.connect(self._on_cancel_model_loading)
         self.create_dialog_signal.connect(self._create_dialog_for_voice_model)
+
+        self.asr_install_progress_signal.connect(self._on_asr_install_progress)
+        self.asr_install_finished_signal.connect(self._on_asr_install_finished)
+        self.asr_install_failed_signal.connect(self._on_asr_install_failed)
 
     def _create_dialog_for_voice_model(self, data):
         """Создает или показывает существующий диалог управления моделями"""
@@ -2225,6 +2234,22 @@ class ChatGUI(QMainWindow):
         if hasattr(self, 'cancel_model_loading') and hasattr(self, 'loading_dialog'):
             self.cancel_model_loading(self.loading_dialog)
 
+    def _on_asr_install_progress(self, data: dict):
+        if hasattr(self, 'install_model_button'):
+            status   = data.get("status", "")
+            progress = data.get("progress", 0)
+            self.install_model_button.setText(f"{status} ({progress}%)")
+
+    def _on_asr_install_finished(self, data: dict):
+        if hasattr(self, 'install_model_button'):
+            self.install_model_button.setText(_("Установлено!", "Installed!"))
+            self.install_model_button.setEnabled(True)
+
+    def _on_asr_install_failed(self, data: dict):
+        if hasattr(self, 'install_model_button'):
+            self.install_model_button.setText(_("Ошибка установки", "Installation failed"))
+            self.install_model_button.setEnabled(True)
+
     # region Следующие функции надо бы перенести в более подходящее место
 
     def create_settings_section(self, parent_layout, title, settings_config, icon_name=None):
@@ -2271,5 +2296,6 @@ class ChatGUI(QMainWindow):
         """Создаёт настройки без секции (плоско) - для микрофона, озвучки, персонажей и промптов"""
         # Просто создаём настройки напрямую без заголовка секции
         gui_templates.create_settings_direct(self, parent_layout, settings_config)
+
 
     # endregion

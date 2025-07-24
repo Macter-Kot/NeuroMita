@@ -62,14 +62,11 @@ class GoogleRecognizer(SpeechRecognizerInterface):
             pa = pyaudio.PyAudio()
             
             try:
-                # Получаем информацию о устройстве
                 device_info = pa.get_device_info_by_index(microphone_index)
                 
-                # Проверяем, что устройство поддерживает ввод
                 if device_info['maxInputChannels'] == 0:
                     return False, "Выбранное устройство не поддерживает аудио ввод"
                 
-                # Пробуем создать тестовый поток для проверки разрешений
                 try:
                     test_stream = pa.open(
                         format=pyaudio.paInt16,
@@ -97,11 +94,11 @@ class GoogleRecognizer(SpeechRecognizerInterface):
         except Exception as e:
             return False, f"Ошибка проверки микрофона: {e}"
     
-    async def live_recognition(      # сигнатура сохранилась
+    async def live_recognition(
             self,
             microphone_index: int,
-            handle_voice_callback,   # async-корутина, куда передаём текст
-            vad_model,               # игнорируем для Google, но оставляем ради совместимости
+            handle_voice_callback,
+            vad_model,
             active_flag,
             **kwargs
     ) -> None:
@@ -113,9 +110,6 @@ class GoogleRecognizer(SpeechRecognizerInterface):
         • корректно завершается без heap-corruption.
         """
 
-        # ------------------------------------------------------------------
-        # 1. Проверки зависимостей / доступа к микрофону
-        # ------------------------------------------------------------------
         if self._sr is None:
             self.logger.error("Модуль SpeechRecognition не инициализирован")
             return
@@ -134,9 +128,6 @@ class GoogleRecognizer(SpeechRecognizerInterface):
             self.logger.error(f"Проблема с доступом к микрофону: {err}")
             return
 
-        # ------------------------------------------------------------------
-        # 2. Открываем источник (PyAudio-stream) с подбором sample_rate
-        # ------------------------------------------------------------------
         recognizer = self._sr.Recognizer()
         recognizer.pause_threshold = 0.8
         recognizer.non_speaking_duration = 0.3
@@ -152,17 +143,14 @@ class GoogleRecognizer(SpeechRecognizerInterface):
         chosen_cfg = None
         for cfg in configs:
             try:
-                # Тестово открываем и тут же закрываем микрофон
                 with self._sr.Microphone(device_index=microphone_index,
                                         sample_rate=cfg["sample_rate"],
                                         chunk_size=cfg["chunk_size"]) as test_source:
-                    #  Быстрая подстройка под шум внутри тестового открытия
                     try:
                         recognizer.adjust_for_ambient_noise(test_source, duration=0.5)
                     except Exception:
                         pass
 
-                # если дошли сюда без исключения – конфигурация рабочая
                 chosen_cfg = cfg
                 self.logger.info(
                     f"Микрофон подключён: {mic_list[microphone_index]} "
@@ -177,26 +165,21 @@ class GoogleRecognizer(SpeechRecognizerInterface):
             self.logger.error("Не удалось подключиться к микрофону ни по одной конфигурации")
             return
 
-        # Создаём НОВЫЙ экземпляр (НЕ открываем) – его передадим listen_in_background
         source = self._sr.Microphone(
             device_index=microphone_index,
             sample_rate=chosen_cfg["sample_rate"],
             chunk_size=chosen_cfg["chunk_size"],
         )
-        # Быстрая подстройка под шум
         try:
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
         except Exception:
             pass
 
-        # ------------------------------------------------------------------
-        # 3. Callback, который будет работать в ФОНОВОМ ПОТОКЕ listen_in_background
-        # ------------------------------------------------------------------
-        loop = asyncio.get_running_loop()     # текущий asyncio-loop
+        loop = asyncio.get_running_loop()
 
         def _bg_callback(rec: "speech_recognition.Recognizer", audio):
             """
-            Работает из background-thread’а, который создаёт
+            Работает из background-thread'а, который создаёт
             SpeechRecognition.listen_in_background.
             Вся тяжёлая синхронщина – здесь, но вывод результатов
             отдаём обратно в asyncio-loop НЕ блокируя его.
@@ -206,44 +189,32 @@ class GoogleRecognizer(SpeechRecognizerInterface):
                 if text and text.strip():
                     self.logger.info(f"Распознано (google): {text}")
 
-                    # Планируем выполнение асинхронного пользовательского коллбэка
-                    # внутри event-loop’а, а не в текущем (фон)-потоке.
                     loop.call_soon_threadsafe(
                         lambda t=text: asyncio.create_task(handle_voice_callback(t))
                     )
             except self._sr.UnknownValueError:
-                # просто тишина / не разобрал – игнорируем
                 pass
             except self._sr.RequestError as e:
-                # Ошибка связи с API; выводим и продолжаем
                 self.logger.error(f"Google API error (bg-thread): {e}")
             except Exception as e:
                 self.logger.exception(f"Ошибка в bg-callback: {e}")
 
-        # ------------------------------------------------------------------
-        # 4. Запускаем прослушивание в фоне
-        # ------------------------------------------------------------------
         stop_listening = recognizer.listen_in_background(
             source,
             _bg_callback,
-            phrase_time_limit=10,          # можно подстроить
+            phrase_time_limit=10,
         )
 
         self.logger.info("Микрофон готов к распознаванию (listen_in_background запущен).")
 
-        # ------------------------------------------------------------------
-        # 5. Живём, пока active_flag() == True
-        # ------------------------------------------------------------------
         try:
-            # Просто периодически «встряхиваем» цикл, чтобы ловить отмену/stop
             while active_flag():
                 await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             self.logger.info("live_recognition отменена пользователем.")
         finally:
-            # 6. Остановка: закрываем background-поток и PyAudio-stream
             try:
-                stop_listening(wait_for_stop=False)   # мягкая остановка фонового потока
+                stop_listening(wait_for_stop=False)
             except Exception as e:
                 self.logger.warning(f"Ошибка при stop_listening: {e}")
 
@@ -254,3 +225,14 @@ class GoogleRecognizer(SpeechRecognizerInterface):
     def cleanup(self) -> None:
         self._sr = None
         self._is_initialized = False
+    
+    def is_installed(self) -> bool:
+        if self._sr is not None:
+            return True
+
+        try:
+            import speech_recognition as sr
+            self._sr = sr
+            return True
+        except ImportError:
+            return False

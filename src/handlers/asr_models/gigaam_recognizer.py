@@ -9,10 +9,12 @@ import queue
 from typing import Optional, List, Callable
 from collections import deque
 import numpy as np
-import onnxruntime as rt
+import urllib.request
+from tqdm import tqdm
 from handlers.asr_models.speech_recognizer_base import SpeechRecognizerInterface
 from utils import getTranslationVariant as _
 from utils.gpu_utils import check_gpu_provider
+from core.events import get_event_bus, Events
 
 
 class GigaAMRecognizer(SpeechRecognizerInterface):
@@ -25,6 +27,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         self.gigaam_model = "v2_rnnt"
         self.gigaam_device = "auto"
         self.gigaam_onnx_export_path = "SpeechRecognitionModels/GigaAM_ONNX"
+        self.gigaam_model_path = "SpeechRecognitionModels/GigaAM"
         self.FAILED_AUDIO_DIR = "FailedAudios"
         
         self._process: Optional[Process] = None
@@ -37,6 +40,15 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         
         self._transcribe_result = None
         self._transcribe_event = Event()
+        
+        self._event_bus = get_event_bus()
+        
+        self._url_dir = "https://cdn.chatwm.opensmodel.sberdevices.ru/GigaAM"
+        self._model_names = [
+            "ctc", "rnnt", "ssl", "emo",
+            "v1_ctc", "v1_rnnt", "v1_ssl",
+            "v2_ctc", "v2_rnnt", "v2_ssl",
+        ]
         
     def _show_install_warning(self, packages: list):
         package_str = ", ".join(packages)
@@ -71,11 +83,91 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         else:
             self.logger.info(f"Устройство для GigaAM установлено на: {device}")
     
-    async def install(self) -> bool:
-        """Установка зависимостей в основном процессе"""
+    def is_installed(self) -> bool:
+        """Проверка установленности модели GigaAM"""
+
         try:
+            if self._torch is None:
+                import torch
+                self._torch = torch
+            if self._sd    is None:
+                import sounddevice as sd
+                self._sd = sd
+            if self._np    is None:
+                import numpy as np
+                self._np = np
+        except ImportError as e:
+            self.logger.warning(f"GigaAM is_installed → отсутствует зависимость: {e}")
+            return False
+
+        if self._current_gpu is None:
+            self._current_gpu = check_gpu_provider() or "CPU"
+        
+        is_nvidia = self._current_gpu == "NVIDIA"
+        device_choice = self.gigaam_device
+        
+        if is_nvidia and device_choice in ["auto", "cuda"]:
+            model_name = self.gigaam_model
+            if model_name in ["ctc", "rnnt", "ssl"]:
+                model_name = f"v2_{model_name}"
+            model_file = os.path.join(self.gigaam_model_path, f"{model_name}.ckpt")
+            if os.path.exists(model_file):
+                self.logger.debug(f"Найден файл модели PyTorch: {model_file}")
+                return True
+            else:
+                self.logger.debug(f"Файл модели PyTorch не найден: {model_file}")
+                return False
+        else:
+            onnx_dir = self.gigaam_onnx_export_path
+            model_name = self.gigaam_model
+            if "_" in model_name:
+                version, model_type = model_name.split("_", 1)
+            else:
+                version, model_type = "v2", model_name
+                
+            if model_type == "ctc":
+                onnx_file = os.path.join(onnx_dir, f"{version}_{model_type}.onnx")
+                exists = os.path.exists(onnx_file)
+                self.logger.debug(f"Проверка ONNX CTC модели {onnx_file}: {'найдена' if exists else 'не найдена'}")
+                return exists
+            else:
+                base = os.path.join(onnx_dir, f"{version}_{model_type}")
+                encoder_exists = os.path.exists(f"{base}_encoder.onnx")
+                decoder_exists = os.path.exists(f"{base}_decoder.onnx")
+                joint_exists = os.path.exists(f"{base}_joint.onnx")
+                all_exist = encoder_exists and decoder_exists and joint_exists
+                
+                self.logger.debug(
+                    f"Проверка ONNX {model_type} модели: "
+                    f"encoder={'найден' if encoder_exists else 'не найден'}, "
+                    f"decoder={'найден' if decoder_exists else 'не найден'}, "
+                    f"joint={'найден' if joint_exists else 'не найден'}"
+                )
+                
+                if not all_exist:
+                    model_name = self.gigaam_model
+                    if model_name in ["ctc", "rnnt", "ssl"]:
+                        model_name = f"v2_{model_name}"
+                    pt_file = os.path.join(self.gigaam_model_path, f"{model_name}.ckpt")
+                    if os.path.exists(pt_file):
+                        self.logger.debug(f"ONNX не найден, но есть PyTorch модель: {pt_file}")
+                        return True
+                        
+                return all_exist
+    
+    async def install(self) -> bool:
+        """Установка зависимостей и модели"""
+        try:
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_STARTED, {"model": "gigaam"})
+            
             if self._current_gpu is None:
                 self._current_gpu = check_gpu_provider() or "CPU"
+            
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_PROGRESS, {
+                "model": "gigaam", 
+                "progress": 10, 
+                "status": _("Установка зависимостей PyTorch...", "Installing PyTorch dependencies...")
+            })
             
             if self._torch is None:
                 try:
@@ -122,6 +214,12 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 self.logger.warning("TORCH ADDED SAFE GLOBALS!")
                 self._torch = torch
 
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_PROGRESS, {
+                "model": "gigaam", 
+                "progress": 30, 
+                "status": _("Установка GigaAM и дополнительных библиотек...", "Installing GigaAM and additional libraries...")
+            })
+
             try:
                 import gigaam
             except ImportError:
@@ -133,6 +231,15 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 )
                 if not success:
                     raise ImportError("Не удалось установить GigaAM.")
+            
+            try:
+                import silero_vad
+            except ImportError:
+                self._show_install_warning(["silero-vad"])
+                self.pip_installer.install_package(
+                    ["silero-vad"], 
+                    description=_("Установка Silero VAD...", "Installing Silero VAD...")
+                )
             
             if self._sd is None:
                 try:
@@ -165,13 +272,110 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                     self._show_install_warning(deps_to_install)
                     self.pip_installer.install_package(deps_to_install, description=desc)
             
-            return True
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_PROGRESS, {
+                "model": "gigaam", 
+                "progress": 60, 
+                "status": _("Загрузка модели GigaAM...", "Downloading GigaAM model...")
+            })
+            
+            success = await self._install_model()
+            
+            if success:
+                self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_FINISHED, {"model": "gigaam"})
+                return True
+            else:
+                self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_FAILED, {
+                    "model": "gigaam",
+                    "error": _("Не удалось загрузить модель", "Failed to download model")
+                })
+                return False
             
         except ImportError as e:
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_FAILED, {
+                "model": "gigaam",
+                "error": str(e)
+            })
             self.logger.critical(f"Критическая ошибка: не удалось импортировать или установить библиотеку для GigaAM: {e}")
             return False
         except Exception as e:
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_FAILED, {
+                "model": "gigaam",
+                "error": str(e)
+            })
             self.logger.error(f"Ошибка при установке зависимостей GigaAM: {e}", exc_info=True)
+            return False
+    
+    async def _install_model(self) -> bool:
+        """Загрузка модели GigaAM"""
+        try:
+            if self.is_installed():
+                self.logger.info("Модель GigaAM уже установлена")
+                return True
+                
+            model_name = self.gigaam_model
+            if model_name not in self._model_names:
+                self.logger.error(f"Неизвестная модель: {model_name}")
+                return False
+                
+            if model_name in ["ctc", "rnnt", "ssl"]:
+                model_name = f"v2_{model_name}"
+            if model_name == "emo":
+                model_name = f"v1_{model_name}"
+                
+            model_url = f"{self._url_dir}/{model_name}.ckpt"
+            os.makedirs(self.gigaam_model_path, exist_ok=True)
+            model_file = os.path.join(self.gigaam_model_path, f"{model_name}.ckpt")
+            
+            if os.path.exists(model_file):
+                self.logger.info(f"Модель {model_name} уже скачана")
+                return True
+                
+            self.logger.info(f"Загрузка модели {model_name} из {model_url}")
+            
+            def download_hook(block_num, block_size, total_size):
+                downloaded = block_num * block_size
+                percent = min(downloaded * 100 / total_size, 100)
+                progress = 60 + int(percent * 0.35)
+                
+                self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_PROGRESS, {
+                    "model": "gigaam",
+                    "progress": progress,
+                    "status": _(
+                        f"Загрузка модели: {percent:.1f}% ({downloaded/1024/1024:.1f}MB / {total_size/1024/1024:.1f}MB)",
+                        f"Downloading model: {percent:.1f}% ({downloaded/1024/1024:.1f}MB / {total_size/1024/1024:.1f}MB)"
+                    )
+                })
+            
+            urllib.request.urlretrieve(model_url, model_file, reporthook=download_hook)
+            
+            if self.gigaam_model == "rnnt" or self.gigaam_model == "v1_rnnt":
+                tokenizer_url = f"{self._url_dir}/{model_name}_tokenizer.model"
+                tokenizer_file = os.path.join(self.gigaam_model_path, f"{model_name}_tokenizer.model")
+                
+                if not os.path.exists(tokenizer_file):
+                    self.logger.info(f"Загрузка токенизатора для {model_name}")
+                    
+                    def tokenizer_hook(block_num, block_size, total_size):
+                        downloaded = block_num * block_size
+                        percent = min(downloaded * 100 / total_size, 100)
+                        progress = 95 + int(percent * 0.05)
+                        
+                        self._event_bus.emit(Events.Speech.ASR_MODEL_INSTALL_PROGRESS, {
+                            "model": "gigaam",
+                            "progress": progress,
+                            "status": _(
+                                f"Загрузка токенизатора: {percent:.1f}%",
+                                f"Downloading tokenizer: {percent:.1f}%"
+                            )
+                        })
+                    
+                    urllib.request.urlretrieve(tokenizer_url, tokenizer_file, reporthook=tokenizer_hook)
+            
+            self.logger.info(f"Модель {model_name} успешно загружена")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка загрузки модели: {e}", exc_info=True)
             return False
     
     async def init(self, **kwargs) -> bool:
@@ -181,6 +385,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         
         if self._start_process():
             self._is_initialized = True
+            self._event_bus.emit(Events.Speech.ASR_MODEL_INITIALIZED, {"model": "gigaam"})
             return True
         return False
     
@@ -388,6 +593,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             'device': self.gigaam_device,
             'model': self.gigaam_model,
             'onnx_path': self.gigaam_onnx_export_path,
+            'model_path': self.gigaam_model_path,
             'script_path': r"libs\python\python.exe",
             'libs_path': "Lib"
         }

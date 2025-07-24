@@ -402,6 +402,15 @@ class Events:
         SET_GIGAAM_OPTIONS = "set_gigaam_options"
         RESTART_SPEECH_RECOGNITION = "restart_speech_recognition"
 
+        INSTALL_ASR_MODEL = "install_asr_model"
+        CHECK_ASR_MODEL_INSTALLED = "check_asr_model_installed" 
+        ASR_MODEL_INSTALL_STARTED = "asr_model_install_started"
+        ASR_MODEL_INSTALL_PROGRESS = "asr_model_install_progress"
+        ASR_MODEL_INSTALL_FINISHED = "asr_model_install_finished"
+        ASR_MODEL_INSTALL_FAILED = "asr_model_install_failed"
+        ASR_MODEL_INITIALIZED = "asr_model_initialized"
+        
+
     class Capture:
         """События для захвата экрана и камеры"""
         CAPTURE_SCREEN = "capture_screen"

@@ -36,6 +36,9 @@ class SpeechController:
         self.events_bus.subscribe(Events.Speech.REFRESH_MICROPHONE_LIST, self._on_refresh_microphone_list, weak=False)
         self.events_bus.subscribe(Events.Speech.SET_GIGAAM_OPTIONS, self._on_set_gigaam_options, weak=False)
         self.events_bus.subscribe(Events.Speech.RESTART_SPEECH_RECOGNITION, self._on_restart_speech_recognition, weak=False)
+        
+        self.events_bus.subscribe(Events.Speech.INSTALL_ASR_MODEL, self._on_install_asr_model, weak=False)
+        self.events_bus.subscribe(Events.Speech.CHECK_ASR_MODEL_INSTALLED, self._on_check_asr_model_installed, weak=False)
 
     def _on_sent_message(self, event: Event):
         self.recognized_text = ""
@@ -49,12 +52,13 @@ class SpeechController:
         if self.settings:
             initial_recognizer_type = self.settings.get("RECOGNIZER_TYPE", "google")
             initial_vosk_model = self.settings.get("VOSK_MODEL", "vosk-model-ru-0.10")
+            initial_gigaam_device = self.settings.get("GIGAAM_DEVICE", "auto")
 
             SpeechRecognition.set_recognizer_type(initial_recognizer_type)
             SpeechRecognition.vosk_model = initial_vosk_model
+            SpeechRecognition.set_gigaam_options(device=initial_gigaam_device)
             logger.info(f"Тип распознавателя установлен на: {initial_recognizer_type}")
             
-            # Инициализируем микрофон из настроек
             device_id = self.settings.get("NM_MICROPHONE_ID", 0)
             device_name = self.settings.get("NM_MICROPHONE_NAME", "")
             
@@ -69,19 +73,24 @@ class SpeechController:
         
         if key == "MIC_ACTIVE":
             if bool(value):
-                # Убедимся, что у нас есть правильный device_id
                 if self.device_id is None:
                     self.device_id = 0
                 
-                loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
-                SpeechRecognition.speech_recognition_start(self.device_id, loop)
-                self.mic_recognition_active = True
+                if not self._check_model_installed():
+                    self.events_bus.emit(Events.GUI.SHOW_INFO_MESSAGE, {
+                        'title': 'Требуется установка модели',
+                        'message': 'Модель распознавания речи не установлена. Начинается установка...'
+                    })
+                    self._install_model_async()
+                else:
+                    loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
+                    SpeechRecognition.speech_recognition_start(self.device_id, loop)
+                    self.mic_recognition_active = True
             else:
                 SpeechRecognition.speech_recognition_stop()
                 self.mic_recognition_active = False
             self.events_bus.emit(Events.GUI.UPDATE_STATUS_COLORS)
         elif key == "RECOGNIZER_TYPE":
-            # Останавливаем текущее распознавание
             if self.mic_recognition_active:
                 SpeechRecognition.speech_recognition_stop()
                 time.sleep(0.1)
@@ -89,10 +98,16 @@ class SpeechController:
             SpeechRecognition.set_recognizer_type(value)
             logger.info(f"Тип распознавателя установлен на: {value}")
 
-            # Перезапускаем только если было активно
             if self.settings and self.settings.get("MIC_ACTIVE", False) and self.mic_recognition_active:
-                loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
-                SpeechRecognition.speech_recognition_start(self.device_id, loop)
+                if not self._check_model_installed():
+                    self.events_bus.emit(Events.GUI.SHOW_INFO_MESSAGE, {
+                        'title': 'Требуется установка модели',
+                        'message': 'Модель распознавания речи не установлена. Начинается установка...'
+                    })
+                    self._install_model_async()
+                else:
+                    loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
+                    SpeechRecognition.speech_recognition_start(self.device_id, loop)
         elif key == "VOSK_MODEL":
             SpeechRecognition.vosk_model = value
         elif key == "SILENCE_THRESHOLD":
@@ -214,6 +229,50 @@ class SpeechController:
                 logger.error(f"Ошибка перезапуска распознавания: {e}")
         
         threading.Thread(target=restart_recognition, daemon=True).start()
+    
+    def _on_install_asr_model(self, event: Event):
+        """Обработчик запроса на установку модели ASR"""
+        model_type = event.data.get('model', SpeechRecognition._recognizer_type)
+        
+        def install_async():
+            try:
+                loop = self.events_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
+                if loop:
+                    import asyncio
+                    future = asyncio.run_coroutine_threadsafe(
+                        SpeechRecognition.install_model(model_type), 
+                        loop
+                    )
+                    success = future.result(timeout=300)
+                    
+                    if success:
+                        logger.info(f"Модель {model_type} успешно установлена")
+                        if self.settings and self.settings.get("MIC_ACTIVE", False) and self.mic_recognition_active:
+                            self.events_bus.emit(Events.Speech.START_SPEECH_RECOGNITION, {'device_id': self.device_id})
+                    else:
+                        logger.error(f"Не удалось установить модель {model_type}")
+            except Exception as e:
+                logger.error(f"Ошибка при установке модели: {e}")
+                self.events_bus.emit(Events.Speech.ASR_MODEL_INSTALL_FAILED, {
+                    "model": model_type,
+                    "error": str(e)
+                })
+        
+        threading.Thread(target=install_async, daemon=True).start()
+    
+    def _on_check_asr_model_installed(self, event: Event):
+        """Проверка установленности модели ASR"""
+        model_type = event.data.get('model', SpeechRecognition._recognizer_type)
+        is_installed = SpeechRecognition.check_model_installed(model_type)
+        return is_installed
+    
+    def _check_model_installed(self) -> bool:
+        """Внутренняя проверка установленности текущей модели"""
+        return SpeechRecognition.check_model_installed()
+    
+    def _install_model_async(self):
+        """Асинхронная установка модели"""
+        self.events_bus.emit(Events.Speech.INSTALL_ASR_MODEL, {'model': SpeechRecognition._recognizer_type})
     
     def send_instantly(self, text_to_send):
         try:

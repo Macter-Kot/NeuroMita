@@ -29,6 +29,10 @@ class SpeechRecognizerInterface(ABC):
     def cleanup(self) -> None:
         pass
     
+    @abstractmethod
+    def is_installed(self) -> bool:
+        pass
+    
     @property
     def is_initialized(self) -> bool:
         return self._is_initialized

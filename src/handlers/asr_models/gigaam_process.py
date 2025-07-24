@@ -12,11 +12,9 @@ import numpy as np
 def run_gigaam_process(command_queue: Queue, result_queue: Queue, log_queue: Queue):
     """Точка входа для процесса"""
     try:
-        # Создаем новый event loop для процесса
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        # Создаем и запускаем процесс
         process = GigaAMProcessWorker(command_queue, result_queue, log_queue)
         loop.run_until_complete(process.process_commands())
         
@@ -33,32 +31,29 @@ class GigaAMProcessWorker:
         self.result_queue = result_queue
         self.log_queue = log_queue
         
-        # Модели и сессии
         self._gigaam_model_instance = None
         self._gigaam_onnx_sessions = None
         
-        # Опции
         self.gigaam_model = "v2_rnnt"
         self.gigaam_device = "auto"
         self.gigaam_onnx_export_path = "SpeechRecognitionModels/GigaAM_ONNX"
+        self.gigaam_model_path = "SpeechRecognitionModels/GigaAM"
         
     async def init_recognizer(self, options):
         """Инициализация распознавателя - только импорт и загрузка модели"""
         try:
             self.info("Инициализация GigaAM в отдельном процессе...")
             
-            # Устанавливаем опции
             self.gigaam_device = options.get('device', 'auto')
             self.gigaam_model = options.get('model', 'v2_rnnt')
             self.gigaam_onnx_export_path = options.get('onnx_path', 'SpeechRecognitionModels/GigaAM_ONNX')
+            self.gigaam_model_path = options.get('model_path', 'SpeechRecognitionModels/GigaAM')
             
-            # Импортируем необходимые модули
             import torch
             import gigaam
             from utils.gpu_utils import check_gpu_provider
             from utils import getTranslationVariant as _
             
-            # Добавляем безопасные глобальные переменные для torch
             import omegaconf, typing, collections
             torch.serialization.add_safe_globals([
                 omegaconf.dictconfig.DictConfig, 
@@ -73,22 +68,23 @@ class GigaAMProcessWorker:
                 int
             ])
             
-            # Определяем GPU
             current_gpu = check_gpu_provider() or "CPU"
             device_choice = self.gigaam_device
             is_nvidia = current_gpu == "NVIDIA"
             
             if is_nvidia and device_choice in ["auto", "cuda", "cpu"]:
-                # Используем PyTorch модель для NVIDIA
                 device = "cuda" if device_choice in ["auto", "cuda"] else "cpu"
                 self.info(f"Загрузка PyTorch модели GigaAM на {device}...")
                 
-                model = gigaam.load_model(self.gigaam_model, device=device)
+                model = gigaam.load_model(
+                    self.gigaam_model, 
+                    device=device,
+                    download_root=self.gigaam_model_path
+                )
                 self._gigaam_model_instance = model
                 self.info(f"Модель GigaAM '{self.gigaam_model}' успешно загружена на {device}.")
                 
             else:
-                # Используем ONNX для других GPU или CPU
                 import onnxruntime as rt
                 
                 provider = 'CPUExecutionProvider'
@@ -101,7 +97,6 @@ class GigaAMProcessWorker:
                 encoder_path = os.path.join(onnx_dir, f"{self.gigaam_model}_encoder.onnx")
                 
                 if not os.path.exists(encoder_path):
-                    # Экспортируем модель в ONNX если её нет
                     self.warning("ONNX модель не найдена, выполняется экспорт...")
                     os.makedirs(onnx_dir, exist_ok=True)
                     
@@ -109,7 +104,8 @@ class GigaAMProcessWorker:
                         self.gigaam_model,
                         device="cpu",
                         fp16_encoder=False,
-                        use_flash=False
+                        use_flash=False,
+                        download_root=self.gigaam_model_path
                     )
                     temp_model.to_onnx(dir_path=onnx_dir)
                     del temp_model
@@ -117,7 +113,6 @@ class GigaAMProcessWorker:
                         torch.cuda.empty_cache()
                     self.info(f"Модель GigaAM успешно экспортирована в ONNX")
                 
-                # Загружаем ONNX сессии
                 sessions = self._load_onnx_sessions(onnx_dir, self.gigaam_model, provider)
                 self._gigaam_onnx_sessions = sessions
                 self.info(f"ONNX сессии для GigaAM успешно загружены с провайдером {provider}.")
@@ -241,13 +236,11 @@ class GigaAMProcessWorker:
             except Exception as e:
                 self.error(f"Ошибка в цикле команд: {e}\n{traceback.format_exc()}")
                 
-        # Очистка при выходе
         if hasattr(self, '_gigaam_model_instance') and self._gigaam_model_instance:
             del self._gigaam_model_instance
         if hasattr(self, '_gigaam_onnx_sessions') and self._gigaam_onnx_sessions:
             del self._gigaam_onnx_sessions
     
-    # Методы логирования
     def info(self, msg):
         self.log_queue.put(('info', msg))
     

@@ -178,6 +178,38 @@ class SpeechRecognition:
         logger.info(f"Устройство для GigaAM установлено на: {device}")
 
     @staticmethod
+    def check_model_installed(recognizer_type: str = None) -> bool:
+        """Проверка установленности модели распознавания"""
+        if recognizer_type is None:
+            recognizer_type = SpeechRecognition._recognizer_type
+            
+        if recognizer_type == 'google':
+            return True
+        elif recognizer_type == 'gigaam':
+            if not SpeechRecognition._init_dependencies():
+                return False
+            if SpeechRecognition._recognizer_instance:
+                return SpeechRecognition._recognizer_instance.is_installed()
+            return False
+        return False
+    
+    @staticmethod
+    async def install_model(recognizer_type: str = None) -> bool:
+        """Установка модели распознавания"""
+        if recognizer_type is None:
+            recognizer_type = SpeechRecognition._recognizer_type
+            
+        if recognizer_type == 'google':
+            return True
+        elif recognizer_type == 'gigaam':
+            if not SpeechRecognition._init_dependencies():
+                return False
+            if SpeechRecognition._recognizer_instance:
+                return await SpeechRecognition._recognizer_instance.install()
+            return False
+        return False
+
+    @staticmethod
     def receive_text() -> str:
         with SpeechRecognition._text_lock:
             result = " ".join(SpeechRecognition._text_buffer).strip()
@@ -222,15 +254,15 @@ class SpeechRecognition:
                         logger.error("Не удалось инициализировать зависимости.")
                         return
                     
-                    if not await SpeechRecognition._recognizer_instance.install():
-                        logger.error("Не удалось установить зависимости распознавателя.")
+                    if not SpeechRecognition._recognizer_instance.is_installed():
+                        logger.warning("ASR-модель не установлена. Остановлено распознавание.")
                         return
                         
                     if not await SpeechRecognition._recognizer_instance.init():
                         logger.error("Не удалось инициализировать распознаватель.")
                         return
 
-                    retry_count = 0  # Сбрасываем счетчик при успешной инициализации
+                    retry_count = 0
 
                     if SpeechRecognition._recognizer_type == "google":
                         await SpeechRecognition._recognizer_instance.live_recognition(
@@ -257,7 +289,6 @@ class SpeechRecognition:
                             pre_buffer_duration=SpeechRecognition.VAD_PRE_BUFFER_DURATION_SEC
                         )
                         
-                    # Если мы дошли сюда, значит распознавание завершилось нормально
                     break
                         
                 except asyncio.CancelledError:
@@ -287,11 +318,9 @@ class SpeechRecognition:
 
     @staticmethod
     def speech_recognition_start(device_id: int, loop):
-        # Если распознавание уже запущено, сначала останавливаем его
         if SpeechRecognition._is_running:
             logger.info("Останавливаем текущее распознавание для запуска нового...")
             SpeechRecognition.speech_recognition_stop()
-            # Даем время на завершение
             time.sleep(0.5)
 
         SpeechRecognition._is_running = True
@@ -307,7 +336,7 @@ class SpeechRecognition:
             return
 
         logger.info("Запрос на остановку распознавания речи...")
-        SpeechRecognition.active = False # Сигнализируем циклу в задаче, что нужно выйти
+        SpeechRecognition.active = False
 
         task = SpeechRecognition._recognition_task
         if task and not task.done():

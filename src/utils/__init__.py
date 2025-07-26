@@ -36,6 +36,8 @@ def get_character_voice_paths(character=None, provider=None):
             - index_path: путь к индексному файлу
             - clone_voice_filename: путь к эталонному аудио
             - clone_voice_text: путь к текстовому файлу
+            - f5_voice_filename: путь к эталонному аудио для F5-TTS (из папки _Cuts)
+            - f5_voice_text: путь к текстовому файлу для F5-TTS (из папки _Cuts)
             - character_name: короткое имя персонажа
     """
     if provider is None:
@@ -60,6 +62,8 @@ def get_character_voice_paths(character=None, provider=None):
         'index_path': os.path.join(clone_voice_folder, f"{short_name}.index"),
         'clone_voice_filename': os.path.join(clone_voice_folder, f"{short_name}.wav"),
         'clone_voice_text': os.path.join(clone_voice_folder, f"{short_name}.txt"),
+        'f5_voice_filename': os.path.join(clone_voice_folder, f"{short_name}_Cuts", f"{short_name}_default.wav"),
+        'f5_voice_text': os.path.join(clone_voice_folder, f"{short_name}_Cuts", f"{short_name}_default.txt"),
         'character_name': short_name
     }
 

@@ -27,6 +27,7 @@ class F5TTSModel(IVoiceModel):
         self.current_f5_pipeline = None
         self.events = get_event_bus()
         self.rvc_handler = rvc_handler
+        self.ruaccent_instance = None
 
     MODEL_CONFIGS = [
         {
@@ -42,6 +43,7 @@ class F5TTSModel(IVoiceModel):
                 {"key": "remove_silence", "label": _("Удалять тишину", "Remove Silence"), "type": "checkbutton", "options": {"default": True}},
                 {"key": "seed", "label": _("Seed", "Seed"), "type": "entry", "options": {"default": "0"}},
                 {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
+                {"key": "use_ruaccent", "label": _("Использовать RUAccent", "Use RUAccent"), "type": "checkbutton", "options": {"default": False}},
             ]
         },
         {
@@ -66,6 +68,7 @@ class F5TTSModel(IVoiceModel):
                 {"key": "f5rvc_f0method", "label": _("[RVC] Метод F0", "[RVC] F0 Method"), "type": "combobox", "options": {"values": ["pm", "rmvpe", "crepe", "harvest", "fcpe", "dio"], "default": "rmvpe"}},
                 {"key": "f5rvc_use_index_file", "label": _("[RVC] Исп. .index файл", "[RVC] Use .index file"), "type": "checkbutton", "options": {"default": True}},
                 {"key": "volume", "label": _("Громкость (volume)", "Volume"), "type": "entry", "options": {"default": "1.0"}},
+                {"key": "f5rvc_use_ruaccent", "label": _("Использовать RUAccent", "Use RUAccent"), "type": "checkbutton", "options": {"default": False}},
             ]
         }
     ]
@@ -77,7 +80,8 @@ class F5TTSModel(IVoiceModel):
         try:
             from handlers.voice_models.pipelines.f5_pipeline import F5TTSPipeline
             self.f5_pipeline_module = F5TTSPipeline
-        except ImportError:
+        except ImportError as ex:
+            logger.error(f"F5TTS: {ex}", exc_info=True)
             self.f5_pipeline_module = None
 
     def get_display_name(self) -> str:
@@ -156,11 +160,11 @@ class F5TTSModel(IVoiceModel):
 
             # PyTorch (если надо)
             if self.parent.provider == "NVIDIA" and not self.parent.is_cuda_available():
-                status_cb(_("Установка PyTorch (cu124)...", "Installing PyTorch (cu124)..."))
+                status_cb(_("Установка PyTorch (cu128)...", "Installing PyTorch (cu128)..."))
                 progress_cb(10)
                 if not installer.install_package(
                     ["torch==2.7.1", "torchaudio==2.7.1"],
-                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
+                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu128"],
                     description="Install PyTorch cu128"
                 ):
                     status_cb(_("Ошибка PyTorch", "PyTorch error"))
@@ -169,7 +173,7 @@ class F5TTSModel(IVoiceModel):
             progress_cb(25)
 
             if not installer.install_package(
-                ["f5-tts", "google-api-core"],
+                ["f5-tts", "google-api-core", "numpy==1.26.0", "librosa==0.9.1", "numba==0.60.0"],
                 description=_("Установка f5-tts...", "Installing f5-tts...")
             ):
                 return False
@@ -179,6 +183,16 @@ class F5TTSModel(IVoiceModel):
                     description=_("Установка дополнительной библиотеки librosa...", "Installing additional library librosa...")
                 ):
                     return False
+
+            progress_cb(35)
+            
+            # Установка RUAccent
+            status_cb(_("Установка RUAccent...", "Installing RUAccent..."))
+            if not installer.install_package(
+                "ruaccent",
+                description=_("Установка ruaccent...", "Installing ruaccent...")
+            ):
+                log_cb(_("Предупреждение: не удалось установить RUAccent", "Warning: Failed to install RUAccent"))
 
             progress_cb(50)
 
@@ -245,6 +259,7 @@ class F5TTSModel(IVoiceModel):
         super().cleanup_state()
         self.current_f5_pipeline = None
         self.f5_pipeline_module = None
+        self.ruaccent_instance = None
         
         if self.rvc_handler and self.rvc_handler.initialized:
             self.rvc_handler.cleanup_state()
@@ -312,6 +327,43 @@ class F5TTSModel(IVoiceModel):
 
         return True
 
+    def _load_ruaccent_if_needed(self, settings: dict):
+        """Загружает RUAccent если включен в настройках и еще не загружен"""
+        mode = self._mode()
+        use_ruaccent_key = "f5rvc_use_ruaccent" if mode == "high+low" else "use_ruaccent"
+        
+        if settings.get(use_ruaccent_key, False) and self.ruaccent_instance is None:
+            try:
+                from ruaccent import RUAccent
+                self.ruaccent_instance = RUAccent()
+                
+                device = "CUDA" if self.parent.provider == "NVIDIA" else "CPU"
+                workdir = os.path.join("checkpoints", "ruaccent_models")
+                os.makedirs(workdir, exist_ok=True)
+                
+                self.ruaccent_instance.load(
+                    omograph_model_size='turbo3.1',
+                    use_dictionary=True,
+                    device=device,
+                    workdir=workdir,
+                    tiny_mode=False
+                )
+                logger.info(f"RUAccent загружен на устройстве: {device}")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить RUAccent: {e}")
+                self.ruaccent_instance = None
+
+    def _apply_ruaccent(self, text: str) -> str:
+        """Применяет RUAccent к тексту если он загружен"""
+        if self.ruaccent_instance is None:
+            return text
+        
+        try:
+            return self.ruaccent_instance.process_all(text)
+        except Exception as e:
+            logger.warning(f"Ошибка при применении RUAccent: {e}")
+            return text
+
     async def voiceover(self, text: str, character: Optional[Any] = None, **kwargs) -> Optional[str]:
         if not self.initialized:
             raise Exception(f"Модель {self.model_id} не инициализирована.")
@@ -320,6 +372,9 @@ class F5TTSModel(IVoiceModel):
             mode = self._mode()
             settings = self.parent.load_model_settings(mode)
             is_combined_model = mode == "high+low"
+            
+            # Загружаем RUAccent если нужно
+            self._load_ruaccent_if_needed(settings)
             
             # Определяем ключи параметров в зависимости от режима
             speed_key = "f5rvc_f5_speed" if is_combined_model else "speed"
@@ -346,24 +401,42 @@ class F5TTSModel(IVoiceModel):
                         with open(potential_text_path, "r", encoding="utf-8") as f: 
                             ref_text_content = f.read().strip()
             
-            # Если не нашли с постфиксом, используем стандартные пути
+            # Если не нашли с постфиксом, используем стандартные пути из voice_paths для F5
+            if not ref_audio_path and os.path.exists(voice_paths['f5_voice_filename']):
+                ref_audio_path = voice_paths['f5_voice_filename']
+                if os.path.exists(voice_paths['f5_voice_text']):
+                    with open(voice_paths['f5_voice_text'], "r", encoding="utf-8") as f: 
+                        ref_text_content = f.read().strip()
+            
+            # Fallback на обычные файлы персонажа
+            if not ref_audio_path and os.path.exists(voice_paths['clone_voice_filename']):
+                ref_audio_path = voice_paths['clone_voice_filename']
+                if os.path.exists(voice_paths['clone_voice_text']):
+                    with open(voice_paths['clone_voice_text'], "r", encoding="utf-8") as f: 
+                        ref_text_content = f.read().strip()
+            
+            # Fallback на Mila если персонаж не найден
             if not ref_audio_path:
-                if os.path.exists(voice_paths['clone_voice_filename']):
-                    ref_audio_path = voice_paths['clone_voice_filename']
-                    if os.path.exists(voice_paths['clone_voice_text']):
-                        with open(voice_paths['clone_voice_text'], "r", encoding="utf-8") as f: 
+                default_voice_paths = get_character_voice_paths(None, self.parent.provider)
+                if os.path.exists(default_voice_paths['f5_voice_filename']):
+                    ref_audio_path = default_voice_paths['f5_voice_filename']
+                    if os.path.exists(default_voice_paths['f5_voice_text']):
+                        with open(default_voice_paths['f5_voice_text'], "r", encoding="utf-8") as f: 
                             ref_text_content = f.read().strip()
-                else:
-                    # Fallback на Mila если персонаж не найден
-                    default_voice_paths = get_character_voice_paths(None, self.parent.provider)
-                    if os.path.exists(default_voice_paths['clone_voice_filename']):
-                        ref_audio_path = default_voice_paths['clone_voice_filename']
-                        if os.path.exists(default_voice_paths['clone_voice_text']):
-                            with open(default_voice_paths['clone_voice_text'], "r", encoding="utf-8") as f: 
-                                ref_text_content = f.read().strip()
+                elif os.path.exists(default_voice_paths['clone_voice_filename']):
+                    ref_audio_path = default_voice_paths['clone_voice_filename']
+                    if os.path.exists(default_voice_paths['clone_voice_text']):
+                        with open(default_voice_paths['clone_voice_text'], "r", encoding="utf-8") as f: 
+                            ref_text_content = f.read().strip()
             
             if not ref_audio_path:
                 raise FileNotFoundError("Для F5-TTS требуется референсное аудио, но оно не найдено.")
+            
+            # Применяем RUAccent к текстам если включено
+            if self.ruaccent_instance is not None:
+                text = self._apply_ruaccent(text)
+                if ref_text_content:
+                    ref_text_content = self._apply_ruaccent(ref_text_content)
             
             hash_object = hashlib.sha1(f"{text[:20]}_{datetime.now().timestamp()}".encode())
             output_path = os.path.join("temp", f"f5_raw_{hash_object.hexdigest()[:10]}.wav")

@@ -173,7 +173,7 @@ class FishSpeechModel(IVoiceModel):
                 success = installer.install_package(
                     ["torch==2.7.1", "torchaudio==2.7.1"],
                     description=_("Установка PyTorch с поддержкой CUDA 12.8...", "Installing PyTorch with CUDA 12.8 support..."),
-                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
+                    extra_args=["--index-url", "https://download.pytorch.org/whl/cu128"],
                 )
                 if not success:
                     status_cb(_("Ошибка при установке PyTorch", "Error installing PyTorch"))

@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+from main_logger import logger
 
 import numpy as np
 import soundfile as sf
@@ -47,7 +48,7 @@ class F5TTSPipeline:
             config_path (str, optional): Путь к TOML-файлу конфигурации.
             **kwargs: Аргументы для переопределения параметров из файла конфигурации.
         """
-        print("Initializing F5-TTS Pipeline...")
+        logger.info("Initializing F5-TTS Pipeline...")
         # 1. Загрузка и объединение конфигураций
         config = self._load_config(config_path, **kwargs)
         self.config = config
@@ -56,14 +57,14 @@ class F5TTSPipeline:
         self._patch_paths()
         
         # 3. Загрузка вокодера
-        print("Loading vocoder...")
+        logger.info("Loading vocoder...")
         self.vocoder = self._load_vocoder()
         
         # 4. Загрузка основной TTS модели
-        print("Loading TTS model...")
+        logger.info("Loading TTS model...")
         self.model = self._load_tts_model()
 
-        print("F5-TTS Pipeline initialized successfully.")
+        logger.info("F5-TTS Pipeline initialized successfully.")
 
     def _load_config(self, config_path, **kwargs):
         """Загружает конфигурацию из файла и объединяет с kwargs."""
@@ -169,7 +170,7 @@ class F5TTSPipeline:
         if not ckpt_file:
             ckpt_file = str(cached_path(f"hf://SWivid/{repo_name}/{model_name}/model_{ckpt_step}.{ckpt_type}"))
 
-        print(f"Using model: {model_name} from {ckpt_file}")
+        logger.info(f"Using model: {model_name} from {ckpt_file}")
         return load_model(
             model_cls,
             model_arc,
@@ -197,7 +198,7 @@ class F5TTSPipeline:
 
         # Проверяем, является ли text_to_generate путем к файлу
         if os.path.isfile(text_to_generate):
-            print(f"Reading text from file: {text_to_generate}")
+            logger.info(f"Reading text from file: {text_to_generate}")
             gen_text = codecs.open(text_to_generate, "r", "utf-8").read()
         else:
             gen_text = text_to_generate
@@ -207,9 +208,9 @@ class F5TTSPipeline:
         voices = run_config.get("voices", {})
         voices["main"] = main_voice # 'main' используется по умолчанию
 
-        print("Preprocessing reference voices...")
+        logger.info("Preprocessing reference voices...")
         for voice_name, voice_data in voices.items():
-            print(f"  - Voice: {voice_name}")
+            logger.info(f"  - Voice: {voice_name}")
             voices[voice_name]["ref_audio"], voices[voice_name]["ref_text"] = preprocess_ref_audio_text(
                 voice_data["ref_audio"], voice_data["ref_text"]
             )
@@ -236,11 +237,11 @@ class F5TTSPipeline:
             if match:
                 voice_name = match[1]
                 if voice_name not in voices:
-                    print(f"Warning: Voice '{voice_name}' not found in config, using 'main'.")
+                    logger.info(f"Warning: Voice '{voice_name}' not found in config, using 'main'.")
                     voice_name = "main"
             
             clean_text = re.sub(reg2, "", text_chunk).strip()
-            print(f"Generating chunk {i+1} with voice '{voice_name}': '{clean_text[:80]}...'")
+            logger.info(f"Generating chunk {i+1} with voice '{voice_name}': '{clean_text[:80]}...'")
 
             ref_audio_ = voices[voice_name]["ref_audio"]
             ref_text_ = voices[voice_name]["ref_text"]
@@ -270,7 +271,7 @@ class F5TTSPipeline:
                 sf.write(output_chunk_dir / chunk_filename, audio_segment, final_sample_rate)
 
         if not generated_audio_segments:
-            print("No audio was generated.")
+            logger.info("No audio was generated.")
             return None
 
         # Сохранение итогового файла
@@ -280,8 +281,8 @@ class F5TTSPipeline:
         sf.write(output_path, final_wave, final_sample_rate)
 
         if run_config.get("remove_silence"):
-            print(f"Removing silence from {output_path}...")
+            logger.info(f"Removing silence from {output_path}...")
             remove_silence_for_generated_wav(output_path)
             
-        print(f"\n✅ Audio generated successfully and saved to: {os.path.abspath(output_path)}")
+        logger.info(f"\n✅ Audio generated successfully and saved to: {os.path.abspath(output_path)}")
         return os.path.abspath(output_path)

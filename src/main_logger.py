@@ -3,40 +3,60 @@ import colorlog
 import os
 import sys
 
-class MyFileFilter(logging.Filter):
-    def filter(self, record):
-        # Упрощенная проверка для работы в PyInstaller
-        if hasattr(sys, '_MEIPASS'):
-            # Если мы в собранном приложении, пропускаем все логи
-            return True
-        # Иначе используем оригинальную фильтрацию
-        project_path = os.path.dirname(os.path.abspath(__file__))
-        return record.pathname.startswith(project_path)
+# -----------------------------------------------------------------------------
+# Фильтр: пропускаем только логи из проекта; в PyInstaller ничего не режем
+# -----------------------------------------------------------------------------
+class ProjectFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.project_path = os.path.dirname(os.path.abspath(__file__))
 
-# Создаем логгер
+    def filter(self, record):
+        if hasattr(sys, '_MEIPASS'):        # запущено из exe
+            return True
+        return record.pathname.startswith(self.project_path)
+
+# -----------------------------------------------------------------------------
+# Логгер
+# -----------------------------------------------------------------------------
 logger = colorlog.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Обработчик для консоли
+# -----------------------------------------------------------------------------
+# Консоль — без даты, без относительного пути
+# -----------------------------------------------------------------------------
 console_handler = colorlog.StreamHandler()
-console_handler.setFormatter(colorlog.ColoredFormatter(
-    '%(log_color)s%(asctime)s - %(levelname)s - %(message)s',
-    log_colors={
-        'INFO': 'white',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    }
-))
-console_handler.addFilter(MyFileFilter())
+console_handler.setFormatter(
+    colorlog.ColoredFormatter(
+        '%(log_color)s%(levelname)-8s '
+        '[%(filename)s:%(lineno)d - %(funcName)s] '
+        '%(message)s',
+        log_colors={
+            'INFO':     'white',
+            'WARNING':  'yellow',
+            'ERROR':    'red',
+            'CRITICAL': 'red,bg_white',
+        },
+    )
+)
+console_handler.addFilter(ProjectFilter())
 
-# Обработчик для файла (добавляется всегда)
+# -----------------------------------------------------------------------------
+# Файл — с датой
+# -----------------------------------------------------------------------------
 file_handler = logging.FileHandler('NeuroMitaLogs.log', encoding='utf-8')
-file_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(levelname)s - %(message)s'
-))
+file_handler.setFormatter(
+    logging.Formatter(
+        '%(asctime)s - %(levelname)-8s '
+        '[%(filename)s:%(lineno)d - %(funcName)s] '
+        '%(message)s'
+    )
+)
+file_handler.addFilter(ProjectFilter())
 
-# Добавляем обработчики
+# -----------------------------------------------------------------------------
+# Регистрируем обработчики
+# -----------------------------------------------------------------------------
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 logger.propagate = False

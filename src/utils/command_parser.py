@@ -5,7 +5,7 @@ import json
 import re
 from typing import List, Dict, Tuple, Optional, Any
 
-from services.embedding_handler import EmbeddingModelHandler
+from handlers.embedding_handler import EmbeddingModelHandler
 
 EMBEDDINGS_FILE = "mita_commands_embeddings_full.json"
 CATEGORY_SWITCH_THRESHOLD_DIFF = 0.18

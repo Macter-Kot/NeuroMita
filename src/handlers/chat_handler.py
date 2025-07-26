@@ -289,7 +289,7 @@ class ChatModel:
             if hasattr(self.current_character, 'game_manager'):
                 game_state_prompt_content = self.current_character.game_manager.get_active_game_state_prompt()
                 if game_state_prompt_content:
-                     logger.info(f"[{self.current_character.char_id}] Сформирован промпт состояния игры.")
+                    logger.info(f"[{self.current_character.char_id}] Сформирован промпт состояния игры.")
             else:
                 logger.warning(f"[{self.current_character.char_id}] Игра активна, но GameManager отсутствует.")
 
@@ -336,10 +336,17 @@ class ChatModel:
 
         combined_messages.extend(llm_messages_history_limited)
 
+        # 5.1. Добавляем системное сообщение с текущим временем (current state)
+        current_time = datetime.datetime.now()
+        current_state_message = {
+            "role": "system", 
+            "content": f"[Current State]\nDate: {current_time.strftime('%Y-%m-%d')}\nTime: {current_time.strftime('%H:%M:%S')}\nDay of week: {current_time.strftime('%A')}"
+        }
+        combined_messages.append(current_state_message)
 
         # 6. Добавляем system_input -----------------------------------------------------
         if system_input:
-            llm_messages_history_limited.append({"role": "system", "content": system_input})
+            combined_messages.append({"role": "system", "content": system_input})
 
         # 7. Пользовательское сообщение (текст + картинки) ------------------------------
         user_message_for_history = None
@@ -377,7 +384,7 @@ class ChatModel:
                     return None
 
                 processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
-                                                                                               self.settings.get("SAVE_MISSED_MEMORY",False))
+                                                                                            self.settings.get("SAVE_MISSED_MEMORY",False))
 
                 # --- Встраивание «command replacer» (embeddings) ---------------------------
                 final_response_text = processed_response_text

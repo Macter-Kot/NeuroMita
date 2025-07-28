@@ -13,7 +13,6 @@ class OverlayWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: rgba(0, 0, 0, 180);")
         
-        # Анимация прозрачности
         self.opacity_effect = QGraphicsOpacityEffect()
         self.setGraphicsEffect(self.opacity_effect)
         self.opacity_effect.setOpacity(0)
@@ -22,22 +21,27 @@ class OverlayWidget(QWidget):
         self.fade_animation.setDuration(250)
         self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         
-        # Основной layout
         self.layout = QVBoxLayout(self)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.content_widget = None
+        self.locked = False
         
-        # Скрываем по умолчанию
         self.hide()
         
-    def set_content(self, widget):
-        """Установить виджет контента"""
+    def set_content(self, widget, locked=False):
+        """Установить виджет контента
+        
+        Args:
+            widget: Виджет для отображения
+            locked: Если True, клик вне виджета не закроет overlay
+        """
         if self.content_widget:
             self.layout.removeWidget(self.content_widget)
             self.content_widget.deleteLater()
         
         self.content_widget = widget
         self.layout.addWidget(widget)
+        self.locked = locked
         
     def show_animated(self):
         """Показать overlay с анимацией"""
@@ -63,8 +67,7 @@ class OverlayWidget(QWidget):
         
     def mousePressEvent(self, event):
         """Закрыть при клике на фон"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Проверяем, был ли клик вне контента
+        if not self.locked and event.button() == Qt.MouseButton.LeftButton:
             if self.content_widget and not self.content_widget.geometry().contains(event.pos()):
                 self.hide_animated()
         super().mousePressEvent(event)

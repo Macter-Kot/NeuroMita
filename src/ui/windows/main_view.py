@@ -242,6 +242,7 @@ class ChatGUI(QMainWindow):
         self.finish_stream_signal.connect(self._on_stream_finish)
 
         self.update_status_colors()
+        QTimer.singleShot(1000, self._check_eula_and_guide)
 
         self.last_voice_model_selected = None
         self.current_local_voice_id = None
@@ -553,10 +554,8 @@ class ChatGUI(QMainWindow):
         chat_layout.setContentsMargins(10, 10, 10, 10)
         chat_layout.setSpacing(5)
         
-        # Верхняя панель с кнопками и статусами
         top_panel_layout = QHBoxLayout()
         
-        # Кнопки слева
         self.clear_chat_button = QPushButton(_("Очистить", "Clear"))
         self.clear_chat_button.clicked.connect(self.clear_chat_display)
         self.clear_chat_button.setMaximumHeight(30)
@@ -565,17 +564,36 @@ class ChatGUI(QMainWindow):
         self.load_history_button.clicked.connect(self.load_chat_history)
         self.load_history_button.setMaximumHeight(30)
         
+        self.guide_button = QPushButton(qta.icon('fa5s.question-circle', color='#dcdcdc'), '')
+        self.guide_button.clicked.connect(self._show_guide)
+        self.guide_button.setMaximumHeight(30)
+        self.guide_button.setFixedWidth(30)
+        self.guide_button.setToolTip(_("Открыть руководство пользователя", "Open user guide"))
+        self.guide_button.setStyleSheet("""
+            QPushButton {
+                background-color: #8a2be2;
+                border: none;
+                padding: 5px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #9932cc;
+            }
+            QPushButton:pressed {
+                background-color: #7b1fa2;
+            }
+        """)
+        
         top_panel_layout.addWidget(self.clear_chat_button)
         top_panel_layout.addWidget(self.load_history_button)
+        top_panel_layout.addWidget(self.guide_button)
         
-        # Статус индикаторы правее от кнопок (с небольшим отступом)
-        top_panel_layout.addSpacing(20)  # Отступ между кнопками и индикаторами
+        top_panel_layout.addSpacing(20)
         
-        # Создаем статус индикаторы
         from ui.widgets import status_indicators_widget
         status_indicators_widget.create_status_indicators_inline(self, top_panel_layout)
         
-        top_panel_layout.addStretch()  # Растяжка справа
+        top_panel_layout.addStretch()
         
         chat_layout.addLayout(top_panel_layout)
         
@@ -762,6 +780,10 @@ class ChatGUI(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.overlay.resize(self.size())
+        
+        for child in self.children():
+            if child.__class__.__name__ == 'GuideOverlay':
+                child.resize(self.size())
         
         QTimer.singleShot(0, self._position_mita_status)
 
@@ -2297,5 +2319,84 @@ class ChatGUI(QMainWindow):
         # Просто создаём настройки напрямую без заголовка секции
         gui_templates.create_settings_direct(self, parent_layout, settings_config)
 
-
+    
     # endregion
+
+    def _check_eula_and_guide(self):
+        if not self._get_setting("EULA_ACCEPTED", False):
+            self._show_eula_dialog()
+    
+    def _show_eula_dialog(self):
+        from ui.widgets.eula_widget import EULAWidget
+        
+        eula_widget = EULAWidget()
+        eula_widget.accepted.connect(lambda: self._on_eula_accepted(eula_widget))
+        eula_widget.rejected.connect(lambda: self._on_eula_rejected(eula_widget))
+        
+        self.overlay.set_content(eula_widget, locked=True)
+        self.overlay.show_animated()
+        
+    def _on_eula_accepted(self, eula_widget):
+        self.overlay.hide_animated()
+        QTimer.singleShot(500, self._show_guide)
+        
+    def _on_eula_rejected(self, eula_widget):
+        QMessageBox.critical(self, "Отказ от соглашения / Agreement Rejected", 
+            "Вы не можете использовать программу без принятия лицензионного соглашения.\n"
+            "You cannot use the software without accepting the license agreement.")
+    
+        self.close()
+        import sys
+        sys.exit(0)
+        
+    def _show_guide(self):
+        from ui.widgets.guide_widget import GuideWidget
+        
+        guide_widget = GuideWidget()
+        guide_widget.closed.connect(lambda: self._on_guide_closed(guide_widget))
+        
+        self.overlay.set_content(guide_widget)
+        self.overlay.show_animated()
+        guide_widget.start()
+        
+    def _on_guide_closed(self, guide_widget):
+        self.overlay.hide_animated()
+        
+    def _setup_guide_highlights(self, guide_widget):
+        if len(guide_widget.pages) > 1:
+            guide_widget.pages[1].set_highlight_target(
+                lambda: self.settings_buttons.get("language") if hasattr(self, 'settings_buttons') else None
+            )
+        if len(guide_widget.pages) > 2:
+            guide_widget.pages[2].set_highlight_target(
+                lambda: self.settings_buttons.get("api") if hasattr(self, 'settings_buttons') else None
+            )
+        if len(guide_widget.pages) > 3:
+            guide_widget.pages[3].set_highlight_target(
+                lambda: self.settings_buttons.get("models") if hasattr(self, 'settings_buttons') else None
+            )
+        if len(guide_widget.pages) > 4:
+            guide_widget.pages[4].set_highlight_target(
+                lambda: self.settings_buttons.get("voice") if hasattr(self, 'settings_buttons') else None
+            )
+        if len(guide_widget.pages) > 5:
+            guide_widget.pages[5].set_highlight_target(
+                lambda: self.settings_buttons.get("microphone") if hasattr(self, 'settings_buttons') else None
+            )
+        if len(guide_widget.pages) > 6:
+            guide_widget.pages[6].set_highlight_target(
+                lambda: self.settings_buttons.get("characters") if hasattr(self, 'settings_buttons') else None
+            )
+        if len(guide_widget.pages) > 7:
+            guide_widget.pages[7].set_highlight_target(
+                lambda: self.chat_window if hasattr(self, 'chat_window') else None
+            )
+        if len(guide_widget.pages) > 8:
+            guide_widget.pages[8].set_highlight_target(
+                lambda: self.token_count_label if hasattr(self, 'token_count_label') else None
+            )
+        if len(guide_widget.pages) > 9:
+            guide_widget.pages[9].set_highlight_target(
+                lambda: self.settings_buttons.get("debug") if hasattr(self, 'settings_buttons') else None
+            )
+

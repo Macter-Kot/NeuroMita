@@ -327,6 +327,9 @@ class Events:
         CHECK_TRITON_DEPENDENCIES = "check_triton_dependencies"
         SHOW_ERROR_MESSAGE = "show_error_message"
         UPDATE_LOCAL_VOICE_COMBOBOX = "update_local_voice_combobox" 
+        SHOW_EULA_DIALOG = "show_eula_dialog"
+        SHOW_GUIDE = "show_guide"
+        HIDE_GUIDE = "hide_guide"
 
     class Model:
         """События для управления LLM, персонажами и историей"""

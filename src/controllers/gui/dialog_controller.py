@@ -10,6 +10,8 @@ class DialogController(BaseController):
         self.event_bus.subscribe(Events.GUI.SHOW_ERROR_MESSAGE, self._on_show_error_message, weak=False)
         self.event_bus.subscribe(Events.Telegram.PROMPT_FOR_TG_CODE, self._on_prompt_for_tg_code, weak=False)
         self.event_bus.subscribe(Events.Telegram.PROMPT_FOR_TG_PASSWORD, self._on_prompt_for_tg_password, weak=False)
+        self.event_bus.subscribe(Events.GUI.SHOW_EULA_DIALOG, self._on_show_eula_dialog, weak=False)
+        self.event_bus.subscribe(Events.GUI.SHOW_GUIDE, self._on_show_guide, weak=False)
         
     def _on_show_info_message(self, event: Event):
         title = event.data.get('title', 'Информация')
@@ -34,3 +36,11 @@ class DialogController(BaseController):
     def _on_prompt_for_tg_password(self, event: Event):
         password_future = event.data.get('future')
         self.view.show_tg_password_dialog_signal.emit({'future': password_future})
+
+    def _on_show_eula_dialog(self, event: Event):
+        if self.view and hasattr(self.view, '_show_eula_dialog'):
+            QTimer.singleShot(0, self.view._show_eula_dialog)
+            
+    def _on_show_guide(self, event: Event):
+        if self.view and hasattr(self.view, '_show_guide'):
+            QTimer.singleShot(0, self.view._show_guide)

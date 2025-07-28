@@ -1,0 +1,586 @@
+# src/ui/widgets/guide_widget.py
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QRadioButton, QButtonGroup
+from PyQt6.QtGui import QPixmap
+import qtawesome as qta
+from abc import ABC, abstractmethod
+from core.events import get_event_bus, Events
+import os
+
+class IGuidePage(ABC):
+    def __init__(self):
+        pass
+        
+    @abstractmethod
+    def get_title_ru(self) -> str:
+        pass
+        
+    @abstractmethod
+    def get_title_en(self) -> str:
+        pass
+        
+    @abstractmethod
+    def get_description_ru(self) -> str:
+        pass
+        
+    @abstractmethod
+    def get_description_en(self) -> str:
+        pass
+        
+    @abstractmethod
+    def get_image_filename(self) -> str:
+        pass
+
+class GuideWidget(QWidget):
+    closed = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.event_bus = get_event_bus()
+        self.pages = []
+        self.current_page_index = 0
+        self.current_language = "ru"
+        self.setObjectName("GuideWidget")
+        self.setup_ui()
+        self._init_pages()
+    
+    def setup_ui(self):
+        self.setStyleSheet("""
+            #GuideWidget {
+                background-color: transparent;
+            }
+            #GuideContainer {
+                background-color: #2a2a2a;
+                border: 2px solid #5a5a5a;
+                border-radius: 12px;
+            }
+            #GuideTitle {
+                font-size: 16px;
+                font-weight: bold;
+                color: #ffffff;
+                padding: 10px;
+            }
+            #GuideDescription {
+                font-size: 12px;
+                color: #e0e0e0;
+                padding: 10px;
+                line-height: 1.4;
+            }
+            #NavigationButton {
+                background-color: #6a4c93;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                font-weight: bold;
+                border-radius: 8px;
+                min-width: 80px;
+            }
+            #NavigationButton:hover {
+                background-color: #7b5aa6;
+            }
+            #NavigationButton:disabled {
+                background-color: #4a4a4a;
+                color: #888888;
+            }
+            #SkipButton {
+                background-color: #555555;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                font-weight: bold;
+                border-radius: 8px;
+            }
+            #SkipButton:hover {
+                background-color: #666666;
+            }
+            #PageIndicator {
+                color: #aaaaaa;
+                font-size: 11px;
+            }
+            #ImageFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+            }
+            #ImageLabel {
+                color: #888888;
+                background-color: transparent;
+            }
+            QRadioButton {
+                color: #e0e0e0;
+                font-size: 12px;
+                padding: 5px;
+            }
+            QRadioButton::indicator {
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                border: 2px solid #666666;
+                background-color: #2a2a2a;
+            }
+            QRadioButton::indicator:checked {
+                background-color: #6a4c93;
+                border: 2px solid #6a4c93;
+            }
+        """)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        container = QFrame()
+        container.setObjectName("GuideContainer")
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(20, 20, 20, 20)
+        container_layout.setSpacing(15)
+        
+        self.setMinimumSize(600, 500)
+        self.setMaximumSize(800, 700)
+        
+        header_layout = QHBoxLayout()
+        self.title_label = QLabel("")
+        self.title_label.setObjectName("GuideTitle")
+        header_layout.addWidget(self.title_label)
+        
+        header_layout.addStretch()
+        
+        lang_layout = QHBoxLayout()
+        lang_layout.setSpacing(10)
+        
+        self.lang_group = QButtonGroup()
+        self.ru_radio = QRadioButton("RU")
+        self.ru_radio.setChecked(True)
+        self.en_radio = QRadioButton("EN")
+        
+        self.lang_group.addButton(self.ru_radio, 0)
+        self.lang_group.addButton(self.en_radio, 1)
+        self.lang_group.buttonClicked.connect(self._on_language_changed)
+        
+        lang_layout.addWidget(self.ru_radio)
+        lang_layout.addWidget(self.en_radio)
+        header_layout.addLayout(lang_layout)
+        
+        self.skip_button = QPushButton("Пропустить")
+        self.skip_button.setObjectName("SkipButton")
+        self.skip_button.clicked.connect(self._on_skip)
+        header_layout.addWidget(self.skip_button)
+        
+        container_layout.addLayout(header_layout)
+        
+        self.image_frame = QFrame()
+        self.image_frame.setObjectName("ImageFrame")
+        self.image_frame.setMinimumHeight(120)
+        self.image_frame.setMaximumHeight(350)
+        image_layout = QVBoxLayout(self.image_frame)
+        image_layout.setContentsMargins(10, 10, 10, 10)
+        
+        self.image_label = QLabel()
+        self.image_label.setObjectName("ImageLabel")
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setMinimumSize(200, 100)
+        image_layout.addWidget(self.image_label)
+        
+        container_layout.addWidget(self.image_frame)
+        
+        self.description_label = QLabel("")
+        self.description_label.setObjectName("GuideDescription")
+        self.description_label.setWordWrap(True)
+        self.description_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        container_layout.addWidget(self.description_label, 1)
+        
+        nav_layout = QHBoxLayout()
+        nav_layout.setSpacing(15)
+        
+        self.prev_button = QPushButton(qta.icon('fa5s.angle-left', color='white'), '')
+        self.prev_button.setObjectName("NavigationButton")
+        self.prev_button.setFixedSize(40, 35)
+        self.prev_button.clicked.connect(self._prev_page)
+        nav_layout.addWidget(self.prev_button)
+        
+        self.page_indicator = QLabel("1 / 1")
+        self.page_indicator.setObjectName("PageIndicator")
+        self.page_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        nav_layout.addWidget(self.page_indicator)
+        
+        self.next_button = QPushButton(qta.icon('fa5s.angle-right', color='white'), '')
+        self.next_button.setObjectName("NavigationButton")
+        self.next_button.setFixedSize(40, 35)
+        self.next_button.clicked.connect(self._next_page)
+        nav_layout.addWidget(self.next_button)
+        
+        nav_layout.addStretch()
+        
+        self.close_button = QPushButton("Завершить")
+        self.close_button.setObjectName("NavigationButton")
+        self.close_button.clicked.connect(self._on_close)
+        self.close_button.hide()
+        nav_layout.addWidget(self.close_button)
+        
+        container_layout.addLayout(nav_layout)
+        
+        main_layout.addWidget(container)  
+
+    def _on_language_changed(self):
+        self.current_language = "ru" if self.ru_radio.isChecked() else "en"
+        self._update_skip_button_text()
+        self._update_close_button_text()
+        self.show_page(self.current_page_index)
+        
+    def _update_skip_button_text(self):
+        if self.current_language == "ru":
+            self.skip_button.setText("Пропустить")
+        else:
+            self.skip_button.setText("Skip")
+            
+    def _update_close_button_text(self):
+        if self.current_language == "ru":
+            self.close_button.setText("Завершить")
+        else:
+            self.close_button.setText("Finish")
+        
+    def _init_pages(self):
+        self.pages = [
+            WelcomeGuidePage(),
+            APIGuidePage(),
+            CharactersGuidePage(),
+            VoiceoverGuidePage(),
+            MicrophoneGuidePage(),
+            ScreenAnalysisGuidePage(),
+            ModelsGuidePage(),
+            ChatGuidePage(),
+            FinalGuidePage(),
+        ]
+        
+    def _load_image(self, filename):
+        if not filename:
+            no_image_text = "Изображение не загружено" if self.current_language == "ru" else "Image not loaded"
+            self.image_label.setText(no_image_text)
+            self.image_frame.setFixedHeight(120)
+            return None
+            
+        image_path = os.path.join("assets", filename)
+        if os.path.exists(image_path):
+            pixmap = QPixmap(image_path)
+            if not pixmap.isNull():
+                return pixmap
+        
+        no_image_text = f"Изображение не загружено:\n{filename}" if self.current_language == "ru" else f"Image not loaded:\n{filename}"
+        self.image_label.setText(no_image_text)
+        self.image_frame.setFixedHeight(120)
+        return None
+
+    def show_page(self, index: int):
+        if 0 <= index < len(self.pages):
+            self.current_page_index = index
+            page = self.pages[index]
+            
+            if self.current_language == "ru":
+                self.title_label.setText(page.get_title_ru())
+                self.description_label.setText(page.get_description_ru())
+            else:
+                self.title_label.setText(page.get_title_en())
+                self.description_label.setText(page.get_description_en())
+            
+            image_filename = page.get_image_filename()
+            pixmap = self._load_image(image_filename)
+            
+            if pixmap:
+                available_width = self.width() - 80
+                available_height = 320
+                
+                scaled_pixmap = pixmap.scaled(
+                    available_width,
+                    available_height,
+                    Qt.AspectRatioMode.KeepAspectRatio, 
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                self.image_label.setPixmap(scaled_pixmap)
+                
+                needed_height = scaled_pixmap.height() + 20
+                final_height = max(120, min(needed_height, 350))
+                self.image_frame.setFixedHeight(final_height)
+            
+            self.page_indicator.setText(f"{index + 1} / {len(self.pages)}")
+            
+            self.prev_button.setEnabled(index > 0)
+            self.next_button.setVisible(index < len(self.pages) - 1)
+            self.close_button.setVisible(index == len(self.pages) - 1)
+
+    def start(self):
+        self.show_page(0)
+        
+    def _prev_page(self):
+        if self.current_page_index > 0:
+            self.show_page(self.current_page_index - 1)
+            
+    def _next_page(self):
+        if self.current_page_index < len(self.pages) - 1:
+            self.show_page(self.current_page_index + 1)
+            
+    def _on_skip(self):
+        self._on_close()
+        
+    def _on_close(self):
+        self.closed.emit()
+
+# ----------------- СТРАНИЦЫ РУКОВОДСТВА -----------------
+
+class WelcomeGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Добро пожаловать в NeuroMita!"
+        
+    def get_title_en(self):
+        return "Welcome to NeuroMita!"
+        
+    def get_description_ru(self):
+        return """Привет! Это краткое руководство поможет вам быстро разобраться в основах. 
+NeuroMita — это ваш умный AI-ассистент, которого можно настроить под любые задачи.
+
+В этом гайде мы пройдемся по самым важным настройкам, чтобы вы могли сразу начать общение. 
+Нажмите 'Далее', чтобы начать, или 'Пропустить', если хотите разобраться сами."""
+        
+    def get_description_en(self):
+        return """Hello! This quick guide will help you understand the basics.
+NeuroMita is your smart AI assistant that can be configured for any task.
+
+In this guide, we'll walk through the most important settings so you can start chatting right away.
+Click 'Next' to begin, or 'Skip' if you want to figure it out on your own."""
+        
+    def get_image_filename(self):
+        return "guide_welcome.jpg"
+
+class APIGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Шаг 1: Подключение к 'мозгу' AI"
+        
+    def get_title_en(self):
+        return "Step 1: Connecting to the AI 'Brain'"
+        
+    def get_description_ru(self):
+        return """Чтобы ассистент заработал, ему нужен доступ к большой языковой модели (LLM) — это и есть его "мозг". Этот доступ осуществляется через API.
+
+В настройках API (иконка <b>вилки</b>) вы можете выбрать <b>Провайдера</b>:
+• <b>g4f (бесплатно)</b>: Отличный вариант для начала! Использует различные бесплатные сервисы. Просто выберите его, и можно начинать.
+• <b>OpenAI, Claude и др. (платно)</b>: Более стабильные и мощные модели. Для них нужен <b>API-ключ</b> (ваш личный "пароль"), который можно получить на сайте провайдера.
+
+<b>Проще говоря:</b> выберите 'g4f' в списке, чтобы сразу начать, или вставьте свой ключ от платного сервиса для максимального качества."""
+        
+    def get_description_en(self):
+        return """For the assistant to work, it needs access to a large language model (LLM) — its "brain." This access is provided via an API.
+
+In the API settings (<b>plug</b> icon), you can select a <b>Provider</b>:
+• <b>g4f (free)</b>: A great option to start! It uses various free services. Just select it, and you're ready to go.
+• <b>OpenAI, Claude, etc. (paid)</b>: More stable and powerful models. They require an <b>API key</b> (your personal "password"), which you can get from the provider's website.
+
+<b>Simply put:</b> choose 'g4f' from the list to start immediately, or insert your key from a paid service for maximum quality."""
+        
+    def get_image_filename(self):
+        return "guide_api.jpg"
+
+class CharactersGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Шаг 2: Выбор Персонажа"
+        
+    def get_title_en(self):
+        return "Step 2: Choosing a Character"
+        
+    def get_description_ru(self):
+        return """Персонаж — это личность вашего ассистента. Он определяет, как AI будет с вами общаться, его характер и знания.
+
+В настройках Персонажей (иконка <b>человека</b>) вы можете:
+• <b>Выбрать готового персонажа</b> из списка.
+• <b>Настроить промпты</b>: это инструкции, которые формируют поведение персонажа. Можно выбрать готовый набор промптов из "Каталога" или создать свой.
+• <b>Управлять историей</b>: очищать память персонажа или открывать папку с диалогами.
+
+<b>Проще говоря:</b> выберите персонажа, который вам нравится. Для начала отлично подойдет "Crazy"."""
+        
+    def get_description_en(self):
+        return """A character is your assistant's personality. It defines how the AI will communicate with you, its nature, and its knowledge.
+
+In the Character settings (<b>user</b> icon), you can:
+• <b>Select a pre-made character</b> from the list.
+• <b>Configure prompts</b>: these are instructions that shape the character's behavior. You can choose a pre-made prompt set from the "Catalogue" or create your own.
+• <b>Manage history</b>: clear the character's memory or open the folder with dialogues.
+
+<b>Simply put:</b> choose a character you like. "Crazy" is a great one to start with."""
+        
+    def get_image_filename(self):
+        return "guide_characters.jpg"
+
+class VoiceoverGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Шаг 3: Настройка голоса (Озвучка)"
+        
+    def get_title_en(self):
+        return "Step 3: Setting up the Voice (Voiceover)"
+        
+    def get_description_ru(self):
+        return """Хотите, чтобы ассистент отвечал вам голосом? Это просто!
+
+В настройках Озвучки (иконка <b>динамика</b>) сначала поставьте галочку <b>"Использовать озвучку"</b>. Затем выберите метод:
+• <b>TG (через Telegram)</b>: Самый простой способ. Не требует настроек, работает через ботов в Telegram.
+• <b>Local (локально)</b>: Качественный голос, который генерируется на вашем ПК. Требует мощной видеокарты и предварительной установки моделей.
+
+<b>Проще говоря:</b> для начала выберите метод "TG". Если у вас мощный компьютер, можете попробовать "Local" для лучшего качества."""
+        
+    def get_description_en(self):
+        return """Want your assistant to reply with a voice? It's easy!
+
+In the Voiceover settings (<b>speaker</b> icon), first check <b>"Use speech"</b>. Then choose a method:
+• <b>TG (via Telegram)</b>: The easiest way. Requires no setup, works through Telegram bots.
+• <b>Local</b>: High-quality voice generated on your PC. Requires a powerful graphics card and pre-installation of models.
+
+<b>Simply put:</b> select the "TG" method to start. If you have a powerful computer, you can try "Local" for better quality."""
+        
+    def get_image_filename(self):
+        return "guide_voice.jpg"
+
+class MicrophoneGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Шаг 4: Общение голосом (Микрофон)"
+        
+    def get_title_en(self):
+        return "Step 4: Voice Communication (Microphone)"
+        
+    def get_description_ru(self):
+        return """Вы можете не только слушать, но и говорить с ассистентом.
+
+В настройках Микрофона (иконка <b>микрофона</b>):
+• Поставьте галочку <b>"Распознавание"</b>, чтобы включить его.
+• Выберите ваш <b>микрофон</b> из списка.
+• <b>Тип распознавания</b>: "google" — простой и не требует настроек; "gigaam" — локальный, работает без интернета, но требует установки.
+
+<b>Проще говоря:</b> включите распознавание и выберите свой микрофон, чтобы управлять ассистентом голосом."""
+        
+    def get_description_en(self):
+        return """You can not only listen but also talk to the assistant.
+
+In the Microphone settings (<b>microphone</b> icon):
+• Check <b>"Recognition"</b> to enable it.
+• Select your <b>microphone</b> from the list.
+• <b>Recognition Type</b>: "google" is simple and requires no setup; "gigaam" is local, works offline, but requires installation.
+
+<b>Simply put:</b> enable recognition and select your microphone to control the assistant with your voice."""
+        
+    def get_image_filename(self):
+        return "guide_microphone.jpg"
+
+class ScreenAnalysisGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Доп. фича: Анализ экрана"
+        
+    def get_title_en(self):
+        return "Bonus Feature: Screen Analysis"
+        
+    def get_description_ru(self):
+        return """NeuroMita может "видеть" то, что происходит на вашем экране или что показывает ваша веб-камера. Это полезно, чтобы задавать вопросы о происходящем в игре или приложении.
+
+В настройках Экрана (иконка <b>монитора</b>):
+• Включите <b>"Анализ экрана"</b> или <b>"Захват с камеры"</b>.
+• После этого AI сможет получать скриншоты. Вы можете отправлять их вместе с текстовым сообщением.
+
+<b>Важно:</b> Эта функция работает только с моделями, которые поддерживают анализ изображений (например, GPT-4o, Claude 3, Gemini)."""
+        
+    def get_description_en(self):
+        return """NeuroMita can "see" what's on your screen or what your webcam is showing. This is useful for asking questions about what's happening in a game or application.
+
+In the Screen settings (<b>desktop</b> icon):
+• Enable <b>"Screen Analysis"</b> or <b>"Camera Capture"</b>.
+• After this, the AI will be able to receive screenshots. You can send them along with a text message.
+
+<b>Important:</b> This feature only works with models that support image analysis (e.g., GPT-4o, Claude 3, Gemini)."""
+        
+    def get_image_filename(self):
+        return "guide_screen.jpg"
+
+class ModelsGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Тонкая настройка: Параметры модели"
+        
+    def get_title_en(self):
+        return "Fine-Tuning: Model Parameters"
+        
+    def get_description_ru(self):
+        return """Если хотите повлиять на то, как именно AI отвечает, загляните в настройки Моделей (иконка <b>робота</b>).
+
+Ключевые параметры:
+• <b>Температура</b>: Управляет креативностью. <b>0.1</b> — строгие и точные ответы, <b>1.0</b> — очень творческие и непредсказуемые. Для начала оставьте <b>0.5</b>.
+• <b>Лимит сообщений</b>: Сколько последних сообщений AI будет "помнить" при генерации ответа.
+• <b>Макс. токенов в ответе</b>: Ограничивает длину ответа ассистента.
+
+<b>Проще говоря:</b> на этой вкладке можно сделать AI более или менее креативным. Для начала можно ничего не менять."""
+        
+    def get_description_en(self):
+        return """If you want to influence how the AI responds, check out the Model settings (<b>robot</b> icon).
+
+Key parameters:
+• <b>Temperature</b>: Controls creativity. <b>0.1</b> for strict and precise answers, <b>1.0</b> for very creative and unpredictable ones. Start with <b>0.5</b>.
+• <b>Message limit</b>: How many recent messages the AI will "remember" when generating a response.
+• <b>Max response tokens</b>: Limits the length of the assistant's answer.
+
+<b>Simply put:</b> on this tab, you can make the AI more or less creative. You can leave the defaults for now."""
+        
+    def get_image_filename(self):
+        return "guide_models.jpg"
+
+class ChatGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Интерфейс: Настройки чата"
+        
+    def get_title_en(self):
+        return "Interface: Chat Settings"
+        
+    def get_description_ru(self):
+        return """Здесь вы можете настроить внешний вид самого чата.
+
+В настройках Чата (иконка <b>облачка диалога</b>) можно изменить:
+• <b>Размер шрифта</b> в окне диалога.
+• <b>Показывать метки времени</b> рядом с сообщениями.
+• <b>Скрывать теги</b>: убирает технические теги (вроде <e>, <c>) из сообщений AI для более чистого вида.
+
+<b>Проще говоря:</b> настройте чат так, как вам удобно читать."""
+        
+    def get_description_en(self):
+        return """Here you can customize the appearance of the chat itself.
+
+In the Chat settings (<b>dialog bubble</b> icon), you can change:
+• <b>Chat Font Size</b> in the dialogue window.
+• <b>Show Timestamps</b> next to messages.
+• <b>Hide Tags</b>: removes technical tags (like <e>, <c>) from AI messages for a cleaner look.
+
+<b>Simply put:</b> configure the chat to be comfortable for you to read."""
+        
+    def get_image_filename(self):
+        return "guide_chat.jpg"
+
+class FinalGuidePage(IGuidePage):
+    def get_title_ru(self):
+        return "Вы готовы!"
+        
+    def get_title_en(self):
+        return "You're All Set!"
+        
+    def get_description_ru(self):
+        return """На этом всё! Вы прошли основные настройки и готовы к работе.
+
+<b>Краткая памятка:</b>
+1.  <b>API (вилка)</b>: Выберите провайдера (g4f для старта).
+2.  <b>Персонажи (человек)</b>: Выберите личность AI.
+3.  <b>Озвучка (динамик)</b> и <b>Микрофон</b>: Включите, если хотите общаться голосом.
+4.  Начинайте общаться в главном окне!
+
+Не бойтесь экспериментировать с другими настройками. Если что-то пойдет не так, всегда можно вернуться к стандартным значениям. Приятного общения!"""
+        
+    def get_description_en(self):
+        return """That's it! You've gone through the basic settings and are ready to go.
+
+<b>Quick reminder:</b>
+1.  <b>API (plug)</b>: Select a provider (g4f to start).
+2.  <b>Characters (user)</b>: Choose the AI's personality.
+3.  <b>Voiceover (speaker)</b> and <b>Microphone</b>: Enable them if you want to use voice chat.
+4.  Start chatting in the main window!
+
+Don't be afraid to experiment with other settings. If something goes wrong, you can always revert to the default values. Enjoy your chat!"""
+        
+    def get_image_filename(self):
+        return "guide_final.jpg"

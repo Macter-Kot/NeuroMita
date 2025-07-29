@@ -91,9 +91,9 @@ class Character:
             self.set_variable(key, value) # Use set_variable for normalization
 
         logger.info(
-            "Character '%s' (%s) initialized. Initial effective vars: %s",
+            "\n\nCharacter '%s' (%s) initialized. Initial effective vars: %s\n\n",
             self.char_id, self.name,
-            ", ".join(f"{k}={v}" for k, v in self.variables.items() if k in composed_initials)
+            ", ".join(f"\n • {k} = {v}" for k, v in self.variables.items() if k in composed_initials)
         )
         
         # Initialize History and Memory Systems

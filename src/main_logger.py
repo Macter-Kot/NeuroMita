@@ -15,6 +15,11 @@ class ProjectFilter(logging.Filter):
         if hasattr(sys, '_MEIPASS'):        # запущено из exe
             return True
         return record.pathname.startswith(self.project_path)
+    
+class LocationFilter(logging.Filter):
+    def filter(self, record):
+        record.location = f"[{record.filename}:{record.lineno}]"
+        return True
 
 # -----------------------------------------------------------------------------
 # Логгер
@@ -28,9 +33,7 @@ logger.setLevel(logging.INFO)
 console_handler = colorlog.StreamHandler()
 console_handler.setFormatter(
     colorlog.ColoredFormatter(
-        '%(log_color)s%(levelname)-8s '
-        '[%(filename)s:%(lineno)d - %(funcName)s] '
-        '%(message)s',
+        '%(log_color)s%(levelname)-8s %(location)-30s | %(message)s',
         log_colors={
             'INFO':     'white',
             'WARNING':  'yellow',
@@ -40,6 +43,7 @@ console_handler.setFormatter(
     )
 )
 console_handler.addFilter(ProjectFilter())
+console_handler.addFilter(LocationFilter())
 
 # -----------------------------------------------------------------------------
 # Файл — с датой

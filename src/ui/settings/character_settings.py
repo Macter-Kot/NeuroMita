@@ -103,7 +103,15 @@ def change_character_actions(gui, character=None):
         gui.prompt_pack_combobox.blockSignals(True)
         gui.prompt_pack_combobox.clear()
         gui.prompt_pack_combobox.addItems(new_options)
-        set_default_prompt_pack(gui, gui.prompt_pack_combobox)
+
+        # NEW: ищем сохранённый сет
+        saved_key = f"PROMPT_SET"
+        saved_prompt = gui.settings.get(saved_key, "")
+        if saved_prompt and saved_prompt in new_options:
+            gui.prompt_pack_combobox.setCurrentText(saved_prompt)
+        else:
+            set_default_prompt_pack(gui, gui.prompt_pack_combobox)
+
         gui.prompt_pack_combobox.blockSignals(False)
         apply_prompt_set(gui, force_apply=False)
 
@@ -131,12 +139,15 @@ def apply_prompt_set(gui, force_apply=True):
     if char_from:
         character_prompts_path = os.path.join("Prompts", char_from)
         if copy_prompt_set(set_path, character_prompts_path):
+            # NEW: сохраняем выбор
+            settings_key = f"PROMPT_SET"   # можно и просто 'PROMPT_SET', если не нужны разные для каждого
+            gui.settings.set(settings_key, chat_to)    # кладём в SettingsManager
+            gui.settings.save_settings()               # и сразу пишем на диск
+            # --- старый код ---
             if force_apply:
-                QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен.", "Prompt set applied successfully."))
+                QMessageBox.information(gui, _("Успех", "Success"),
+                                         _("Набор промптов успешно применен.", "Prompt set applied successfully."))
             event_bus.emit(Events.Model.RELOAD_CHARACTER_DATA)
-        else:
-            if force_apply:
-                QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
     else:
         if force_apply:
             QMessageBox.warning(gui, _("Внимание", "Warning"), _("Персонаж не выбран.", "No character selected."))

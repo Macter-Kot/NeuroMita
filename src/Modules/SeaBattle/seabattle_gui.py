@@ -4,7 +4,7 @@ import sys
 import multiprocessing
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QGridLayout, QPushButton, QGroupBox)
-from PyQt6.QtGui import QPainter, QColor, QPen
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 from modules.SeaBattle.seabattle_logic import GameStateProvider, to_alg, from_alg
@@ -37,7 +37,9 @@ class BoardWidget(QWidget):
         self.board_data = [[0] * 10 for _ in range(10)]
         self.preview_ship = None
         self.setMouseTracking(True)
-        self.setFixedSize(301, 301)
+        self.cell_size = 30
+        self.margin = 25  # Отступ для букв и цифр
+        self.setFixedSize(self.cell_size * 10 + self.margin, self.cell_size * 10 + self.margin)
 
     def update_data(self, new_data):
         self.board_data = new_data
@@ -53,31 +55,55 @@ class BoardWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        cell_size = 30
+        
+        # Настройка шрифта для обозначений
+        font = QFont("Arial", 10, QFont.Weight.Bold)
+        painter.setFont(font)
+        
+        # Рисуем буквы (A-J) сверху
+        painter.setPen(QColor("#ECEFF4"))
+        for i in range(10):
+            letter = chr(ord('A') + i)
+            x = self.margin + i * self.cell_size + self.cell_size // 2 - 5
+            y = 15
+            painter.drawText(x, y, letter)
+        
+        # Рисуем цифры (1-10) слева
+        for i in range(10):
+            number = str(i + 1)
+            x = 5 if i < 9 else 2  # Сдвиг для двузначного числа
+            y = self.margin + i * self.cell_size + self.cell_size // 2 + 5
+            painter.drawText(x, y, number)
+        
+        # Рисуем клетки доски со смещением
         for r, row in enumerate(self.board_data):
             for c, cell_state in enumerate(row):
-                x, y = c * cell_size, r * cell_size
+                x = self.margin + c * self.cell_size
+                y = self.margin + r * self.cell_size
                 key = f'opp_{cell_state}' if self.is_opponent_board else cell_state
                 color = self.COLORS.get(key, QColor("black"))
-                painter.fillRect(x, y, cell_size, cell_size, color)
+                painter.fillRect(x, y, self.cell_size, self.cell_size, color)
                 if not self.is_opponent_board and cell_state == 4:
                     painter.setPen(QPen(QColor("#A3BE8C"), 3))
-                    painter.drawRect(x + 2, y + 2, cell_size - 4, cell_size - 4)
+                    painter.drawRect(x + 2, y + 2, self.cell_size - 4, self.cell_size - 4)
                 painter.setPen(QColor("#2E3440"))
-                painter.drawRect(x, y, cell_size, cell_size)
+                painter.drawRect(x, y, self.cell_size, self.cell_size)
+                
         if self.preview_ship:
             color = QColor(143, 188, 187, 180) if self.preview_ship['is_valid'] else QColor(191, 97, 106, 180)
             painter.setBrush(color)
             painter.setPen(Qt.PenStyle.NoPen)
             for c, r in self.preview_ship['coords']:
-                painter.drawRect(c * cell_size, r * cell_size, cell_size, cell_size)
+                painter.drawRect(self.margin + c * self.cell_size, self.margin + r * self.cell_size, self.cell_size, self.cell_size)
 
     def mouseMoveEvent(self, event):
-        x, y = event.pos().x() // 30, event.pos().y() // 30
+        x = (event.pos().x() - self.margin) // self.cell_size
+        y = (event.pos().y() - self.margin) // self.cell_size
         if 0 <= x < 10 and 0 <= y < 10: self.cell_hovered.emit(x, y)
     
     def mousePressEvent(self, event):
-        x, y = event.pos().x() // 30, event.pos().y() // 30
+        x = (event.pos().x() - self.margin) // self.cell_size
+        y = (event.pos().y() - self.margin) // self.cell_size
         if 0 <= x < 10 and 0 <= y < 10: self.cell_clicked.emit(x, y, event.button())
 
     def leaveEvent(self, event): self.clear_preview()
@@ -95,7 +121,7 @@ class SeaBattleWindow(QWidget):
 
         self.command_timer = QTimer(self)
         self.command_timer.timeout.connect(self.process_commands)
-        self.command_timer.start(100) # Проверять очередь каждые 100 мс
+        self.command_timer.start(100)
 
     def init_ui(self):
         self.setWindowTitle("Морской Бой")
@@ -131,7 +157,6 @@ class SeaBattleWindow(QWidget):
         self.opponent_board_widget.cell_clicked.connect(self.on_opponent_board_click)
 
     def send_state_update(self):
-        """Отправляет текущее состояние игры в основной процесс."""
         state = self.game.get_full_state()
         try:
             self.state_queue.put(state)
@@ -139,7 +164,6 @@ class SeaBattleWindow(QWidget):
             print(f"GUI Error: Could not put state in queue: {e}")
 
     def process_commands(self):
-        """Обрабатывает команды из основного процесса."""
         while not self.command_queue.empty():
             try:
                 cmd = self.command_queue.get_nowait()
@@ -268,11 +292,9 @@ class SeaBattleWindow(QWidget):
             self.info_label.setText(winner_text)
 
 def run_seabattle_gui_process(command_queue, state_queue):
-    """Целевая функция для запуска GUI в отдельном процессе."""
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)
     window = SeaBattleWindow(command_queue, state_queue)
     window.show()
-    # Отправить начальное состояние, как только GUI будет готов
     window.send_state_update()
     sys.exit(app.exec())

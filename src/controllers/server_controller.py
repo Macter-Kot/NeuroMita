@@ -90,6 +90,7 @@ class ServerController:
     
     def _on_set_id_sound(self, event: Event):
         try:
+            logger.error(f"УСТАНОВИЛ СЛЕДУЮЩИЙ АЙДИ: {event.data.get("id")}")
             self.id_sound = event.data.get("id")
             return True
         except Exception as ex:
@@ -97,6 +98,7 @@ class ServerController:
             return False
     
     def _on_reset_server_data(self, event: Event):
+        logger.warning("Вот щас ресет id_sound!")
         self.instant_send = False
         self.patch_to_sound_file = ""
         self.id_sound = None

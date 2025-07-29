@@ -55,6 +55,8 @@ class F5TTSModel(IVoiceModel):
             "size_gb": 7,
             "settings": [
                 {"key": "f5rvc_f5_device", "label": _("[F5] Устройство", "[F5] Device"), "type": "combobox", "options": {"values": ["cuda", "cpu"], "default": "cuda"}},
+                {"key": "f5rvc_rvc_device", "label": _("[RVC] Устройство RVC", "[RVC] RVC Device"), "type": "combobox", "options": { "values_nvidia": ["dml", "cuda:0", "cpu"], "default_nvidia": "cuda:0", "values_amd": ["dml", "cpu"], "default_amd": "dml", "values_other": ["cpu", "dml"], "default_other": "cpu" }},
+                
                 {"key": "f5rvc_f5_speed", "label": _("[F5] Скорость речи", "[F5] Speech Speed"), "type": "entry", "options": {"default": "1.0"}},
                 {"key": "f5rvc_f5_nfe_step", "label": _("[F5] Шаги диффузии", "[F5] Diffusion Steps"), "type": "entry", "options": {"default": "32"}},
                 {"key": "f5rvc_f5_seed", "label": _("[F5] Seed", "[F5] Seed"), "type": "entry", "options": {"default": "0"}},
@@ -81,7 +83,7 @@ class F5TTSModel(IVoiceModel):
             from handlers.voice_models.pipelines.f5_pipeline import F5TTSPipeline
             self.f5_pipeline_module = F5TTSPipeline
         except ImportError as ex:
-            logger.error(f"F5TTS: {ex}", exc_info=True)
+            logger.info(f"F5_TTS: {ex}", exc_info=True)
             self.f5_pipeline_module = None
 
     def get_display_name(self) -> str:

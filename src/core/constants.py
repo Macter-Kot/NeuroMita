@@ -89,6 +89,7 @@ setting_descriptions = {
     "fix_duration": "[F5-TTS] Фиксировать длительность фонем. Может улучшить стабильность, но снизить естественность. (Рекомендуется: False)",
 
     "f5rvc_f5_device": "[F5+RVC][F5] Устройство для части F5-TTS.",
+    "f5rvc_rvc_device": "[F5+RVC][RVC] Устройство для части F5-TTS.",
     "f5rvc_f5_speed": "[F5+RVC][F5] Скорость речи для части F5-TTS.",
     "f5rvc_f5_nfe_step": "[F5+RVC][F5] Количество шагов диффузии для части F5-TTS.",
     "f5rvc_f5_remove_silence": "[F5+RVC][F5] Удаление тишины для части F5-TTS.",

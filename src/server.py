@@ -66,19 +66,14 @@ class ChatServer:
             return False
         finally:
             if client_socket:
-                logger.info("SERVER: Вход в блок finally для закрытия сокета.")
                 try:
-                    logger.info("SERVER: Попытка выполнить shutdown сокета.")
                     client_socket.shutdown(socket.SHUT_RDWR)
-                    logger.info("SERVER: Shutdown сокета выполнен успешно.")
                 except OSError as e:
                     logger.warning(f"SERVER: Ошибка при shutdown сокета (это может быть нормально): {e}")
                 except Exception as e:
                     logger.error(f"SERVER: Неожиданная ошибка при shutdown сокета: {e}")
-
-                logger.info("SERVER: Попытка выполнить close сокета.")
+                
                 client_socket.close()
-                logger.info("SERVER: Сокет успешно закрыт.")
 
     def _recv_full_json(self, client_socket):
         """Вспомогательный метод для получения полного JSON из сокета"""
@@ -169,6 +164,41 @@ class ChatServer:
 
             user_input_result = self.event_bus.emit_and_wait(Events.Speech.GET_USER_INPUT, timeout=1.0)
             user_input = user_input_result[0] if user_input_result else ""
+
+            # if not response and not user_input and system_message == "-":
+            #     dummy_response_data = {
+            #         "id": int(message_id), 
+            #         "type": "chat", 
+            #         "character": character,
+
+            #         "response": "", 
+            #         "silero": False, 
+            #         "id_sound": 0, 
+            #         "patch_to_sound_file": "",
+
+            #         "user_input": "", 
+            #         "GM_ON": False, 
+            #         "GM_READ": False, 
+            #         "GM_VOICE": False,
+
+            #         "GM_REPEAT": 2, 
+            #         "CC_Limit_mod": 100, 
+            #         "instant_send": False,
+
+            #         "LANGUAGE": "RU", 
+            #         "MITAS_MENU": False, 
+            #         "EMOTION_MENU": False,
+
+            #         "TEXT_WAIT_TIME": 100, 
+            #         "VOICE_WAIT_TIME": 100
+
+            #     }
+
+            #     json_message = json.dumps(dummy_response_data)
+
+            #     client_socket.sendall(json_message.encode("utf-8"))
+
+            #     return True
             
             transmitted_to_game = False
             if user_input:
@@ -183,6 +213,14 @@ class ChatServer:
             if server_data.get('patch_to_sound_file', '') != "":
                 logger.info(f"id {message_id} Скоро передам {server_data.get('patch_to_sound_file')} id {server_data.get('id_sound')}")
 
+            patch_to_sound_file = str(server_data.get('patch_to_sound_file', ''))
+
+            id_sound_value = server_data.get('id_sound')
+            if id_sound_value is None or patch_to_sound_file == '':
+                id_sound_value = 0
+
+            use_voiceover = bool(settings.get("USE_VOICEOVER"))
+
             message_data = {
                 "id": int(message_id),
                 "type": str(message_type),
@@ -190,9 +228,9 @@ class ChatServer:
             }
             message_data.update({
                 "response": str(response),
-                "silero": bool(server_data.get('silero_connected', False) and bool(settings.get("USE_VOICEOVER"))),
-                "id_sound": server_data.get('id_sound'),
-                "patch_to_sound_file": str(server_data.get('patch_to_sound_file', '')),
+                "silero": use_voiceover,
+                "id_sound": id_sound_value,
+                "patch_to_sound_file": patch_to_sound_file,
                 "user_input": str(user_input),
 
                 "GM_ON": bool(settings.get("GM_ON")),
@@ -213,17 +251,14 @@ class ChatServer:
 
             })
             
-            self.event_bus.emit(Events.Server.RESET_SERVER_DATA)
+            if use_voiceover and id_sound_value != 0:
+                self.event_bus.emit(Events.Server.RESET_SERVER_DATA)
 
             if transmitted_to_game:
                 self.event_bus.emit(Events.GUI.CLEAR_USER_INPUT)
 
             json_message = json.dumps(message_data)
             client_socket.sendall(json_message.encode("utf-8"))  # Используем sendall для гарантии отправки всех данных
-
-            logger.warning(f"Я ОТПРАВИЛ в игру следующую информацию: {message_data}")
-            
-            logger.warning(f"Я сравниваю айдишник из игры {message_id} и айдишник из сервера {server_data.get('id_sound')}: {message_id==server_data.get('id_sound')}")
 
             self.event_bus.emit(Events.Server.SET_GAME_CONNECTION, {'is_connected': True})
 

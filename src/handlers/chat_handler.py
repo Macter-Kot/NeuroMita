@@ -444,7 +444,7 @@ class ChatModel:
 
 
                 self.event_bus.emit(Events.Model.ON_SUCCESSFUL_RESPONSE)
-                logger.success(_("Получен успешный ответ от API.", "Successful response from API."))
+                logger.success(translate("Получен успешный ответ от API.", "Successful response from API."))
                 return final_response_text
 
             except Exception as e:

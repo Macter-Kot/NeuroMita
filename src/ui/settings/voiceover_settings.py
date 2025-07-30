@@ -28,7 +28,7 @@ def setup_voiceover_controls(gui, parent_layout):
         {'label': _('Использовать озвучку', 'Use speech'), 'key': 'USE_VOICEOVER', 'type': 'checkbutton', 
          'default_checkbutton': False, 'widget_name': 'use_voice_checkbox'},
         {'label': _("Вариант озвучки", "Voiceover Method"), 'key': 'VOICEOVER_METHOD', 'type': 'combobox', 
-         'options': ["TG", "Local"] if os.environ.get("EXPERIMENTAL_FUNCTIONS", "1") == "1" else ["TG"], 
+         'options': ["TG", "Local"], 
          'default': 'TG', 'widget_name': 'method_combobox'}
     ]
     

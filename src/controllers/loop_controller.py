@@ -18,7 +18,6 @@ class LoopController:
         self.asyncio_thread.start()
         
         self._subscribe_to_events()
-        logger.info("LoopController успешно инициализирован.")
     
     def _subscribe_to_events(self):
         self.event_bus.subscribe(Events.Core.GET_EVENT_LOOP, self._on_get_event_loop, weak=False)
@@ -28,7 +27,7 @@ class LoopController:
         try:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-            logger.info("Цикл событий asyncio успешно запущен.")
+            logger.success("Цикл событий asyncio успешно запущен.")
             self.loop_ready_event.set()
             
             # Публикуем событие о готовности loop
@@ -67,7 +66,7 @@ class LoopController:
             finally:
                 if not self.loop.is_closed():
                     self.loop.close()
-                logger.info("Asyncio loop остановлен.")
+                logger.success("Asyncio loop остановлен.")
         
         if self.asyncio_thread.is_alive():
             self.asyncio_thread.join(timeout=5)

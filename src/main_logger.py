@@ -4,6 +4,29 @@ import os
 import sys
 
 # -----------------------------------------------------------------------------
+# Добавляем кастомные уровни логирования
+# -----------------------------------------------------------------------------
+NOTIFY_LEVEL = 25  # между INFO (20) и WARNING (30)
+SUCCESS_LEVEL = 35  # между WARNING (30) и ERROR (40)
+
+logging.addLevelName(NOTIFY_LEVEL, "NOTIFY")
+logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
+
+# Добавляем метод notify к классу Logger
+def notify(self, message, *args, **kwargs):
+    if self.isEnabledFor(NOTIFY_LEVEL):
+        self._log(NOTIFY_LEVEL, message, args, **kwargs)
+
+# Добавляем метод success к классу Logger
+def success(self, message, *args, **kwargs):
+    if self.isEnabledFor(SUCCESS_LEVEL):
+        self._log(SUCCESS_LEVEL, message, args, **kwargs)
+
+# Привязываем методы к классу Logger
+logging.Logger.notify = notify
+logging.Logger.success = success
+
+# -----------------------------------------------------------------------------
 # Фильтр: пропускаем только логи из проекта; в PyInstaller ничего не режем
 # -----------------------------------------------------------------------------
 class ProjectFilter(logging.Filter):
@@ -36,7 +59,9 @@ console_handler.setFormatter(
         '%(log_color)s%(levelname)-8s %(location)-30s | %(message)s',
         log_colors={
             'INFO':     'white',
+            'NOTIFY':   'light_purple',    # Розовый
             'WARNING':  'yellow',
+            'SUCCESS':  'light_green',     # Лаймовый
             'ERROR':    'red',
             'CRITICAL': 'red,bg_white',
         },
@@ -64,3 +89,13 @@ file_handler.addFilter(ProjectFilter())
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 logger.propagate = False
+
+# -----------------------------------------------------------------------------
+# Пример использования (можно удалить)
+# -----------------------------------------------------------------------------
+if __name__ == "__main__":
+    logger.info("Запуск программы")
+    logger.notify("Важное уведомление для пользователя")
+    logger.warning("Предупреждение о потенциальной проблеме")
+    logger.success("Операция завершена успешно!")
+    logger.error("Произошла ошибка")

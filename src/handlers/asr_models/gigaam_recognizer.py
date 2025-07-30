@@ -608,7 +608,7 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 return False
             time.sleep(0.1)
         
-        self.logger.info("GigaAM процесс успешно запущен и инициализирован")
+        self.logger.success("GigaAM процесс успешно запущен и инициализирован")
         return True
     
     def _stop_process(self):

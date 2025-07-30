@@ -220,7 +220,7 @@ class LocalVoice:
 
         # Шаг 4: Если все прошло успешно, устанавливаем модель как активную.
         self.active_model_instance = model_to_init
-        logger.info(f"Модель '{model_id}' успешно установлена как активная.")
+        logger.success(f"Модель '{model_id}' успешно установлена как активная.")
         
         return True
 
@@ -483,7 +483,7 @@ class LocalVoice:
         from triton.windows_utils import find_cuda, find_winsdk, find_msvc
 
         self.triton_installed = True # Импорт успешен
-        logger.info("Triton импортирован успешно внутри _check_system_dependencies.")
+        logger.success("Triton импортирован успешно внутри _check_system_dependencies.")
 
         # --- Проверка CUDA, WinSDK, MSVC с обработкой ошибок ---
         try:

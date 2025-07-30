@@ -245,7 +245,7 @@ class SpeechController:
                     success = future.result(timeout=300)
                     
                     if success:
-                        logger.info(f"Модель {model_type} успешно установлена")
+                        logger.success(f"Модель {model_type} успешно установлена")
                         if self.settings and self.settings.get("MIC_ACTIVE", False) and self.mic_recognition_active:
                             self.events_bus.emit(Events.Speech.START_SPEECH_RECOGNITION, {'device_id': self.device_id})
                     else:

@@ -158,7 +158,7 @@ class ChatModel:
                     description=f"Первоначальная установка g4f версии {target_version}..."
                 )
                 if success:
-                    logger.info("Первоначальная установка g4f (файлы) прошла успешно. Очистка кэша импорта...")
+                    logger.success("Первоначальная установка g4f (файлы) прошла успешно. Очистка кэша импорта...")
                     try:
                         importlib.invalidate_caches()
                         logger.info("Кэш импорта очищен.")
@@ -444,6 +444,7 @@ class ChatModel:
 
 
                 self.event_bus.emit(Events.Model.ON_SUCCESSFUL_RESPONSE)
+                logger.success(_("Получен успешный ответ от API.", "Successful response from API."))
                 return final_response_text
 
             except Exception as e:

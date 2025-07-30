@@ -205,7 +205,7 @@ class GoogleRecognizer(SpeechRecognizerInterface):
             phrase_time_limit=10,
         )
 
-        self.logger.info("Микрофон готов к распознаванию (listen_in_background запущен).")
+        self.logger.success("Микрофон готов к распознаванию (listen_in_background запущен).")
 
         try:
             while active_flag():

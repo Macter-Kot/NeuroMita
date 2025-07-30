@@ -152,7 +152,7 @@ class SpeechRecognition:
             if SpeechRecognition._silero_vad_model is None:
                 model = SpeechRecognition._silero_vad_loader()
                 SpeechRecognition._silero_vad_model = model
-                logger.info("Модель Silero VAD успешно загружена.")
+                logger.success("Модель Silero VAD успешно загружена.")
             
             return True
         except Exception as e:

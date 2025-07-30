@@ -12,7 +12,7 @@ ENV_FILENAME = "features.env"
 loaded = load_dotenv(dotenv_path=ENV_FILENAME)
 
 if loaded:
-    logger.info(f"Переменные окружения успешно загружены из файла: {ENV_FILENAME}")
+    logger.success(f"Переменные окружения успешно загружены из файла: {ENV_FILENAME}")
 else:
     logger.info(f"Файл окружения '{ENV_FILENAME}' не найден по пути: {ENV_FILENAME}. Используются системные переменные или значения по умолчанию.")
 
@@ -81,7 +81,7 @@ if os.path.exists(config_path):
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(patched_source)
 
-    logger.info("Патч успешно применён к configs.py")
+    logger.success("Патч успешно применён к configs.py")
 
 audio_path = os.path.join(libs_dir, "tts_with_rvc", "lib", "audio.py")
 if os.path.exists(audio_path):
@@ -98,7 +98,7 @@ if os.path.exists(audio_path):
     with open(audio_path, "w", encoding="utf-8") as f:
         f.write(patched_source)
 
-    logger.info("Патч успешно применён к audio.py")
+    logger.success("Патч успешно применён к audio.py")
 
 # Патч для triton windows_utils.py
 windows_utils_path = os.path.join(libs_dir, "triton", "windows_utils.py")
@@ -114,7 +114,7 @@ if os.path.exists(windows_utils_path):
     with open(windows_utils_path, "w", encoding="utf-8") as f:
         f.write(patched_source)
         
-    logger.info("Патч успешно применён к windows_utils.py")
+    logger.success("Патч успешно применён к windows_utils.py")
 else:
     logger.info(f"Файл {windows_utils_path} не найден")
 
@@ -133,7 +133,7 @@ if os.path.exists(compiler_path):
     with open(compiler_path, "w", encoding="utf-8") as f:
         f.write(patched_source)
         
-    logger.info("Патч успешно применён к compiler.py")
+    logger.success("Патч успешно применён к compiler.py")
 else:
     logger.info(f"Файл {compiler_path} не найден")
 

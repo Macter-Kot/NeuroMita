@@ -29,12 +29,12 @@ class MainController:
 
 
         self.loop_controller = LoopController()
-        logger.warning("LoopController успешно инициализирован.")
+        logger.notify("LoopController успешно инициализирован.")
 
         self.gui_controller = None
 
         self.telegram_controller = TelegramController()
-        logger.warning("TelegramController успешно инициализирован.")
+        logger.notify("TelegramController успешно инициализирован.")
         
 
         try:
@@ -54,7 +54,7 @@ class MainController:
                 libs_path="Lib",
                 update_log=logger.info
             )
-            logger.info("PipInstaller успешно инициализирован.")
+            logger.notify("PipInstaller успешно инициализирован.")
         except Exception as e:
             logger.error(f"Не удалось инициализировать PipInstaller: {e}", exc_info=True)
             self.pip_installer = None
@@ -63,17 +63,17 @@ class MainController:
 
         
         self.audio_controller = AudioController(self)
-        logger.warning("AudioController успешно инициализирован.")
+        logger.notify("AudioController успешно инициализирован.")
         self.model_controller = ModelController(self.settings, self.pip_installer)
-        logger.warning("ModelController успешно инициализирован.")
+        logger.notify("ModelController успешно инициализирован.")
         self.capture_controller = CaptureController(self.settings)
-        logger.warning("CaptureController успешно инициализирован.")
+        logger.notify("CaptureController успешно инициализирован.")
         self.speech_controller = SpeechController()
-        logger.warning("SpeechController успешно инициализирован.")
+        logger.notify("SpeechController успешно инициализирован.")
         self.server_controller = ServerController()
-        logger.warning("ServerController успешно инициализирован.")
+        logger.notify("ServerController успешно инициализирован.")
         self.chat_controller = ChatController(self.settings)
-        logger.warning("ChatController успешно инициализирован.")
+        logger.notify("ChatController успешно инициализирован.")
 
         
 
@@ -81,14 +81,14 @@ class MainController:
 
         
         self._subscribe_to_events()
-        logger.info("MainController подписался на события")
+        logger.notify("MainController подписался на события")
         
 
     def update_view(self, view):
         if not self.gui_controller:
             self.view = view
             self.gui_controller = GuiController(self, view)
-            logger.warning("GuiController успешно инициализирован.")
+            logger.notify("GuiController успешно инициализирован.")
             self.settings_controller.load_api_settings(False)
             # в этой логике надо добавить автоподключение.
             if self.settings.get('VOICEOVER_METHOD') == 'TG' and self.settings.get('USE_VOICEOVER', False):
@@ -145,7 +145,7 @@ class MainController:
                     extra_args=["--force-reinstall", "--upgrade"]
                 )
                 if success:
-                    logger.info(f"Запланированное обновление g4f до {target_version} успешно завершено.")
+                    logger.success(f"Запланированное обновление g4f до {target_version} успешно завершено.")
                     try:
                         import importlib
                         importlib.invalidate_caches()

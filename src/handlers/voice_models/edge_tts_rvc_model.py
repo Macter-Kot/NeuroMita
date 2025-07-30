@@ -310,7 +310,6 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             raise Exception(f"Обработчик не инициализирован для режима '{current_mode}'.")
         
         # Обновляем пути в parent перед озвучкой
-        logger.warning(f"VOICEOVER ПОЛУЧИЛ: {character}")
         self._update_parent_paths(character)
             
         if current_mode == "low":

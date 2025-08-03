@@ -49,10 +49,6 @@ def setup_mita_controls(gui, parent_layout):
             {'label': 'Очистить все истории', 'command': lambda: clear_history_all(gui)}
         ]},
         {'label': 'Перекачать промпты', 'type': 'button', 'command': lambda: reload_prompts(gui)},
-        
-        {'label': 'Экспериментальные функции', 'type': 'text'},
-        {'label': 'Меню выбора Мит', 'key': 'MITAS_MENU', 'type': 'checkbutton', 'default_checkbutton': False},
-        {'label': 'Меню эмоций Мит', 'key': 'EMOTION_MENU', 'type': 'checkbutton', 'default_checkbutton': False},
     ]
 
     create_settings_direct(gui, parent_layout, mita_config, 

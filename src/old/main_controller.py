@@ -5,7 +5,7 @@ from handlers.audio_handler import AudioHandler
 from main_logger import logger
 from managers.settings_manager import SettingsManager
 from handlers.chat_handler import ChatModel
-from server import ChatServer
+from game_connections.server_old import ChatServer
 from handlers.telegram_handler import TelegramBotHandler
 
 import gettext

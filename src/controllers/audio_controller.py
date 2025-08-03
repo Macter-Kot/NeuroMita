@@ -12,6 +12,7 @@ from handlers.local_voice_handler import LocalVoice
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
 from utils import _
 from core.events import get_event_bus, Events, Event
+from managers.task_manager import TaskStatus
 
 class AudioController:
     def __init__(self, main_controller):
@@ -81,26 +82,23 @@ class AudioController:
         data = event.data
         text = data.get('text', '')
         speaker = data.get('speaker', self.textSpeaker)
-        message_id = data.get('message_id', 0)
+        task_uid = data.get('task_uid')  # Изменено с message_id
         
         if not text:
             return
             
-        logger.info(f"Получен запрос на озвучку: {text[:50]}... с message_id: {message_id}")
-        
-        self.id_sound = message_id if message_id is not None else self.id_sound
+        logger.info(f"Получен запрос на озвучку: {text[:50]}... с task_uid: {task_uid}")
         
         loop = self.event_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP)[0]
         if loop and loop.is_running():
             try:
-                
                 self.waiting_answer = True
                 self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
 
                 if self.voiceover_method == "TG":
                     logger.info(f"Используем Telegram (Silero/Miku) для озвучки: {speaker}")
                     self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
-                        'coroutine': self.run_send_and_receive(text, speaker, self.id_sound)
+                        'coroutine': self.run_send_and_receive(text, speaker, task_uid)
                     })
 
                 elif self.voiceover_method == "Local":
@@ -109,23 +107,40 @@ class AudioController:
                         logger.info(f"Используем {selected_local_model_id} для локальной озвучки")
                         if self.local_voice.is_model_initialized(selected_local_model_id):
                             self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
-                                'coroutine': self.run_local_voiceover(text)
+                                'coroutine': self.run_local_voiceover(text, task_uid)
                             })
                         else:
                             logger.warning(f"Модель {selected_local_model_id} выбрана, но не инициализирована.")
+                            if task_uid:
+                                self._update_task_failed_voiceover(task_uid, "Model not initialized")
                     else:
                         logger.warning("Локальная озвучка выбрана, но конкретная модель не установлена/не выбрана.")
+                        if task_uid:
+                            self._update_task_failed_voiceover(task_uid, "No model selected")
                 else:
                     logger.warning(f"Неизвестный метод озвучки: {self.voiceover_method}")
+                    if task_uid:
+                        self._update_task_failed_voiceover(task_uid, "Unknown voiceover method")
 
                 logger.info("Выполнено")
             except Exception as e:
                 logger.error(f"Ошибка при отправке текста на озвучку: {e}")
+                if task_uid:
+                    self._update_task_failed_voiceover(task_uid, str(e))
             finally:
-                
                 self.waiting_answer = False
         else:
             logger.error("Ошибка: Цикл событий не готов.")
+            if task_uid:
+                self._update_task_failed_voiceover(task_uid, "Event loop not ready")
+
+    def _update_task_failed_voiceover(self, task_uid: str, error: str):
+        """Вспомогательный метод для обновления статуса задачи при ошибке озвучки"""
+        self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+            'uid': task_uid,
+            'status': TaskStatus.FAILED_ON_VOICEOVER,
+            'error': error
+        })
 
     def _on_get_waiting_answer(self, event: Event):
         return self.waiting_answer
@@ -221,8 +236,8 @@ class AudioController:
             return self.textSpeakerMiku
         else:
             return self.textSpeaker
-            
-    async def run_send_and_receive(self, response, speaker_command, id=0):
+
+    async def run_send_and_receive(self, response, speaker_command, task_uid=None):
         logger.info("Попытка получить фразу")
         
         future = asyncio.Future()
@@ -230,21 +245,37 @@ class AudioController:
         self.event_bus.emit(Events.Telegram.TELEGRAM_SEND_VOICE_REQUEST, {
             'text': response,
             'speaker_command': speaker_command,
-            'id': id,
-            'future': future
+            'id': 0,  # Для совместимости
+            'future': future,
+            'task_uid': task_uid
         })
         
         try:
             await future
+            # Успешная озвучка
+            if task_uid:
+                # Получаем путь к файлу озвучки
+                patch_result = self.event_bus.emit_and_wait(Events.Server.GET_SERVER_DATA, timeout=1.0)
+                voiceover_path = patch_result[0].get('patch_to_sound_file') if patch_result else None
+                
+                self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                    'uid': task_uid,
+                    'status': TaskStatus.SUCCESS,
+                    'result': {
+                        'response': response,
+                        'voiceover_path': voiceover_path
+                    }
+                })
         except Exception as e:
             logger.error(f"Ошибка при получении озвучки через Telegram: {e}")
+            if task_uid:
+                self._update_task_failed_voiceover(task_uid, str(e))
         
         logger.info("Завершение получения фразы")
-           
-    async def run_local_voiceover(self, text):
+          
+    async def run_local_voiceover(self, text, task_uid=None):
         result_path = None
         try:
-            
             character = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER)[0]
             
             output_file = f"MitaVoices/output_{uuid.uuid4()}.wav"
@@ -259,6 +290,19 @@ class AudioController:
 
             if result_path:
                 logger.info(f"Локальная озвучка сохранена в: {result_path}")
+                
+                # Обновляем статус задачи на SUCCESS
+                if task_uid:
+                    self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                        'uid': task_uid,
+                        'status': TaskStatus.SUCCESS,
+                        'result': {
+                            'response': text,
+                            'voiceover_path': result_path
+                        }
+                    })
+                
+                # Остальная логика для совместимости со старым API
                 is_connected = self.event_bus.emit_and_wait(Events.Server.GET_GAME_CONNECTION)[0]
                 
                 if not is_connected and self.settings.get("VOICEOVER_LOCAL_CHAT"):
@@ -271,9 +315,13 @@ class AudioController:
                     logger.info("Озвучка в локальном чате отключена.")
             else:
                 logger.error("Локальная озвучка не удалась, файл не создан.")
+                if task_uid:
+                    self._update_task_failed_voiceover(task_uid, "Failed to create voice file")
 
         except Exception as e:
             logger.error(f"Ошибка при выполнении локальной озвучки: {e}")
+            if task_uid:
+                self._update_task_failed_voiceover(task_uid, str(e))
 
     def refresh_local_voice_modules(self):
         logger.info("Попытка обновления модулей локальной озвучки...")

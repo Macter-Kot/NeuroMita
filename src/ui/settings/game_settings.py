@@ -3,6 +3,19 @@ from utils import getTranslationVariant as _
 
 def setup_game_controls(self, parent):
     create_section_header(parent, _("Настройки игры", "Game Settings"))
+
+    api_config = [
+        {'label': _('Использовать новый API', 'Use new API'), 'key': 'USE_NEW_API', 'type': 'checkbutton',
+        'default_checkbutton': True,
+        'tooltip': _('Использовать новую систему передачи данных с задачами', 'Use new task-based data transfer system')},
+    ]
+
+    create_settings_section(
+        self,
+        parent,
+        _("Настройки API", "API Settings"),
+        api_config
+    )
     
     # Настройки диалогов и GameMaster
     dialogue_config = [

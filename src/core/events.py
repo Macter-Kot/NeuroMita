@@ -115,7 +115,18 @@ class EventBus:
                     result = callback(*args, **kwargs)
                     result_queue.put(result)
                 except Exception as e:
-                    logger.error(f"Ошибка в обработчике события: {e}")
+                    logger.error("Произошла ошибка в событии, коллектим:")
+                    # Логируем с максимальной информацией: имя обработчика, имя события и полный traceback
+                    callback_name = getattr(callback, '__qualname__', callback.__name__)
+                
+                    # Попытка получить имя события из аргументов
+                    event_name_for_log = "неизвестного события"
+                    if args and isinstance(args[0], Event):
+                        event_name_for_log = f"события '{args[0].name}'"
+                    logger.error(
+                        f"Ошибка в обработчике '{callback_name}' для {event_name_for_log}: {e}",
+                        exc_info=True 
+                    )
                     result_queue.put(None)
             return wrapper
         
@@ -443,6 +454,7 @@ class Events:
         RESET_SERVER_DATA = "reset_server_data"
         GET_CHAT_SERVER = "get_chat_server"
         SET_PATCH_TO_SOUND_FILE = "set_patch_to_sound_file"
+        SEND_TASK_UPDATE = "send_task_update"
 
     class Telegram:
         """События для взаимодействия с Telegram"""
@@ -486,3 +498,12 @@ class Events:
         MODEL_UNINSTALL_FINISHED = "voice_model_uninstall_finished"
         REFRESH_MODEL_PANELS = "refresh_voice_model_panels"
         REFRESH_SETTINGS_DISPLAY = "refresh_voice_settings_display"
+
+    class Task:
+        """События для управления задачами"""
+        CREATE_TASK = "create_task"
+        UPDATE_TASK_STATUS = "update_task_status"
+        GET_TASK = "get_task"
+        TASK_CREATED = "task_created"
+        TASK_STATUS_CHANGED = "task_status_changed"
+        NOTIFY_TASK_UPDATE = "notify_task_update"

@@ -1,8 +1,11 @@
+# src/controllers/chat_controller.py
 import os
 import asyncio
 import tempfile
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
+from managers.task_manager import TaskStatus
+import base64
 
 # Контроллер для работы с отправкой сообщений.
 class ChatController:
@@ -28,11 +31,18 @@ class ChatController:
         user_input: str,
         system_input: str = "",
         image_data: list[bytes] | None = None,
-        message_id: int | None = None  # ДОБАВИТЬ ПАРАМЕТР
+        task_uid: str | None = None  # Изменено с message_id на task_uid
     ):
         try:
             print("[DEBUG] Начинаем async_send_message, показываем статус")
             self.llm_processing = True
+            
+            # Обновляем статус задачи на PENDING если есть uid
+            if task_uid:
+                self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                    'uid': task_uid,
+                    'status': TaskStatus.PENDING
+                })
             
             is_streaming = bool(self.settings.get("ENABLE_STREAMING", False))
 
@@ -42,16 +52,43 @@ class ChatController:
             if is_streaming:
                 self.event_bus.emit(Events.GUI.PREPARE_STREAM_UI)
 
+            if image_data:      # ДО вызова GENERATE_RESPONSE
+                prepared = []
+                for img in image_data:
+                    if isinstance(img, bytes):
+                        prepared.append(img)
+                    elif isinstance(img, str):
+                        # строка вида "abc..." или "data:image/...;base64,abc..."
+                        try:
+                            b64 = img.split(",", 1)[-1]
+                            prepared.append(base64.b64decode(b64))
+                        except Exception:
+                            continue
+                image_data = prepared if prepared else None
+
             response_result = self.event_bus.emit_and_wait(Events.Model.GENERATE_RESPONSE, {
                 'user_input': user_input,
                 'system_input': system_input,
                 'image_data': image_data,
                 'stream_callback': stream_callback_handler if is_streaming else None,
-                'message_id': message_id  # Передаем message_id дальше
+                'message_id': task_uid  # Передаем task_uid как message_id для совместимости
             }, timeout=600.0)
             
             response = response_result[0] if response_result else None
 
+            if not response:
+                # Обновляем статус задачи на FAILED_ON_GENERATION
+                if task_uid:
+                    self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                        'uid': task_uid,
+                        'status': TaskStatus.FAILED_ON_GENERATION,
+                        'error': "Failed to generate response"
+                    })
+                self.llm_processing = False
+                self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': "Превышено время ожидания ответа"})
+                return None
+
+            # Проверяем нужна ли озвучка
             if response and self.settings.get("USE_VOICEOVER"):
                 character_result = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=3.0)
                 current_character = character_result[0] if character_result else None
@@ -60,6 +97,13 @@ class ChatController:
                 if current_character:
                     is_game_master = current_character.get('name') == 'GameMaster'
                     if not is_game_master or self.settings.get("GM_VOICE"):
+                        # Обновляем статус задачи на VOICING
+                        if task_uid:
+                            self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                                'uid': task_uid,
+                                'status': TaskStatus.VOICING
+                            })
+                        
                         from utils import process_text_to_voice
                         processed_response = process_text_to_voice(response)
                         
@@ -70,9 +114,17 @@ class ChatController:
                         self.event_bus.emit(Events.Audio.VOICEOVER_REQUESTED, {
                             'text': processed_response,
                             'speaker': speaker,
-                            'message_id': message_id
+                            'task_uid': task_uid  # Передаем task_uid вместо message_id
                         })
-                        logger.info(f"Озвучка запрошена: {processed_response[:50]}... с message_id: {message_id}")
+                        logger.info(f"Озвучка запрошена: {processed_response[:50]}... с task_uid: {task_uid}")
+            else:
+                # Если озвучка не нужна, сразу устанавливаем SUCCESS
+                if task_uid:
+                    self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                        'uid': task_uid,
+                        'status': TaskStatus.SUCCESS,
+                        'result': {'response': response}
+                    })
 
             if is_streaming:
                 self.event_bus.emit(Events.GUI.FINISH_STREAM_UI)
@@ -88,17 +140,18 @@ class ChatController:
             self.event_bus.emit(Events.GUI.UPDATE_DEBUG_INFO)
             self.event_bus.emit(Events.GUI.UPDATE_TOKEN_COUNT)
 
-            # Получаем сервер через событие
-            server_result = self.event_bus.emit_and_wait(Events.Server.GET_CHAT_SERVER, timeout=1.0)
-            server = server_result[0] if server_result else None
-            
-            if server and server.client_socket:
-                final_response_text = response if response else "..."
-                try:
-                    server.send_message_to_server(final_response_text)
-                    logger.info("Ответ отправлен в игру.")
-                except Exception as e:
-                    logger.error(f"Не удалось отправить ответ в игру: {e}")
+            # Отправляем ответ в игру через старый механизм если нет task_uid
+            if not task_uid:
+                server_result = self.event_bus.emit_and_wait(Events.Server.GET_CHAT_SERVER, timeout=1.0)
+                server = server_result[0] if server_result else None
+                
+                if server and server.client_socket:
+                    final_response_text = response if response else "..."
+                    try:
+                        server.send_message_to_server(final_response_text)
+                        logger.info("Ответ отправлен в игру.")
+                    except Exception as e:
+                        logger.error(f"Не удалось отправить ответ в игру: {e}")
             
             self.llm_processing = False
             return response
@@ -106,11 +159,23 @@ class ChatController:
         except asyncio.TimeoutError:
             logger.warning("Тайм-аут: генерация ответа заняла слишком много времени.")
             self.llm_processing = False
+            if task_uid:
+                self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                    'uid': task_uid,
+                    'status': TaskStatus.FAILED_ON_GENERATION,
+                    'error': "Timeout"
+                })
             self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': "Превышено время ожидания ответа"})
             return "Произошла ошибка при обработке вашего сообщения."
         except Exception as e:
             logger.error(f"Ошибка в async_send_message: {e}", exc_info=True)
             self.llm_processing = False
+            if task_uid:
+                self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
+                    'uid': task_uid,
+                    'status': TaskStatus.FAILED_ON_GENERATION,
+                    'error': str(e)
+                })
             self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': f"Ошибка: {str(e)[:50]}..."})
             return "Произошла ошибка при обработке вашего сообщения."
     
@@ -119,7 +184,7 @@ class ChatController:
         user_input = data.get('user_input', '')
         system_input = data.get('system_input', '')
         image_data = data.get('image_data', [])
-        message_id = data.get('message_id')
+        task_uid = data.get('task_uid')  # Изменено с message_id
         
         if image_data:
             self.event_bus.emit(Events.Capture.UPDATE_LAST_IMAGE_REQUEST_TIME)
@@ -132,7 +197,7 @@ class ChatController:
             # Запускаем корутину в этом loop'е и синхронно ждём результата
             import asyncio
             fut = asyncio.run_coroutine_threadsafe(
-                self.async_send_message(user_input, system_input, image_data, message_id),
+                self.async_send_message(user_input, system_input, image_data, task_uid),
                 loop
             )
             try:
@@ -145,7 +210,7 @@ class ChatController:
             # fallback: нет цикла ⇒ запускаем напрямую
             import asyncio
             response = asyncio.run(
-                self.async_send_message(user_input, system_input, image_data, message_id)
+                self.async_send_message(user_input, system_input, image_data, task_uid)
             )
             return response
     
@@ -162,7 +227,7 @@ class ChatController:
             user_input=data.get('user_input', ''),
             system_input=data.get('system_input', ''), 
             image_data=data.get('image_data', []),
-            message_id=data.get('message_id')  # ДОБАВИТЬ
+            task_uid=data.get('task_uid')  # Изменено
         )
         
         self.event_bus.emit(Events.Core.RUN_IN_LOOP, {

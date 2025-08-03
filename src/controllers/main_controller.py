@@ -9,15 +9,19 @@ from controllers.telegram_controller import TelegramController
 from controllers.capture_controller import CaptureController
 from controllers.model_controller import ModelController
 from controllers.speech_controller import SpeechController
-from controllers.server_controller import ServerController
 from controllers.settings_controller import SettingsController
 from controllers.chat_controller import ChatController
 from controllers.loop_controller import LoopController
+from controllers.task_controller import TaskController
 
 from main_logger import logger
 from utils.ffmpeg_installer import install_ffmpeg
 from utils.pip_installer import PipInstaller
 from core.events import get_event_bus, Events, Event
+
+
+from controllers.server_controller import ServerController
+from controllers.server_controller_old import ServerControllerOld
 
 
 class MainController:
@@ -62,6 +66,9 @@ class MainController:
         self._check_and_perform_pending_update()
 
         
+        self.task_controller = TaskController()
+        logger.notify("TaskController успешно инициализирован.")
+        
         self.audio_controller = AudioController(self)
         logger.notify("AudioController успешно инициализирован.")
         self.model_controller = ModelController(self.settings, self.pip_installer)
@@ -70,8 +77,7 @@ class MainController:
         logger.notify("CaptureController успешно инициализирован.")
         self.speech_controller = SpeechController()
         logger.notify("SpeechController успешно инициализирован.")
-        self.server_controller = ServerController()
-        logger.notify("ServerController успешно инициализирован.")
+        self._init_server_controller()
         self.chat_controller = ChatController(self.settings)
         logger.notify("ChatController успешно инициализирован.")
 
@@ -82,6 +88,32 @@ class MainController:
         
         self._subscribe_to_events()
         logger.notify("MainController подписался на события")
+
+    def _init_server_controller(self):
+        """Инициализация правильного ServerController на основе настроек"""
+        use_new_api = self.settings.get('USE_NEW_API', True)
+        
+        # Проверяем, нужно ли переключение
+        if hasattr(self, 'server_controller') and self.server_controller:
+            # Определяем текущий тип контроллера
+            
+            current_is_new = isinstance(self.server_controller, ServerController)
+            
+            # Если тип соответствует настройке, ничего не делаем
+            if (use_new_api and current_is_new) or (not use_new_api and not current_is_new):
+                return
+                
+            # Иначе уничтожаем старый контроллер
+            self.server_controller.destroy()
+            self.server_controller = None
+            
+        # Создаем новый контроллер
+        if use_new_api:
+            self.server_controller = ServerController()
+            logger.notify("ServerController (новый API) успешно инициализирован.")
+        else:
+            self.server_controller = ServerControllerOld()
+            logger.notify("ServerController (старый API) успешно инициализирован.")
         
 
     def update_view(self, view):
@@ -104,6 +136,14 @@ class MainController:
         self.event_bus.subscribe(Events.GUI.CLOSE_LOADING_POPUP, self._on_close_loading_popup, weak=False)
 
         self.event_bus.subscribe(Events.Server.SET_DIALOG_ACTIVE, self._on_set_dialog_active, weak=False)
+        self.event_bus.subscribe(Events.Core.SETTING_CHANGED, self._on_setting_changed, weak=False)
+
+    def _on_setting_changed(self, event: Event):
+        key = event.data.get('key')
+        
+        if key == 'USE_NEW_API':
+            logger.info("Обнаружено изменение настройки API, переинициализация ServerController...")
+            self._init_server_controller()
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")

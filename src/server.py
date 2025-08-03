@@ -89,6 +89,27 @@ class ChatServer:
         
         return received_data.decode("utf-8")
 
+    def should_block_game_request(self, settings, system_message, message_id):
+        """Проверяет, нужно ли блокировать игровой запрос на основе настроек"""
+        
+        if not settings.get('IGNORE_GAME_REQUESTS', False):
+            return False
+        
+        block_level = settings.get('GAME_BLOCK_LEVEL', 'Idle events')
+        
+        # Определяем, является ли это idle событием
+        is_idle_event = "протяжении" in system_message and "мотрел на" in system_message
+                        
+        
+        if block_level == 'All events':
+            logger.notify(f"Получен 'waiting' запрос {message_id}. Игнорируется как внутриигровое событие...")
+            return True
+        elif block_level == 'Idle events' and is_idle_event:
+            logger.notify(f"Получен 'waiting' запрос {message_id}. Игнорируется как событие таймера...")
+            return True
+        
+        return False
+
     def process_message_data(self, message_data, client_socket):
         transmitted_to_game = False
         try:
@@ -140,8 +161,7 @@ class ChatServer:
             if message == "waiting":
                 
                 if system_message != "-":
-                    if settings.get('IGNORE_GAME_REQUESTS', False) == True:
-                        logger.notify(f"Получен 'waiting' запрос (id: {message_id}). Игнорируется из-за флага IGNORE_GAME_REQUESTS. Последующие запросы игнорируются")
+                    if self.should_block_game_request(settings, system_message, message_id):
                         
                         self.last_message_type = message
                         dummy_response_data = {

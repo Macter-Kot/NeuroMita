@@ -31,14 +31,21 @@ def setup_game_controls(self, parent):
     # Настройки мода игры
     mod_config = [
         {'label': _('Меню выбора Мит', 'Mitas selection menu'), 'key': 'MITAS_MENU', 'type': 'checkbutton', 
-         'default_checkbutton': False,
-         'tooltip': _('Показывать меню выбора персонажей Мит в игре', 'Show Mitas character selection menu in game')},
+        'default_checkbutton': False,
+        'tooltip': _('Показывать меню выбора персонажей Мит в игре', 'Show Mitas character selection menu in game')},
         {'label': _('Меню эмоций Мит', 'Mitas emotion menu'), 'key': 'EMOTION_MENU', 'type': 'checkbutton', 
-         'default_checkbutton': False,
-         'tooltip': _('Показывать меню эмоций персонажей в игре', 'Show character emotion menu in game')},
-        {'label': _('Игнорировать запросы из игры', 'Ignore timer'), 'key': 'IGNORE_GAME_REQUESTS', 'type': 'checkbutton',
-         'default_checkbutton': False,
-         'tooltip': _('Отключить запросы на генерацию из игры', 'Disable generation requests from the game')},
+        'default_checkbutton': False,
+        'tooltip': _('Показывать меню эмоций персонажей в игре', 'Show character emotion menu in game')},
+        {'label': _('Игнорировать запросы', 'Ignore requests'), 'key': 'IGNORE_GAME_REQUESTS', 'type': 'checkbutton',
+        'default_checkbutton': False,
+        'tooltip': _('Блокировать запросы из игры', 'Block requests from the game'),
+        'widget_name': 'IGNORE_GAME_REQUESTS'},
+        {'label': _('Уровень блокировки', 'Blocking level'), 'key': 'GAME_BLOCK_LEVEL', 'type': 'combobox',
+        'options': ['Idle events', 'All events'],
+        'default': 'Idle events',
+        'depends_on': 'IGNORE_GAME_REQUESTS',
+        'tooltip': _('Idle events - блокирует запросы от таймера молчания, All events - блокирует все запросы с внутриигровых событий',
+                    'Idle events - blocks idle timer requests, All events - blocks all in-game event requests')},
     ]
     
     create_settings_section(

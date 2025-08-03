@@ -14,6 +14,7 @@ class ServerController:
         self.server_thread = None
         self.running = False
         self.ConnectedToGame = False
+        self.id_sound = None
 
         
         self.patch_to_sound_file = ""

@@ -24,10 +24,9 @@ from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QImage, QIc
 import qtawesome as qta
 
 from ui.settings import (
-    api_settings, character_settings, chat_settings, g4f_settings, gamemaster_settings, general_model_settings,
-    language_settings, microphone_settings, screen_analysis_settings,
-    token_settings, voiceover_settings, command_replacer_settings, history_compressor,
-    prompt_catalogue_settings
+    api_settings, character_settings, game_settings, 
+    microphone_settings, screen_analysis_settings, voiceover_settings,
+    prompt_catalogue_settings, model_interaction_settings, interface_settings
 )
 
 from ui.widgets import (status_indicators_widget)
@@ -378,19 +377,15 @@ class ChatGUI(QMainWindow):
     def _init_settings_containers(self):
         callbacks = {
             "general":     self.setup_common_controls,
-            "language":    language_settings.create_language_section,
+            "interface":   interface_settings.setup_interface_controls,
             "api":         api_settings.setup_api_controls,
-            "models":      general_model_settings.setup_general_settings_control,
+            "models":      model_interaction_settings.setup_model_interaction_controls,
             "voice":       voiceover_settings.setup_voiceover_controls,
             "microphone":  microphone_settings.setup_microphone_controls,
             "characters":  character_settings.setup_mita_controls,
             "prompts":     prompt_catalogue_settings.setup_prompt_catalogue_controls,
-            "chat":        chat_settings.setup_chat_settings_controls,
             "screen":      screen_analysis_settings.setup_screen_analysis_controls,
-            "tokens":      token_settings.setup_token_settings_controls,
-            "commands":    command_replacer_settings.setup_command_replacer_controls,
-            "history":     history_compressor.setup_history_compressor_controls,
-            "gamemaster":  gamemaster_settings.setup_game_master_controls,
+            "game":        game_settings.setup_game_controls,
             "debug":       self._debug_wrapper,
             "news":        self._news_wrapper,
         }
@@ -519,22 +514,18 @@ class ChatGUI(QMainWindow):
         self.settings_buttons = {}
         
         settings_categories = [
-            ("fa5s.cog", _("Общие", "General"), "general"),
-            ("fa5s.language", _("Язык", "Language"), "language"), 
-            ("fa5s.plug", _("API", "API"), "api"),
-            ("fa5s.robot", _("Модели", "Models"), "models"),
-            ("fa5s.volume-up", _("Озвучка", "Voice"), "voice"),
-            ("fa5s.microphone", _("Микрофон", "Microphone"), "microphone"),
-            ("fa5s.user", _("Персонажи", "Characters"), "characters"),
-            ("fa5s.list", _("Промпты", "Prompts"), "prompts"),
-            ("fa5s.comments", _("Чат", "Chat"), "chat"),
-            ("fa5s.desktop", _("Экран", "Screen"), "screen"),
-            ("fa5s.coins", _("Токены", "Tokens"), "tokens"),
-            ("fa5s.exchange-alt", _("Команды", "Commands"), "commands"),
-            ("fa5s.compress", _("История", "History"), "history"),
-            ("fa5s.gamepad", _("Игра", "Game"), "gamemaster"),
-            ("fa5s.bug", _("Отладка", "Debug"), "debug"),
-            ("fa5s.newspaper", _("Новости", "News"), "news"),
+            ("fa6s.gear", _("Общие", "General"), "general"),
+            ("fa6s.palette", _("Интерфейс", "Interface"), "interface"), 
+            ("fa6s.plug", _("API", "API"), "api"),
+            ("fa6s.robot", _("Модели", "Models"), "models"),
+            ("fa6s.volume-high", _("Озвучка", "Voice"), "voice"),
+            ("fa6s.microphone", _("Микрофон", "Microphone"), "microphone"),
+            ("fa6s.user", _("Персонажи", "Characters"), "characters"),
+            ("fa6s.list", _("Промпты", "Prompts"), "prompts"),
+            ("fa6s.display", _("Экран", "Screen"), "screen"),
+            ("fa5s.gamepad", _("Игра", "Game"), "game"),
+            ("fa6s.bug", _("Отладка", "Debug"), "debug"),
+            ("fa6s.newspaper", _("Новости", "News"), "news"),
         ]
         
         for icon_name, tooltip, category in settings_categories:

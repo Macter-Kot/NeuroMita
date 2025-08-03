@@ -19,6 +19,7 @@ class ChatServer:
         self.text_wait_limit_enabled = False
         self.voice_wait_limit_enabled = False
         self.event_bus = get_event_bus()
+        self.last_message_type = "" # (Для llm): Важно сохранить этот коммент. # last_message_type == "waiting" - игнор.
         
 
     def start(self):
@@ -129,13 +130,57 @@ class ChatServer:
                 logger.info("Добавил систем инфо " + system_info)
                 self.event_bus.emit(Events.Model.ADD_TEMPORARY_SYSTEM_INFO, {'content': system_info})
 
+            
+            settings_result = self.event_bus.emit_and_wait(Events.Settings.GET_SETTINGS, timeout=1.0)
+            settings = settings_result[0] if settings_result else {}
+
+
             response = ""
 
             if message == "waiting":
+                
                 if system_message != "-":
-                    logger.info(f"Получено system_message {system_message} id {message_id}")
-                    self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
-                    response = self.generate_response("", system_message, decoded_image_data)
+                    if settings.get('IGNORE_GAME_REQUESTS', False) == True:
+                        logger.notify(f"Получен 'waiting' запрос (id: {message_id}). Игнорируется из-за флага IGNORE_GAME_REQUESTS. Последующие запросы игнорируются")
+                        
+                        self.last_message_type = message
+                        dummy_response_data = {
+                            "id": int(message_id), 
+                            "type": str(message_type), 
+                            "character": character,
+
+                            "response": "", 
+                            "silero": False, 
+                            "id_sound": 0, 
+                            "patch_to_sound_file": "",
+
+                            "user_input": "", 
+                            "GM_ON": False, 
+                            "GM_READ": False, 
+                            "GM_VOICE": False,
+
+                            "GM_REPEAT": 2, 
+                            "CC_Limit_mod": 100, 
+                            "instant_send": False,
+
+                            "LANGUAGE": "RU", 
+                            "MITAS_MENU": False, 
+                            "EMOTION_MENU": False,
+
+                            "TEXT_WAIT_TIME": 100, 
+                            "VOICE_WAIT_TIME": 100
+
+                        }
+
+                        json_message = json.dumps(dummy_response_data)
+
+                        client_socket.sendall(json_message.encode("utf-8"))
+
+                        return True
+                    else:
+                        logger.info(f"Получено system_message {system_message} id {message_id}")
+                        self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
+                        response = self.generate_response("", system_message, decoded_image_data)
                 elif self.messages_to_say:
                     response = self.messages_to_say.pop(0)
             elif message == "boring":
@@ -165,40 +210,6 @@ class ChatServer:
             user_input_result = self.event_bus.emit_and_wait(Events.Speech.GET_USER_INPUT, timeout=1.0)
             user_input = user_input_result[0] if user_input_result else ""
 
-            # if not response and not user_input and system_message == "-":
-            #     dummy_response_data = {
-            #         "id": int(message_id), 
-            #         "type": "chat", 
-            #         "character": character,
-
-            #         "response": "", 
-            #         "silero": False, 
-            #         "id_sound": 0, 
-            #         "patch_to_sound_file": "",
-
-            #         "user_input": "", 
-            #         "GM_ON": False, 
-            #         "GM_READ": False, 
-            #         "GM_VOICE": False,
-
-            #         "GM_REPEAT": 2, 
-            #         "CC_Limit_mod": 100, 
-            #         "instant_send": False,
-
-            #         "LANGUAGE": "RU", 
-            #         "MITAS_MENU": False, 
-            #         "EMOTION_MENU": False,
-
-            #         "TEXT_WAIT_TIME": 100, 
-            #         "VOICE_WAIT_TIME": 100
-
-            #     }
-
-            #     json_message = json.dumps(dummy_response_data)
-
-            #     client_socket.sendall(json_message.encode("utf-8"))
-
-            #     return True
             
             transmitted_to_game = False
             if user_input:
@@ -207,16 +218,14 @@ class ChatServer:
             server_data_result = self.event_bus.emit_and_wait(Events.Server.GET_SERVER_DATA, timeout=1.0)
             server_data = server_data_result[0] if server_data_result else {}
             
-            settings_result = self.event_bus.emit_and_wait(Events.Settings.GET_SETTINGS, timeout=1.0)
-            settings = settings_result[0] if settings_result else {}
 
             if server_data.get('patch_to_sound_file', '') != "":
                 logger.info(f"id {message_id} Скоро передам {server_data.get('patch_to_sound_file')} id {server_data.get('id_sound')}")
 
             patch_to_sound_file = str(server_data.get('patch_to_sound_file', ''))
 
-            id_sound_value = server_data.get('id_sound')
-            if id_sound_value is None or patch_to_sound_file == '':
+            id_sound_value = server_data.get('id_sound', 0)
+            if id_sound_value is None or patch_to_sound_file == '' or id_sound_value == 0:
                 id_sound_value = 0
 
             use_voiceover = bool(settings.get("USE_VOICEOVER"))

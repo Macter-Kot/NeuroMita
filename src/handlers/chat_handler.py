@@ -768,6 +768,7 @@ class ChatModel:
             logger.error(f"Gemini error {response.status_code}: {response.text}")
             return None
 
+
         # ─── 4.   Потоковая ветка ─────────────────────────────────────────
         if need_stream:
             return self._handle_gemini_stream(response, stream_callback)

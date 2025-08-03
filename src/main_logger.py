@@ -2,9 +2,10 @@ import logging
 import colorlog
 import os
 import sys
+from typing import Any, Optional
 
 # -----------------------------------------------------------------------------
-# Добавляем кастомные уровни логирования
+# Кастомные уровни логирования
 # -----------------------------------------------------------------------------
 NOTIFY_LEVEL = 25  # между INFO (20) и WARNING (30)
 SUCCESS_LEVEL = 35  # между WARNING (30) и ERROR (40)
@@ -12,22 +13,8 @@ SUCCESS_LEVEL = 35  # между WARNING (30) и ERROR (40)
 logging.addLevelName(NOTIFY_LEVEL, "NOTIFY")
 logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
 
-# Добавляем метод notify к классу Logger
-def notify(self, message, *args, **kwargs):
-    if self.isEnabledFor(NOTIFY_LEVEL):
-        self._log(NOTIFY_LEVEL, message, args, **kwargs)
-
-# Добавляем метод success к классу Logger
-def success(self, message, *args, **kwargs):
-    if self.isEnabledFor(SUCCESS_LEVEL):
-        self._log(SUCCESS_LEVEL, message, args, **kwargs)
-
-# Привязываем методы к классу Logger
-logging.Logger.notify = notify
-logging.Logger.success = success
-
 # -----------------------------------------------------------------------------
-# Фильтр: пропускаем только логи из проекта; в PyInstaller ничего не режем
+# Фильтры
 # -----------------------------------------------------------------------------
 class ProjectFilter(logging.Filter):
     def __init__(self):
@@ -35,60 +22,101 @@ class ProjectFilter(logging.Filter):
         self.project_path = os.path.dirname(os.path.abspath(__file__))
 
     def filter(self, record):
-        if hasattr(sys, '_MEIPASS'):        # запущено из exe
+        if hasattr(sys, '_MEIPASS'):  # запущено из exe
             return True
         return record.pathname.startswith(self.project_path)
-    
+
 class LocationFilter(logging.Filter):
     def filter(self, record):
         record.location = f"[{record.filename}:{record.lineno}]"
         return True
 
 # -----------------------------------------------------------------------------
-# Логгер
+# Кастомный класс логгера
 # -----------------------------------------------------------------------------
-logger = colorlog.getLogger(__name__)
+class CustomLogger(logging.Logger):
+    """
+    Кастомный логгер с дополнительными методами notify и success.
+    Наследует все функции стандартного logging.Logger.
+    """
+    
+    def __init__(self, name: str, level: int = logging.NOTSET):
+        super().__init__(name, level)
+        self._setup_handlers()
+    
+    def notify(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """
+        Логирование уведомлений с уровнем NOTIFY (25).
+        Подойдёт для уведомления пользователя о компоненте системы..
+        Args:
+            message: Сообщение для логирования
+            *args: Позиционные аргументы для форматирования сообщения
+            **kwargs: Именованные аргументы для Logger._log
+        """
+        if self.isEnabledFor(NOTIFY_LEVEL):
+            self._log(NOTIFY_LEVEL, message, args, **kwargs)
+    
+    def success(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """
+        Логирование успешных операций с уровнем SUCCESS (35).
+        Подойдёт для уведомления пользователя об удачном выполнении команды.
+
+        Args:
+            message: Сообщение для логирования
+            *args: Позиционные аргументы для форматирования сообщения
+            **kwargs: Именованные аргументы для Logger._log
+        """
+        if self.isEnabledFor(SUCCESS_LEVEL):
+            self._log(SUCCESS_LEVEL, message, args, **kwargs)
+    
+    def _setup_handlers(self) -> None:
+        """Настройка обработчиков для логгера."""
+        # Консольный обработчик
+        console_handler = colorlog.StreamHandler()
+        console_handler.setFormatter(
+            colorlog.ColoredFormatter(
+                '%(log_color)s%(levelname)-8s %(location)-30s | %(message)s',
+                log_colors={
+                    'INFO':     'white',
+                    'NOTIFY':   'light_purple',    # Розовый
+                    'WARNING':  'yellow',
+                    'SUCCESS':  'light_green',     # Лаймовый
+                    'ERROR':    'red',
+                    'CRITICAL': 'red,bg_white',
+                },
+            )
+        )
+        console_handler.addFilter(ProjectFilter())
+        console_handler.addFilter(LocationFilter())
+        
+        # Файловый обработчик
+        file_handler = logging.FileHandler('NeuroMitaLogs.log', encoding='utf-8')
+        file_handler.setFormatter(
+            logging.Formatter(
+                '%(asctime)s - %(levelname)-8s '
+                '[%(filename)s:%(lineno)d - %(funcName)s] '
+                '%(message)s'
+            )
+        )
+        file_handler.addFilter(ProjectFilter())
+        
+        # Добавляем обработчики
+        self.addHandler(console_handler)
+        self.addHandler(file_handler)
+        self.propagate = False
+
+# -----------------------------------------------------------------------------
+# Создаем экземпляр логгера
+# -----------------------------------------------------------------------------
+# Регистрируем наш кастомный класс в системе логирования
+logging.setLoggerClass(CustomLogger)
+
+# Создаем логгер
+logger: CustomLogger = logging.getLogger(__name__)  # type: ignore
 logger.setLevel(logging.INFO)
 
-# -----------------------------------------------------------------------------
-# Консоль — без даты, без относительного пути
-# -----------------------------------------------------------------------------
-console_handler = colorlog.StreamHandler()
-console_handler.setFormatter(
-    colorlog.ColoredFormatter(
-        '%(log_color)s%(levelname)-8s %(location)-30s | %(message)s',
-        log_colors={
-            'INFO':     'white',
-            'NOTIFY':   'light_purple',    # Розовый
-            'WARNING':  'yellow',
-            'SUCCESS':  'light_green',     # Лаймовый
-            'ERROR':    'red',
-            'CRITICAL': 'red,bg_white',
-        },
-    )
-)
-console_handler.addFilter(ProjectFilter())
-console_handler.addFilter(LocationFilter())
-
-# -----------------------------------------------------------------------------
-# Файл — с датой
-# -----------------------------------------------------------------------------
-file_handler = logging.FileHandler('NeuroMitaLogs.log', encoding='utf-8')
-file_handler.setFormatter(
-    logging.Formatter(
-        '%(asctime)s - %(levelname)-8s '
-        '[%(filename)s:%(lineno)d - %(funcName)s] '
-        '%(message)s'
-    )
-)
-file_handler.addFilter(ProjectFilter())
-
-# -----------------------------------------------------------------------------
-# Регистрируем обработчики
-# -----------------------------------------------------------------------------
-logger.addHandler(console_handler)
-logger.addHandler(file_handler)
-logger.propagate = False
+# Восстанавливаем стандартный класс логгера для других модулей
+logging.setLoggerClass(logging.Logger)
 
 # -----------------------------------------------------------------------------
 # Пример использования (можно удалить)

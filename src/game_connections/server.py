@@ -3,10 +3,11 @@ import json
 import socket
 import asyncio
 import threading
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 from main_logger import logger
 from core.events import get_event_bus, Events, Event
 from managers.task_manager import TaskStatus
+import uuid
 
 
 class ChatServerNew:
@@ -129,6 +130,14 @@ class ChatServerNew:
         
         if event_type == 'answer':
             user_input = data.get('message', '')
+
+            if user_input:
+                self.event_bus.emit(Events.GUI.UPDATE_CHAT_UI, {
+                    'role': 'user',
+                    'response': user_input,
+                    'is_initial': False,
+                    'emotion': ''
+                })
             
             task_result = self.event_bus.emit_and_wait(Events.Task.CREATE_TASK, {
                 'type': 'chat',

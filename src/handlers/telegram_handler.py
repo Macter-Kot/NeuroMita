@@ -82,7 +82,7 @@ class TelegramBotHandler:
             self.message_count = 0
             self.start_time = time.time()
 
-    async def send_and_receive(self, input_message, speaker_command, message_id):
+    async def send_and_receive(self, input_message, speaker_command, message_id, voice_future : asyncio.Future | None = None,):
         logger.info(f"Отправка сообщения на озвучку Telegram: {speaker_command} {input_message}")
         if not input_message or not speaker_command:
             return
@@ -137,8 +137,11 @@ class TelegramBotHandler:
         if not response:
             logger.info(f"Ответ от бота не получен после {attempts_max} попыток.")
             return
-
+        
         logger.info("Ответ получен")
+
+        path_to_file: str | None = None
+
         if response.media and isinstance(response.media, MessageMediaDocument):
             file_path = await self.client.download_media(response.media)
             logger.info(f"Файл загружен: {file_path}")
@@ -172,11 +175,16 @@ class TelegramBotHandler:
                 logger.info(f"Файл установлен серверу: {absolute_wav_path}")
                 self.event_bus.emit_and_wait(Events.Server.SET_ID_SOUND, {'id': message_id})
                 logger.info(f"Установленный файлу message_Id: {message_id}")
+                
+                path_to_file = absolute_wav_path
             else:
                 logger.info(f"Отправлен воспроизводится: {sound_absolute_path}")
+                path_to_file = sound_absolute_path
                 await AudioHandler.handle_voice_file(file_path)
         elif response.text:
             logger.info(f"Ответ от бота: {response.text}")
+        return path_to_file
+        
 
     async def start(self):
         logger.info("Запуск коннектора ТГ!")

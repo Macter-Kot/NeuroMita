@@ -252,11 +252,11 @@ class AudioController:
         
         try:
             await future
+            result = future.result()
+            logger.notify(result)
+            voiceover_path = result
             # Успешная озвучка
             if task_uid:
-                # Получаем путь к файлу озвучки
-                patch_result = self.event_bus.emit_and_wait(Events.Server.GET_SERVER_DATA, timeout=1.0)
-                voiceover_path = patch_result[0].get('patch_to_sound_file') if patch_result else None
                 
                 self.event_bus.emit(Events.Task.UPDATE_TASK_STATUS, {
                     'uid': task_uid,

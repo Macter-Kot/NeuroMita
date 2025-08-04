@@ -21,6 +21,7 @@ class ChatServerNew:
         self._loop = None
         self._server_task = None
         self.client_tasks: Dict[str, Set[str]] = {}  # client_id -> set of task_uids
+        self.last_idle_tasks: Dict[str, str] = {}
         
         self._subscribe_to_events()
 
@@ -276,13 +277,27 @@ class ChatServerNew:
     
     def _on_task_status_changed(self, event: Event):
         task = event.data.get('task')
-        if task and hasattr(task, 'data') and task.data:
-            client_id = task.data.get('client_id')
-            if client_id and client_id in self.active_connections:
-                asyncio.run_coroutine_threadsafe(
-                    self.send_task_update(client_id, task),
-                    self._loop
-                )
+        if not task or not getattr(task, 'data', None):
+            return
+
+        client_id  = task.data.get('client_id')
+        character  = task.data.get('character')
+        event_type = task.data.get('event_type')
+
+        # отправляем апдейт клиенту, как и было
+        if client_id and client_id in self.active_connections:
+            asyncio.run_coroutine_threadsafe(
+                self.send_task_update(client_id, task),
+                self._loop
+            )
+
+        # --- НОВОЕ: чистим last_idle_tasks ---
+        if event_type in ('idle', 'idle_timeout') and character:
+            if task.status in (TaskStatus.SUCCESS,
+                            TaskStatus.FAILED,
+                            TaskStatus.CANCELLED):          # финальные статусы
+                if self.last_idle_tasks.get(character) == task.uid:
+                    del self.last_idle_tasks[character]
     
     def _on_send_task_update(self, event: Event):
         task = event.data.get('task')

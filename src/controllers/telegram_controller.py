@@ -143,22 +143,23 @@ class TelegramController:
             
         # Используем универсальное событие RUN_IN_LOOP
         coro = self._async_send_and_receive(text, speaker_command, id, future)
-        
+
+        # callback нужен только для прокидывания исключений
         def handle_result(result, error):
-            if error and future:
+            if error and future and not future.done():
                 future.set_exception(error)
-        
-        self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
-            'coroutine': coro,
-            'callback': handle_result
-        })
+
+        self.event_bus.emit(Events.Core.RUN_IN_LOOP,
+                            {'coroutine': coro, 'callback': handle_result})
 
     async def _async_send_and_receive(self, text, speaker_command, id, future):
         try:
-            await self.bot_handler.send_and_receive(text, speaker_command, id)
-            if future:
-                future.set_result(True)
+            voice_path = await self.bot_handler.send_and_receive(
+                text, speaker_command, id
+            )
+            if future and not future.done():
+                future.set_result(voice_path)
         except Exception as e:
             logger.error(f"Ошибка при отправке голосового запроса: {e}")
-            if future:
+            if future and not future.done():
                 future.set_exception(e)

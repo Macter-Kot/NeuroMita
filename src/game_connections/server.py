@@ -22,6 +22,7 @@ class ChatServerNew:
         self._server_task = None
         self.client_tasks: Dict[str, Set[str]] = {}  # client_id -> set of task_uids
         self.last_idle_tasks: Dict[str, str] = {}
+        self.pending_sysinfo: Dict[str, list[str]] = {}  # ★ NEW: буферы для system_info
         
         self._subscribe_to_events()
 
@@ -129,6 +130,9 @@ class ChatServerNew:
             'actualInfo': context.get('currentInfo', '')
         })
         
+        # -----------------------------------------------------------
+        # 1. ANSWER: отправляем накопленный system_info в LLM
+        # -----------------------------------------------------------
         if event_type == 'answer':
             user_input = data.get('message', '')
 
@@ -140,12 +144,15 @@ class ChatServerNew:
                     'emotion': ''
                 })
             
+            # ★ NEW: забираем накопленные sysinfo-строки
+            collected_sys = "\n".join(self.pending_sysinfo.pop(character, []))
+            
             task_result = self.event_bus.emit_and_wait(Events.Task.CREATE_TASK, {
                 'type': 'chat',
                 'data': {
                     'character': character,
                     'user_input': user_input,
-                    'system_input': '',
+                    'system_input': collected_sys,  # ★ MOD: передаем накопленные system_info
                     'system_info': context.get('currentInfo', ''),
                     'client_id': client_id,
                     'event_type': event_type
@@ -164,7 +171,7 @@ class ChatServerNew:
                 
                 self.event_bus.emit(Events.Chat.SEND_MESSAGE, {
                     'user_input': user_input,
-                    'system_input': '',
+                    'system_input': collected_sys,  # ★ MOD
                     'image_data': context.get('image_base64_list', []),
                     'task_uid': task.uid
                 })
@@ -187,11 +194,15 @@ class ChatServerNew:
                     await self.send_json(self.active_connections[client_id], response)
                     return
             
+            # ★ NEW: забираем накопленные sysinfo-строки для idle_timeout
+            collected_sys = "\n".join(self.pending_sysinfo.pop(character, []))
+            
             task_result = self.event_bus.emit_and_wait(Events.Task.CREATE_TASK, {
                 'type': 'idle',
                 'data': {
                     'character': character,
                     'message': data.get('message', 'Player idle for 90 seconds'),
+                    'system_input': collected_sys,  # ★ NEW
                     'client_id': client_id,
                     'event_type': event_type
                 }
@@ -210,6 +221,9 @@ class ChatServerNew:
                 await self.send_json(self.active_connections[client_id], response)
                 
                 idle_prompt = "The player has been silent for 90 seconds. React naturally to this silence."
+                # ★ MOD: добавляем накопленные system_info к idle промпту
+                if collected_sys:
+                    idle_prompt += f"\n\nAdditional context:\n{collected_sys}"
                 
                 self.event_bus.emit(Events.Chat.SEND_MESSAGE, {
                     'user_input': '',
@@ -228,13 +242,63 @@ class ChatServerNew:
             }
             await self.send_json(self.active_connections[client_id], response)
             
+        # -----------------------------------------------------------
+        # 2. SYSTEM_INFO: просто копим, Task НЕ создаём
+        # -----------------------------------------------------------
         elif event_type == 'system_info':
-            logger.info(f"System info from {character}: {data}")
+            msg = data.get('message', '')
+            if msg:
+                self.pending_sysinfo.setdefault(character, []).append(msg)
+                logger.info(f"Buffered system_info for {character}: {msg[:60]}...")
             
-            response = {
-                "task_uid": f"sys_{uuid.uuid4()}"
-            }
-            await self.send_json(self.active_connections[client_id], response)
+            # отвечаем клиенту «ok», чтобы он знал, что сообщение принято
+            await self.send_json(self.active_connections[client_id], {
+                "task_uid": f"sys_{uuid.uuid4()}",
+                "stored": len(self.pending_sysinfo.get(character, []))
+            })
+            
+        # -----------------------------------------------------------
+        # 3. SYSTEM_INFO_FLUSH: заставляем LLM отреагировать на буфер
+        # -----------------------------------------------------------
+        elif event_type == 'system_info_flush':  # ★ NEW
+            # забираем всё накопленное
+            collected_sys = "\n".join(self.pending_sysinfo.pop(character, []))
+            
+            if not collected_sys:
+                await self.send_error(
+                    self.active_connections[client_id],
+                    "No pending system_info to flush"
+                )
+                return
+            
+            task_result = self.event_bus.emit_and_wait(Events.Task.CREATE_TASK, {
+                'type': 'chat',
+                'data': {
+                    'character': character,
+                    'user_input': '',
+                    'system_input': collected_sys,
+                    'system_info': context.get('currentInfo', ''),
+                    'client_id': client_id,
+                    'event_type': event_type
+                }
+            }, timeout=5.0)
+            
+            task = task_result[0] if task_result else None
+            if task:
+                self.client_tasks[client_id].add(task.uid)
+                await self.send_json(self.active_connections[client_id], {
+                    "task_uid": task.uid
+                })
+                
+                # сразу запускаем генерацию
+                self.event_bus.emit(Events.Chat.SEND_MESSAGE, {
+                    'user_input': '',
+                    'system_input': collected_sys,
+                    'image_data': [],
+                    'task_uid': task.uid
+                })
+            else:
+                await self.send_error(self.active_connections[client_id], "Failed to flush system info")
             
         else:
             await self.send_error(self.active_connections[client_id], f"Unknown event type: {event_type}")
@@ -291,7 +355,7 @@ class ChatServerNew:
                 self._loop
             )
 
-        # --- НОВОЕ: чистим last_idle_tasks ---
+        # --- чистим last_idle_tasks ---
         if event_type in ('idle', 'idle_timeout') and character:
             if task.status in (TaskStatus.SUCCESS,
                             TaskStatus.FAILED,

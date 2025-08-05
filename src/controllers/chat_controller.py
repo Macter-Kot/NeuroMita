@@ -104,19 +104,17 @@ class ChatController:
                                 'status': TaskStatus.VOICING
                             })
                         
-                        from utils import process_text_to_voice
-                        processed_response = process_text_to_voice(response)
                         
                         speaker = current_character.get("silero_command")
                         if self.settings.get("AUDIO_BOT") == "@CrazyMitaAIbot":
                             speaker = current_character.get("miku_tts_name")
                         
                         self.event_bus.emit(Events.Audio.VOICEOVER_REQUESTED, {
-                            'text': processed_response,
+                            'text': response,
                             'speaker': speaker,
                             'task_uid': task_uid  # Передаем task_uid вместо message_id
                         })
-                        logger.info(f"Озвучка запрошена: {processed_response[:50]}... с task_uid: {task_uid}")
+                        logger.info(f"Озвучка запрошена с task_uid: {task_uid}")
             else:
                 # Если озвучка не нужна, сразу устанавливаем SUCCESS
                 if task_uid:
@@ -145,7 +143,7 @@ class ChatController:
                 server_result = self.event_bus.emit_and_wait(Events.Server.GET_CHAT_SERVER, timeout=1.0)
                 server = server_result[0] if server_result else None
                 
-                if server and server.client_socket:
+                if server and hasattr(server, 'client_socket') and server.client_socket:
                     final_response_text = response if response else "..."
                     try:
                         server.send_message_to_server(final_response_text)

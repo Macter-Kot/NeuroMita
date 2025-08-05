@@ -10,9 +10,10 @@ from handlers.audio_handler import AudioHandler
 from main_logger import logger
 from handlers.local_voice_handler import LocalVoice
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
-from utils import _
+from utils import _, process_text_to_voice
 from core.events import get_event_bus, Events, Event
 from managers.task_manager import TaskStatus
+
 
 class AudioController:
     def __init__(self, main_controller):
@@ -242,8 +243,13 @@ class AudioController:
         
         future = asyncio.Future()
         
+        text = process_text_to_voice(response)
+
+        
+        logger.notify(f"Отправка на озвучку из ТГ текста: {text[:50]}...")
+        
         self.event_bus.emit(Events.Telegram.TELEGRAM_SEND_VOICE_REQUEST, {
-            'text': response,
+            'text': text,
             'speaker_command': speaker_command,
             'id': 0,  # Для совместимости
             'future': future,
@@ -273,14 +279,19 @@ class AudioController:
         
         logger.info("Завершение получения фразы")
           
-    async def run_local_voiceover(self, text, task_uid=None):
+    async def run_local_voiceover(self, response, task_uid=None):
         result_path = None
         try:
             character = self.event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER)[0]
+
+            
+            text = process_text_to_voice(response)
             
             output_file = f"MitaVoices/output_{uuid.uuid4()}.wav"
             absolute_audio_path = os.path.abspath(output_file)
             os.makedirs(os.path.dirname(absolute_audio_path), exist_ok=True)
+
+            logger.notify(f"Отправка на локальную озвучку текста: {text[:50]}...")
 
             result_path = await self.local_voice.voiceover(
                 text=text,
@@ -297,7 +308,7 @@ class AudioController:
                         'uid': task_uid,
                         'status': TaskStatus.SUCCESS,
                         'result': {
-                            'response': text,
+                            'response': response,
                             'voiceover_path': result_path
                         }
                     })

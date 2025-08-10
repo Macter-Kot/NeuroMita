@@ -1,109 +1,126 @@
-PRICING_SYMBOLS = {
-    'free':  '[FREE]',
-    'paid':  '$',
-    'mixed': '[FREE] / $',
-}
-
-API_PRESETS: dict = {
-
-    "g4f": {
-        "name": "Gpt4Free",  # Отображается в ComboBox
+API_PRESETS_DATA = [
+    {
+        "id": 1,
+        "name": "Gpt4Free",
         "pricing": "free",
-        "url": "",  # Нет URL, т.к. внутренняя библиотека
-        "add_key": False,
-        "model": "deepseek-v3",  # Дефолтная модель для g4f
-        "nm_api_req": False,
-        "gemini_case": False,
-        "is_g4f": True,  # Специальный флаг для распознавания в UI/логике
+        "default_model": "deepseek-v3",
+        "known_models": ["deepseek-v3", "gpt-4o-mini", "claude-3.5-sonnet"],
+        "is_g4f": True,
+        "use_request": False,
+        "help_url": "https://github.com/xtekky/gpt4free"
     },
-
-    # Условно-бесплатные / бесплатные
-    "openrouter": {
+    {
+        "id": 2,
         "name": "OpenRouter",
         "pricing": "mixed",
         "url": "https://openrouter.ai/api/v1/chat/completions",
+        "default_model": "google/gemini-2.0-flash-exp:free",
+        "known_models": [
+            "google/gemini-2.0-flash-exp:free",
+            "google/gemini-2.0-flash-thinking-exp:free",
+            "meta-llama/llama-3.2-3b-instruct:free"
+        ],
+        "gemini_case": None,
+        "use_request": False,
         "add_key": False,
-        "model": "google/gemini-2.0-pro-exp-02-05:free",
-        "nm_api_req": False,
-        "gemini_case": False,
+        "help_url": "https://openrouter.ai/keys"
     },
-    "aiio": {
+    {
+        "id": 3,
         "name": "Ai.iO",
         "pricing": "mixed",
         "url": "https://api.intelligence.io.solutions/api/v1/",
+        "default_model": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        "known_models": [],
+        "use_request": False,
         "add_key": False,
-        "model": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-        "nm_api_req": False,
-        "gemini_case": False,
+        "help_url": "https://intelligence.io.solutions"
     },
-
-
-    # Google
-    "google_ai_studio": {
+    {
+        "id": 4,
         "name": "Google AI Studio",
         "pricing": "mixed",
         "url_tpl": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        "add_key": True,
-        "model": "gemini-2.5-flash",
-        "nm_api_req": True,
+        "default_model": "gemini-2.0-flash-exp",
+        "known_models": [
+            "gemini-2.0-flash-exp",
+            "gemini-2.0-flash-thinking-exp-1219",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro"
+        ],
         "gemini_case": True,
+        "use_request": True,
+        "add_key": True,
+        "test_url": "https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+        "filter_fn": "filter_generate_content",
+        "help_url": "https://makersuite.google.com/app/apikey"
     },
-
-    # ProxiApi
-    "proxiapi_google": {
+    {
+        "id": 5,
         "name": "ProxiApi (google)",
         "pricing": "paid",
         "url_tpl": "https://api.proxyapi.ru/google/v1/models/{model}:generateContent",
-        "add_key": False,
-        "model": "gemini-2.0-flash-lite",
-        "nm_api_req": True,
+        "default_model": "gemini-2.0-flash-lite",
+        "known_models": ["gemini-2.0-flash-lite", "gemini-1.5-flash"],
         "gemini_case": True,
+        "use_request": True,
+        "add_key": False,
+        "help_url": "https://proxyapi.ru"
     },
-    "proxiapi_deepseek": {
+    {
+        "id": 6,
         "name": "ProxiApi (deepseek)",
         "pricing": "paid",
-        "url_tpl": "https://api.proxyapi.ru/deepseek",
+        "url": "https://api.proxyapi.ru/deepseek",
+        "default_model": "deepseek-chat",
+        "known_models": ["deepseek-chat", "deepseek-reasoner"],
+        "use_request": False,
         "add_key": False,
-        "model": "deepseek-chat",
-        "nm_api_req": False,
-        "gemini_case": False,
+        "help_url": "https://proxyapi.ru"
     },
-
-    # Классические коммерческие
-    "openai": {
+    {
+        "id": 7,
         "name": "OpenAI",
         "pricing": "paid",
         "url": "https://api.openai.com/v1/chat/completions",
+        "default_model": "gpt-4o-mini",
+        "known_models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o1-mini", "o1-preview"],
+        "use_request": False,
         "add_key": False,
-        "model": "gpt-4o-mini",
-        "gemini_case": False,
+        "help_url": "https://platform.openai.com/api-keys"
     },
-    "anthropic": {
+    {
+        "id": 8,
         "name": "Anthropic",
         "pricing": "paid",
         "url": "https://api.anthropic.com/v1/messages",
+        "default_model": "claude-3-5-sonnet-20241022",
+        "known_models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        "use_request": False,
         "add_key": False,
-        "model": "claude-3-opus-20240229",
-        "nm_api_req": False,
-        "gemini_case": False,
+        "help_url": "https://console.anthropic.com/settings/keys"
     },
-    "deepseek": {
+    {
+        "id": 9,
         "name": "DeepSeek",
         "pricing": "paid",
         "url": "https://api.deepseek.com/chat/completions",
+        "default_model": "deepseek-chat",
+        "known_models": ["deepseek-chat", "deepseek-reasoner"],
+        "use_request": False,
         "add_key": False,
-        "model": "deepseek-chat",
-        "nm_api_req": False,
-        "gemini_case": False,
+        "help_url": "https://platform.deepseek.com/api_keys"
     },
-    "chutes": {
+    {
+        "id": 10,
         "name": "Chutes.ai",
         "pricing": "paid",
         "url": "https://llm.chutes.ai/v1/chat/completions",
+        "default_model": "deepseek-ai/DeepSeek-V3-0324",
+        "known_models": ["deepseek-ai/DeepSeek-V3-0324"],
+        "use_request": True,
         "add_key": False,
-        "model": "deepseek-ai/DeepSeek-V3-0324",
-        "nm_api_req": True,
-        "gemini_case": False,
-    },
-
-}
+        "help_url": "https://chutes.ai"
+    }
+]

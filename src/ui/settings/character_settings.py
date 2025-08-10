@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
-from presets.api_presets import API_PRESETS
 from ui.gui_templates import create_settings_direct
 from ui.settings.prompt_catalogue_settings import list_prompt_sets
 from managers.prompt_catalogue_manager import copy_prompt_set, get_prompt_catalogue_folder_name
@@ -16,15 +15,16 @@ from core.events import get_event_bus, Events
 def setup_mita_controls(gui, parent_layout):
     event_bus = get_event_bus()
     
-    # Получаем список персонажей через события
     all_characters = event_bus.emit_and_wait(Events.Model.GET_ALL_CHARACTERS, timeout=1.0)
     character_list = all_characters[0] if all_characters else ["Crazy"]
 
-    provider_names = list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi'] + list(gui.settings.get("CUSTOM_API_PRESETS", {}).keys())
-    provider_names = list(dict.fromkeys(provider_names))
-    provider_names.insert(0, _("Текущий", "Current"))
+    presets_meta = event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_LIST, timeout=1.0)
+    provider_names = [_("Текущий", "Current")]
+    if presets_meta and presets_meta[0]:
+        all_presets = presets_meta[0].get('custom', [])
+        for preset in all_presets:
+            provider_names.append(preset.name)
 
-    # Получаем текущего персонажа для начальной настройки
     current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
     current_char_id = current_char_data[0]['char_id'] if current_char_data and current_char_data[0] else "Crazy"
 
@@ -100,7 +100,6 @@ def change_character_actions(gui, character=None):
         gui.prompt_pack_combobox.clear()
         gui.prompt_pack_combobox.addItems(new_options)
 
-        # NEW: ищем сохранённый сет
         saved_key = f"PROMPT_SET"
         saved_prompt = gui.settings.get(saved_key, "")
         if saved_prompt and saved_prompt in new_options:
@@ -135,11 +134,9 @@ def apply_prompt_set(gui, force_apply=True):
     if char_from:
         character_prompts_path = os.path.join("Prompts", char_from)
         if copy_prompt_set(set_path, character_prompts_path):
-            # NEW: сохраняем выбор
-            settings_key = f"PROMPT_SET"   # можно и просто 'PROMPT_SET', если не нужны разные для каждого
-            gui.settings.set(settings_key, chat_to)    # кладём в SettingsManager
-            gui.settings.save_settings()               # и сразу пишем на диск
-            # --- старый код ---
+            settings_key = f"PROMPT_SET"
+            gui.settings.set(settings_key, chat_to)
+            gui.settings.save_settings()
             if force_apply:
                 QMessageBox.information(gui, _("Успех", "Success"),
                                          _("Набор промптов успешно применен.", "Prompt set applied successfully."))

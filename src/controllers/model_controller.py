@@ -15,7 +15,8 @@ class ModelController:
         self.loaded_messages_offset = 0
         self.loading_more_history = False
 
-        self.model = ChatModel(settings, "", "", "", "", False, pip_installer)
+        # Исправленный вызов: теперь только 2 аргумента (settings, pip_installer)
+        self.model = ChatModel(settings, pip_installer)
         self._subscribe_to_events()
         
     def _subscribe_to_events(self):

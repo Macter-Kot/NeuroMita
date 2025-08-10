@@ -25,52 +25,45 @@ class SettingsController:
         self.event_bus.subscribe(Events.Settings.SAVE_SETTING, self._on_save_setting, weak=False)
         
     def load_api_settings(self, update_model):
-        logger.info("Начинаю загрузку настроек (из уже загруженного словаря)")
-
-        settings_dict = self.settings.settings
-
-        if not settings_dict:
-            logger.info("Настройки пустые (файл не найден или повреждён), используем дефолты")
-            return
-
-        api_key = settings_dict.get("NM_API_KEY", "")
-        api_key_res = settings_dict.get("NM_API_KEY_RES", "")
-        api_url = settings_dict.get("NM_API_URL", "")
-        api_model = settings_dict.get("NM_API_MODEL", "")
-        makeRequest = settings_dict.get("NM_API_REQ", False)
-
+        logger.info("Начинаю загрузку настроек API")
+        
+        preset_id = self.settings.get("LAST_API_PRESET_ID", 0)
+        
+        if preset_id:
+            preset_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL, 
+                                                        {'id': preset_id}, timeout=1.0)
+            if preset_data and preset_data[0]:
+                preset = preset_data[0]
+                
+                api_key = self.settings.get("NM_API_KEY", "")
+                api_url = self.settings.get("NM_API_URL", "")
+                api_model = self.settings.get("NM_API_MODEL", "")
+                
+                if update_model:
+                    model_settings = {
+                        'api_key': api_key,
+                        'api_key_res': self.settings.get("NM_API_KEY_RES", ""),
+                        'api_url': api_url,
+                        'api_model': api_model,
+                        'makeRequest': preset.get('use_request', False)
+                    }
+                    self.event_bus.emit("model_settings_loaded", model_settings)
+        
         telegram_settings = {
-            "api_id": settings_dict.get("NM_TELEGRAM_API_ID", ""),
-            "api_hash": settings_dict.get("NM_TELEGRAM_API_HASH", ""),
-            "phone": settings_dict.get("NM_TELEGRAM_PHONE", ""),
+            "api_id": self.settings.get("NM_TELEGRAM_API_ID", ""),
+            "api_hash": self.settings.get("NM_TELEGRAM_API_HASH", ""),
+            "phone": self.settings.get("NM_TELEGRAM_PHONE", ""),
             "settings": self.settings
         }
         self.event_bus.emit("telegram_settings_loaded", telegram_settings)
         
-        capture_settings = {
-            "settings": self.settings
-        }
+        capture_settings = {"settings": self.settings}
         self.event_bus.emit("capture_settings_loaded", capture_settings)
         
-        speech_settings = {
-            "settings": self.settings
-        }
+        speech_settings = {"settings": self.settings}
         self.event_bus.emit("speech_settings_loaded", speech_settings)
-
-        logger.info(f"Итого загружено {SH(api_key)},{SH(api_key_res)},{api_url},{api_model},{makeRequest} (Должно быть не пусто)")
-        logger.info(f"По тг {SH(telegram_settings['api_id'])},{SH(telegram_settings['api_hash'])},{SH(telegram_settings['phone'])} (Должно быть не пусто если тг)")
         
-        if update_model:
-            model_settings = {
-                'api_key': api_key,
-                'api_key_res': api_key_res,
-                'api_url': api_url,
-                'api_model': api_model,
-                'makeRequest': makeRequest
-            }
-            self.event_bus.emit("model_settings_loaded", model_settings)
-
-        logger.info("Настройки применены из загруженного словаря")
+        logger.info("Настройки API применены")
 
     def _on_get_settings(self, event: Event):
         return self.settings

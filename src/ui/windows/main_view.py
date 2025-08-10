@@ -170,6 +170,9 @@ class ChatGUI(QMainWindow):
     asr_install_finished_signal = pyqtSignal(dict)
     asr_install_failed_signal = pyqtSignal(dict)
 
+    # api_settings.py
+    test_result_received = pyqtSignal(dict)
+
     def __init__(self, settings):
         super().__init__()
         self.settings = settings

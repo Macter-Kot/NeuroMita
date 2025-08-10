@@ -13,6 +13,7 @@ from controllers.settings_controller import SettingsController
 from controllers.chat_controller import ChatController
 from controllers.loop_controller import LoopController
 from controllers.task_controller import TaskController
+from controllers.api_presets_controller import ApiPresetsController
 
 from main_logger import logger
 from utils.ffmpeg_installer import install_ffmpeg
@@ -68,7 +69,8 @@ class MainController:
         
         self.task_controller = TaskController()
         logger.notify("TaskController успешно инициализирован.")
-        
+        self.api_presets_controller = ApiPresetsController()
+        logger.notify("ApiPresetsController успешно инициализирован.")
         self.audio_controller = AudioController(self)
         logger.notify("AudioController успешно инициализирован.")
         self.model_controller = ModelController(self.settings, self.pip_installer)
@@ -122,6 +124,7 @@ class MainController:
             self.gui_controller = GuiController(self, view)
             logger.notify("GuiController успешно инициализирован.")
             self.settings_controller.load_api_settings(False)
+            
             # в этой логике надо добавить автоподключение.
             if self.settings.get('VOICEOVER_METHOD') == 'TG' and self.settings.get('USE_VOICEOVER', False):
                 self.telegram_controller.start_silero_async()

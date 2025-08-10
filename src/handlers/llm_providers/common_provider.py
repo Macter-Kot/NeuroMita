@@ -1,0 +1,94 @@
+from .base import BaseProvider, LLMRequest
+import requests
+import json
+import re
+from main_logger import logger
+from utils import save_combined_messages
+
+class CommonProvider(BaseProvider):
+    name = "common"
+    priority = 30
+
+    def is_applicable(self, req: LLMRequest) -> bool:
+        if not req.make_request:
+            return False
+        if req.gemini_case:
+            return False
+        return True
+
+    def generate(self, req: LLMRequest) -> str:
+        return self.generate_request_common(req)
+
+    def generate_request_common(self, req: LLMRequest) -> str:
+        if req.depth > 3:
+            return None
+
+        data = {
+            "model": req.model,
+            "messages": [{"role": m["role"], "content": m["content"]} for m in req.messages]
+        }
+
+        params = {k: v for k, v in req.extra.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
+        self.clear_endline_sim(params)
+        data.update(params)
+
+        if req.tools_on and req.tools_mode == "native" and req.tools_payload:
+            data["tools"] = req.tools_payload
+
+        save_combined_messages(data["messages"], "SavedMessages/last_request_common_log")
+
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {req.api_key}"}
+        response = requests.post(req.api_url, headers=headers, json=data, stream=req.stream)
+        if response.status_code != 200:
+            return None
+        if req.stream:
+            return self._handle_common_stream(response, req.stream_cb)
+
+        resp_json = response.json()
+        message = resp_json.get("choices", [{}])[0].get("message", {})
+        if "tool_calls" in message:
+            tm = req.tool_manager
+            if tm:
+                from tools.manager import mk_tool_call_msg, mk_tool_resp_msg
+                for call in message["tool_calls"]:
+                    name = call["function"]["name"]
+                    args = json.loads(call["function"]["arguments"])
+                    tool_result = tm.run(name, args)
+                    req.messages.append(mk_tool_call_msg(name, args))
+                    req.messages.append(mk_tool_resp_msg(name, tool_result))
+                req.depth += 1
+                return self.generate_request_common(req)
+        return resp_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+    def _handle_common_stream(self, response, stream_callback: callable = None) -> str:
+        full_response_parts = []
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if line and line.startswith('data: '):
+                    line_data = line[6:]
+                    if line_data.strip() == '[DONE]':
+                        break
+                    try:
+                        response_json = json.loads(line_data)
+                        delta = response_json.get("choices", [{}])[0].get("delta", {})
+                        decoded_chunk = delta.get("content", "")
+                        if decoded_chunk:
+                            if stream_callback:
+                                stream_callback(decoded_chunk)
+                            full_response_parts.append(decoded_chunk)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not decode JSON from SSE streaming line: {line_data}")
+                    except (IndexError, KeyError) as e:
+                        logger.warning(f"Could not parse SSE streaming chunk structure: {line_data}, error: {e}")
+
+            full_text = "".join(full_response_parts)
+            logger.info("Common request stream finished. Full text accumulated.")
+            return full_text
+        except Exception as e:
+            logger.error(f"Error processing common (SSE) stream: {e}", exc_info=True)
+            return "".join(full_response_parts)
+
+    def clear_endline_sim(self, params):
+        for key, value in params.items():
+            if isinstance(value, str):
+                params[key] = value.replace("'\x00", "").replace("\x00", "")

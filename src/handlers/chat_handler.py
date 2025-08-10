@@ -29,27 +29,38 @@ from utils import _ as translate
 from core.events import get_event_bus, Events
 
 class ChatModel:
-    def __init__(self, settings, api_key, api_key_res, api_url, api_model, api_make_request, pip_installer: PipInstaller):
+    def __init__(self, settings, pip_installer: PipInstaller):
         self.last_key = 0
         self.pip_installer = pip_installer
         self.g4fClient = None
         self.g4f_available = False
         self.settings = settings
-        self._initialize_g4f()  # Keep g4f initialization
-
-        self.api_key = api_key
-        self.api_key_res = api_key_res
-        self.api_url = api_url
-        self.api_model = api_model
-        self.gpt4free_model = self.settings.get("gpt4free_model")
-        self.makeRequest = api_make_request  # This seems to be a boolean flag
-
-        self.tool_manager = ToolManager()
         self.event_bus = get_event_bus()
+        
+        # Подгружаем текущий пресет и устанавливаем параметры
+        preset_settings = self.load_preset_settings()
+        logger.info(f"Initializing ChatModel with preset: {preset_settings['preset_name']}")
+        
+        self.api_key = preset_settings['api_key']
+        self.api_key_res = self.settings.get("NM_API_KEY_RES", "")  # Резервные из settings
+        self.api_url = preset_settings['api_url']
+        self.api_model = preset_settings['api_model']
+        self.makeRequest = preset_settings['make_request']
+        self.gpt4free_model = preset_settings['g4f_model'] if preset_settings['is_g4f'] else self.settings.get("gpt4free_model", "")
+        
+        # Инициализация g4f только если пресет с is_g4f=True
+        if preset_settings['is_g4f']:
+            self._initialize_g4f()
+        
+        self.tool_manager = ToolManager()
 
         try:
-            self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
-            logger.info("OpenAI client initialized successfully.")
+            if self.api_key and self.api_url:
+                self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
+                logger.info("OpenAI client initialized successfully.")
+            else:
+                logger.warning("No API key or URL in preset - OpenAI client not initialized")
+                self.client = None
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
             self.client = None
@@ -79,9 +90,9 @@ class ChatModel:
         # Настройки стоимости токенов и лимитов
         self.token_cost_input = float(self.settings.get("TOKEN_COST_INPUT", 0.0432))
         self.token_cost_output = float(self.settings.get("TOKEN_COST_OUTPUT", 0.1728))
-        self.max_model_tokens = int(self.settings.get("MAX_MODEL_TOKENS", 128000)) # Default to a common large limit
+        self.max_model_tokens = int(self.settings.get("MAX_MODEL_TOKENS", 128000))
 
-        self.memory_limit = int(self.settings.get("MODEL_MESSAGE_LIMIT", 40))  # For historical messages
+        self.memory_limit = int(self.settings.get("MODEL_MESSAGE_LIMIT", 40))
 
         # Настройки для сжатия истории
         self.enable_history_compression_on_limit = bool(self.settings.get("ENABLE_HISTORY_COMPRESSION_ON_LIMIT", False))
@@ -90,7 +101,7 @@ class ChatModel:
         self.history_compression_prompt_template = str(self.settings.get("HISTORY_COMPRESSION_PROMPT_TEMPLATE", "Prompts/System/compression_prompt.txt"))
         self.history_compression_output_target = str(self.settings.get("HISTORY_COMPRESSION_OUTPUT_TARGET", "memory"))
 
-        self._messages_since_last_periodic_compression = 0 # Счетчик сообщений с момента последнего периодического сжатия
+        self._messages_since_last_periodic_compression = 0
 
         self.current_character: Character = None
         self.current_character_to_change = str(self.settings.get("CHARACTER"))
@@ -104,16 +115,14 @@ class ChatModel:
         self.image_quality_reduction_min_quality = int(min_quolity) if min_quolity!='' else 30
         self.image_quality_reduction_decrease_rate = int(self.settings.get("IMAGE_QUALITY_REDUCTION_DECREASE_RATE", 5))
 
-
-        # Game-specific state - these should ideally be passed to character or managed elsewhere if possible
-        # For now, keeping them here as per original. DSL might need them injected into character.variables.
+        # Game-specific state
         self.distance = 0.0
         self.roomPlayer = -1
         self.roomMita = -1
         self.nearObjects = ""
         self.actualInfo = ""
 
-        self.infos_to_add_to_history: List[Dict] = []  # For temporary system messages to be added to history
+        self.infos_to_add_to_history: List[Dict] = []
 
         # Mapping of model names to their token limits
         self._model_token_limits: Dict[str, int] = {
@@ -122,17 +131,16 @@ class ChatModel:
             "gpt-4-turbo": 128000,
             "gpt-4": 8192,
             "gpt-3.5-turbo": 16385,
-            "gemini-1.5-flash": 1000000, # Примерный лимит для Gemini 1.5 Flash
-            "gemini-1.5-pro": 1000000,   # Примерный лимит для Gemini 1.5 Pro
-            "gemini-pro": 32768,        # Примерный лимит для Gemini Pro
-            # Добавьте другие модели по мере необходимости
+            "gemini-1.5-flash": 1000000,
+            "gemini-1.5-pro": 1000000,
+            "gemini-pro": 32768,
         }
 
         self.init_characters()
-        self.HideAiData = True  # Unused?
+        self.HideAiData = True
         self.max_request_attempts = int(self.settings.get("MODEL_MESSAGE_ATTEMPTS_COUNT", 5))
         self.request_delay = float(self.settings.get("MODEL_MESSAGE_ATTEMPTS_TIME", 0.20))
-
+        
     def _initialize_g4f(self):
         logger.info("Проверка и инициализация g4f (после возможного обновления при запуске)...")
         try:
@@ -539,6 +547,54 @@ class ChatModel:
         else:
             logger.warning(f"Attempted to change to unknown character: {self.current_character_to_change}")
             self.current_character_to_change = ""
+    
+    def load_preset_settings(self, preset_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Загружает настройки из пресета по ID.
+        Если preset_id не указан, берёт текущий из LAST_API_PRESET_ID.
+        """
+        if preset_id is None:
+            preset_id = self.settings.get("LAST_API_PRESET_ID", 0)
+            logger.info(f"Loading current preset ID: {preset_id}")
+        else:
+            logger.info(f"Loading specific preset ID: {preset_id}")
+        
+        preset_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL, {'id': preset_id}, timeout=1.0)
+        if preset_data and preset_data[0]:
+            preset = preset_data[0]
+            logger.info(f"Preset {preset_id} loaded successfully: {preset.get('name', 'Unknown')}")
+            
+            # Если есть url_tpl, собираем URL
+            url = preset.get('url', '')
+            if preset.get('url_tpl'):
+                model = preset.get('default_model', '')
+                url = preset['url_tpl'].format(model=model) if '{model}' in preset['url_tpl'] else preset['url_tpl']
+                if preset.get('add_key') and preset.get('key'):
+                    sep = '&' if '?' in url else '?'
+                    url = f"{url}{sep}key={preset['key']}"
+            
+            return {
+                'api_key': preset.get('key', ''),
+                'api_url': url,
+                'api_model': preset.get('default_model', ''),
+                'make_request': preset.get('use_request', False),
+                'gemini_case': preset.get('gemini_case', False),
+                'is_g4f': preset.get('is_g4f', False),
+                'g4f_model': preset.get('default_model', '') if preset.get('is_g4f') else '',
+                'preset_name': preset.get('name', 'Unknown'),
+            }
+        else:
+            logger.error(f"Failed to load preset ID {preset_id}: using fallback from settings")
+            return {
+                'api_key': self.settings.get("NM_API_KEY", ""),
+                'api_url': self.settings.get("NM_API_URL", ""),
+                'api_model': self.settings.get("NM_API_MODEL", ""),
+                'make_request': self.settings.get("NM_API_REQ", False),
+                'gemini_case': self.settings.get("GEMINI_CASE", False),
+                'is_g4f': self.settings.get("gpt4free", False),
+                'g4f_model': self.settings.get("gpt4free_model", ""),
+                'preset_name': 'Fallback',
+            }
 
     def _generate_chat_response(self, combined_messages, stream_callback: callable = None):
         max_attempts = self.max_request_attempts
@@ -547,10 +603,7 @@ class ChatModel:
 
         self._log_generation_start()
 
-        
         self.event_bus.emit(Events.Model.ON_STARTED_RESPONSE_GENERATION)
-
-        # Region Tools
 
         tools_on = self.settings.get("TOOLS_ON", True)
         tools_mode = self.settings.get("TOOLS_MODE", "native")
@@ -558,58 +611,98 @@ class ChatModel:
         if tools_mode == "off":
             tools_on = False
 
-        # Для legacy: добавляем промпт с описанием тулов (если не native)
         if tools_on and tools_mode == "legacy":
             tools_desc = json.dumps(self.tool_manager.json_schema())
             legacy_prompt = self.tool_manager.tools_prompt().format(tools_json=tools_desc)
-            combined_messages.insert(0, {"role": "system", "content": legacy_prompt})  # Добавляем в начало
-
-        # endregion
+            combined_messages.insert(0, {"role": "system", "content": legacy_prompt})
 
         for attempt in range(1, max_attempts + 1):
             logger.info(f"Generation attempt {attempt}/{max_attempts}")
             
-                
             response_text = None
 
             save_combined_messages(combined_messages, "SavedMessages/last_attempt_log")
 
             try:
                 logger.info("Generating response...")
-                if bool(self.settings.get("NM_API_REQ", False)):
-                    if attempt > 1 and self.api_key_res:
-                        new_key = self.GetOtherKey()
-                        if new_key:
-                            if "key=" in self.api_url:
-                                self.api_url = re.sub(r"key=[^&]*", f"key={new_key}", self.api_url)
-                            else: self.api_key = new_key
-
-                            logger.info(f"[NM_API_REQ] переключился на резервный ключ (masked): {SH(new_key)}")
-
-                    formatted_for_request = combined_messages
-                    if bool(self.settings.get("GEMINI_CASE", False)):
-                        formatted_for_request = self._format_messages_for_gemini(combined_messages)
-
-                    response_text = self._execute_with_timeout(
-                        self._generate_request_response,
-                        args=(formatted_for_request,stream_callback),
-                        timeout=request_timeout,
-
-                    )
-                else:
-                    use_gpt4free_for_this_attempt = bool(self.settings.get("gpt4free")) or \
-                                                    (bool(self.settings.get(
-                                                        "GPT4FREE_LAST_ATTEMPT")) and attempt >= max_attempts)
-
-                    if use_gpt4free_for_this_attempt:
-                        logger.info("Using gpt4free for this attempt.")
-                    elif attempt > 1 and self.api_key_res:
-                        logger.info("Attempting with reserve API key.")
-                        self.update_openai_client(reserve_key_token=self.GetOtherKey())
-
-                    response_text = self._generate_openapi_response(combined_messages,
-                                                                    use_gpt4free=use_gpt4free_for_this_attempt,
-                                                                    stream_callback=stream_callback)
+                
+                from managers.provider_manager import ProviderManager
+                from handlers.llm_providers.base import LLMRequest
+                
+                # Подгружаем пресет для текущей попытки
+                char_provider = self.get_character_provider()
+                preset_id = None
+                if char_provider != "Current":
+                    try:
+                        preset_id = int(char_provider)
+                        logger.info(f"Using character-specific preset ID: {preset_id}")
+                    except ValueError:
+                        logger.warning(f"Invalid preset ID in CHAR_PROVIDER: {char_provider}, using current")
+                
+                preset_settings = self.load_preset_settings(preset_id)
+                
+                # Обработка резервных ключей
+                if attempt > 1 and self.api_key_res:
+                    new_key = self.GetOtherKey()
+                    if new_key:
+                        logger.info(f"Attempt {attempt}: switching to reserve key (masked): {SH(new_key)}")
+                        preset_settings['api_key'] = new_key
+                        # Обновляем URL если нужно (для Gemini с ?key=)
+                        if preset_settings['make_request'] and "key=" in preset_settings['api_url']:
+                            preset_settings['api_url'] = re.sub(r"key=[^&]*", f"key={new_key}", preset_settings['api_url'])
+                
+                effective_model = preset_settings['api_model']
+                use_gpt4free_for_this_attempt = preset_settings['is_g4f'] or \
+                                            (bool(self.settings.get("GPT4FREE_LAST_ATTEMPT")) and attempt >= max_attempts)
+                
+                if use_gpt4free_for_this_attempt:
+                    effective_model = preset_settings['g4f_model'] or self.gpt4free_model
+                    logger.info(f"Using g4f for attempt {attempt} with model: {effective_model}")
+                
+                params = self.get_params(effective_model)
+                
+                tools_payload = None
+                if tools_on and tools_mode == "native":
+                    if preset_settings['make_request'] and preset_settings['gemini_case']:
+                        tools_payload = self.tool_manager.get_tools_payload("gemini")
+                    elif preset_settings['make_request']:
+                        tools_payload = self.tool_manager.get_tools_payload("deepseek")
+                    else:
+                        tools_payload = self.tool_manager.get_tools_payload("openai")
+                
+                formatted_messages = combined_messages
+                if preset_settings['make_request'] and preset_settings['gemini_case']:
+                    formatted_messages = self._format_messages_for_gemini(combined_messages)
+                
+                req = LLMRequest(
+                    model=effective_model,
+                    messages=formatted_messages,
+                    api_key=preset_settings['api_key'],
+                    api_url=preset_settings['api_url'],
+                    api_key_res=self.api_key_res,
+                    make_request=preset_settings['make_request'],
+                    gemini_case=preset_settings['gemini_case'],
+                    g4f_flag=use_gpt4free_for_this_attempt,
+                    g4f_model=preset_settings['g4f_model'],
+                    stream=bool(self.settings.get("ENABLE_STREAMING", False)) and stream_callback is not None,
+                    stream_cb=stream_callback,
+                    tools_on=tools_on,
+                    tools_mode=tools_mode,
+                    tools_payload=tools_payload,
+                    extra=params,                   # ← только json-параметры
+                    tool_manager=self.tool_manager  # ← ToolManager теперь здесь
+                )
+                
+                req.extra['tool_manager'] = self.tool_manager
+                
+                logger.info(f"Request configured: provider={preset_settings['preset_name']}, model={effective_model}, stream={req.stream}")
+                
+                pm = ProviderManager()
+                response_text = self._execute_with_timeout(
+                    pm.generate,
+                    args=(req,),
+                    timeout=request_timeout
+                )
 
                 if response_text and tools_on and tools_mode == "legacy":
                     response_text = self._handle_legacy_tool_calls(response_text, combined_messages, stream_callback)
@@ -671,385 +764,6 @@ class ChatModel:
             else:  # user
                 formatted_messages.append(msg)
         return formatted_messages
-
-    def _generate_request_response(self, formatted_messages,stream_callback):
-        try:
-            if bool(self.settings.get("GEMINI_CASE", False)):
-                logger.info("Dispatching to Gemini request generation.")
-                return self.generate_request_gemini(formatted_messages,stream_callback)
-            else:
-                logger.info("Dispatching to common request generation.")
-                return self.generate_request_common(formatted_messages,stream_callback)
-        except Exception as e:
-            logger.error(f"Error in _generate_request_response dispatcher: {str(e)}", exc_info=True)
-            return None
-
-    # region Generation final
-
-    # =====================================================================
-    #  ➤  ПОЛНАЯ НОВАЯ ВЕРСИЯ generate_request_gemini
-    # =====================================================================
-
-    def generate_request_gemini(self,
-                                combined_messages,
-                                stream_callback: callable = None,
-                                _depth: int = 0):
-        """
-        Запрос к Gemini / Gemma REST-API c поддержкой tools.
-        При вызове инструмента делает follow-up запрос (до 3 раз).
-        """
-        logger.info(f"Gemini request: Using URL={self.api_url}, model={self.settings.get('NM_API_MODEL')}, GEMINI_CASE={bool(self.settings.get('GEMINI_CASE'))}")
-
-        # ─── 0.   Защита от бесконечной рекурсии ──────────────────────────
-        if _depth > 3:
-            logger.error("Слишком много рекурсивных tool-вызовов (Gemini).")
-            return None
-
-        # ─── 1.   Параметры модели ────────────────────────────────────────
-        params = self.get_params()
-        self.clear_endline_sim(params)
-
-        # ─── 2.   Формируем contents для Gemini ───────────────────────────
-        # Получаем текущую модель, чтобы передать ее в хелпер
-        # Применяем исправление для Gemini: последний system-промпт должен быть от user
-        self.change_last_message_to_user_for_gemini("gemini", combined_messages)
-
-
-        contents = []
-        for msg in combined_messages:
-            role = "model" if msg["role"] == "assistant" else msg["role"]
-
-            # 2.1 functionCall / functionResponse (служебные) --------------
-            if isinstance(msg.get("content"), dict) and (
-                    "functionCall" in msg["content"]
-                    or "functionResponse" in msg["content"]):
-                contents.append({"role": role, "parts": [msg["content"]]})
-                continue
-
-            # 2.2 system-промпты → user + префикс --------------------------
-            if role == "system":
-                role = "user"
-                if isinstance(msg["content"], list):
-                    # Если content уже список частей, добавляем системный промт как первую текстовую часть
-                    msg_content = [{"type": "text", "text": "[System Prompt]:"}] + msg["content"]
-                else:
-                    # Если content - строка, добавляем префикс к строке
-                    msg_content = f"[System Prompt]: {msg['content']}"
-            else:
-                msg_content = msg["content"]
-
-            contents.append({
-                "role": role,
-                "parts": self._format_multimodal_content_for_gemini(msg_content)
-            })
-
-        data = {
-            "contents": contents,
-            "generationConfig": params
-        }
-        if self.settings.get("TOOLS_ON", True):
-            data["tools"] = self.tool_manager.get_tools_payload("gemini")
-
-        headers = {"Content-Type": "application/json"}
-
-        # stream имеет смысл, только если нет tools
-        need_stream = bool(self.settings.get("ENABLE_STREAMING", False)
-                           and "tools" not in data)
-
-        logger.info(f"Gemini: POST (stream={need_stream})  depth={_depth}")
-        save_combined_messages(data, "SavedMessages/last_gemini_log")
-
-        response = requests.post(self.api_url,
-                                 headers=headers,
-                                 json=data,
-                                 stream=need_stream)
-
-        if response.status_code != 200:
-            logger.error(f"Gemini error {response.status_code}: {response.text}")
-            return None
-
-
-        # ─── 4.   Потоковая ветка ─────────────────────────────────────────
-        if need_stream:
-            return self._handle_gemini_stream(response, stream_callback)
-
-        # ─── 5.   Обычный JSON-ответ ──────────────────────────────────────
-        response_json = response.json()
-        candidate = response_json.get("candidates", [{}])[0]
-        first_part = candidate.get("content", {}).get("parts", [{}])[0]
-
-        # 5.1 Проверяем, есть ли functionCall ------------------------------
-        func_call = first_part.get("functionCall")
-        if func_call:
-            name = func_call.get("name")
-            args = func_call.get("args", {})
-            logger.info(f"Gemini вызвал инструмент {name}({args})")
-
-            tool_result = self.tool_manager.run(name, args)
-
-            # добавляем служебные сообщения и делаем follow-up
-            new_messages = copy.deepcopy(combined_messages)
-            new_messages.append(mk_tool_call_msg(name, args))
-            new_messages.append(mk_tool_resp_msg(name, tool_result))
-
-            return self.generate_request_gemini(new_messages,
-                                                stream_callback,
-                                                _depth=_depth + 1)
-
-        # 5.2 Обычный текстовый ответ -------------------------------------
-        generated_text = first_part.get("text", "")
-        logger.info("Gemini ответ получен.")
-        return generated_text or "…"
-
-    def generate_request_common(self, combined_messages, stream_callback: callable = None, _depth=0):
-        if _depth > 3:
-            return None
-
-        data = {
-            "model": self.settings.get("NM_API_MODEL"),
-            "messages": [
-                {"role": msg["role"], "content": msg["content"]} for msg in combined_messages
-            ]
-        }
-
-        # Объединяем params в data
-        params = self.get_params()
-        self.clear_endline_sim(params)
-        data.update(params)
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-
-        tools_on = self.settings.get("TOOLS_ON", True)
-        if tools_on and self.settings.get("TOOLS_MODE", "native") == "native":
-            tools_payload = self.tool_manager.get_tools_payload("deepseek")  # Или "openai", в зависимости от модели
-            if tools_payload:
-                data["tools"] = tools_payload
-                # Отключаем stream
-
-        logger.info("Отправляю запрос к RequestCommon.")
-        logger.debug(f"Отправляемые данные (RequestCommon): {data}")  # Добавляем логирование содержимого
-        save_combined_messages(data, "SavedMessages/last_request_common_log")
-        response = requests.post(self.api_url, headers=headers, json=data,
-                                 stream=bool(self.settings.get("ENABLE_STREAMING", False)))
-        
-        logger.info(response.json())
-
-        if response.status_code == 200:
-            if bool(self.settings.get("ENABLE_STREAMING", False)):
-                return self._handle_common_stream(response,stream_callback)
-            else:
-                response_data = response.json()
-
-                message = response_data.get("choices", [{}])[0].get("message", {})
-                if "tool_calls" in message:  # Обработка как в OpenAI
-                    for tool_call in message["tool_calls"]:
-                        name = tool_call["function"]["name"]
-                        args = json.loads(tool_call["function"]["arguments"])
-                        tool_result = self.tool_manager.run(name, args)
-
-                        combined_messages.append(mk_tool_call_msg(name, args))
-                        combined_messages.append(mk_tool_resp_msg(name, tool_result))
-
-                    return self.generate_request_common(combined_messages, stream_callback, _depth + 1)
-
-                # Формат ответа DeepSeek отличается от Gemini
-                generated_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                logger.info("Common request: \n" + generated_text)
-                return generated_text
-        else:
-            logger.error(f"Ошибка: {response.status_code}, {response.text}")
-            return None
-
-    def _generate_openapi_response(self, combined_messages, use_gpt4free=False,stream_callback: callable = None, _depth=0):
-        if _depth > 3:
-            logger.error("Слишком много рекурсивных tool-вызовов (OpenAI).")
-            return None
-
-        target_client = None
-        model_to_use = ""
-
-        if use_gpt4free:
-            if not self.g4f_available or not self.g4fClient:
-                logger.error("gpt4free selected, but client is not available.")
-                return None
-            target_client = self.g4fClient
-            model_to_use = self.settings.get("gpt4free_model", "gpt-3.5-turbo")
-            logger.info(f"Using g4f client with model: {model_to_use}")
-        else:
-            if not self.client:
-                logger.info("OpenAI client not initialized. Attempting to re-initialize.")
-                self.update_openai_client()
-                if not self.client:
-                    logger.error("OpenAI client is not available after re-initialization attempt.")
-                    return None
-            target_client = self.client
-            model_to_use = self.api_model
-            logger.info(f"Using OpenAI compatible client with model: {model_to_use}")
-
-        try:
-            self.change_last_message_to_user_for_gemini(model_to_use, combined_messages)
-
-            # Удаляем поле 'time' из сообщений, так как OpenAI API его не поддерживает
-            cleaned_messages = []
-            for msg in combined_messages:
-                cleaned_msg = {k: v for k, v in msg.items() if k != "time"}
-                cleaned_messages.append(cleaned_msg)
-
-            final_params = self.get_final_params(model_to_use, cleaned_messages)
-
-            # Tools
-            tools_on = self.settings.get("TOOLS_ON", True)
-            if tools_on and self.settings.get("TOOLS_MODE", "native") == "native":
-                tools_payload = self.tool_manager.get_tools_payload("openai")
-                if tools_payload:
-                    final_params["tools"] = tools_payload
-                    # Отключаем stream для tools
-                    final_params["stream"] = False
-            # Tools end
-
-            logger.info(
-                f"Requesting completion from {model_to_use} with temp={final_params.get('temperature')}, max_tokens={final_params.get('max_tokens')}, stream={bool(self.settings.get("ENABLE_STREAMING", False))}")
-            completion = target_client.chat.completions.create(**final_params, stream=bool(self.settings.get("ENABLE_STREAMING", False)))
-
-
-            if bool(self.settings.get("ENABLE_STREAMING", False)):
-                return self._handle_openai_stream(completion,stream_callback)
-            elif completion and completion.choices:
-
-                message = completion.choices[0].message
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        name = tool_call.function.name
-                        args = json.loads(tool_call.function.arguments)
-                        tool_result = self.tool_manager.run(name, args)
-
-                        # Добавляем служебные
-                        combined_messages.append(mk_tool_call_msg(name, args))
-                        combined_messages.append(mk_tool_resp_msg(name, tool_result))
-
-                    # Рекурсивный follow-up
-                    return self._generate_openapi_response(combined_messages, use_gpt4free, stream_callback, _depth + 1)
-
-                response_content = completion.choices[0].message.content
-                logger.info("Completion successful.")
-                return response_content.strip() if response_content else None
-            else:
-                logger.warning("No completion choices received or completion object is empty.")
-                if completion: self.try_print_error(completion)
-                return None
-        except Exception as e:
-            logger.error(f"Error during OpenAI/g4f API call: {str(e)}", exc_info=True)
-            if hasattr(e, 'response') and e.response:
-                logger.error(f"API Error details: Status={e.response.status_code}, Body={e.response.text}")
-            return None
-
-    # endregion
-
-    # region Stream Handlers
-    def _handle_gemini_stream(self, response, stream_callback: callable = None) -> Optional[str]:
-        """
-        Обрабатывает потоковый ответ от Gemini-совместимого API.
-        Корректно работает с JSON-объектами, которые могут приходить по частям.
-        """
-        full_response_parts = []
-        json_buffer = ''
-        decoder = json.JSONDecoder()
-        try:
-            # Используем iter_content для получения "сырых" кусков данных
-            for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                json_buffer += chunk
-                # Пытаемся парсить буфер, пока в нем есть данные
-                while json_buffer.strip():
-                    try:
-                        # raw_decode находит первый полный JSON в строке
-                        result, index = decoder.raw_decode(json_buffer)
-
-                        # Извлекаем текст из успешно распарсенного объекта
-                        generated_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[
-                            0].get("text", "")
-                        if generated_text:
-                            if stream_callback:
-                                stream_callback(generated_text)
-                            full_response_parts.append(generated_text)
-
-                        # Удаляем из буфера обработанный JSON и пробелы после него
-                        json_buffer = json_buffer[index:].lstrip()
-
-                    except json.JSONDecodeError:
-                        # Если JSON в буфере неполный, выходим из внутреннего цикла
-                        # и ждем следующий кусок данных от API
-                        break
-
-            full_text = "".join(full_response_parts)
-            logger.info("Gemini stream finished. Full text accumulated.")
-            return full_text
-        except Exception as e:
-            logger.error(f"Error processing Gemini stream: {e}", exc_info=True)
-            return "".join(full_response_parts)  # Возвращаем то, что успели собрать
-
-    def _handle_common_stream(self, response, stream_callback: callable = None) -> Optional[str]:
-        """Обрабатывает потоковый ответ в формате Server-Sent Events (SSE)."""
-        full_response_parts = []
-        try:
-            for line in response.iter_lines(decode_unicode=True):
-                if line and line.startswith('data: '):
-                    line_data = line[6:]
-                    if line_data.strip() == '[DONE]':
-                        break
-                    try:
-                        response_json = json.loads(line_data)
-                        delta = response_json.get("choices", [{}])[0].get("delta", {})
-                        decoded_chunk = delta.get("content", "")
-                        if decoded_chunk:
-                            if stream_callback:  # <<< ИСПОЛЬЗУЕМ CALLBACK
-                                stream_callback(decoded_chunk)
-                            full_response_parts.append(decoded_chunk)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Could not decode JSON from SSE streaming line: {line_data}")
-                    except (IndexError, KeyError) as e:
-                        logger.warning(f"Could not parse SSE streaming chunk structure: {line_data}, error: {e}")
-
-            full_text = "".join(full_response_parts)
-            logger.info("Common request stream finished. Full text accumulated.")
-            return full_text
-        except Exception as e:
-            logger.error(f"Error processing common (SSE) stream: {e}", exc_info=True)
-            return "".join(full_response_parts)  # Return what we have
-
-    def _handle_openai_stream(self, completion, stream_callback: callable = None) -> Optional[str]:
-        """Обрабатывает потоковый ответ от openai-python SDK."""
-        full_response_parts = []
-        try:
-            for chunk in completion:
-                response_content = ""
-                try:
-                    # Standard OpenAI / DeepSeek format
-                    if chunk.choices and chunk.choices[0].delta:
-                        response_content = chunk.choices[0].delta.content or ""
-                    # Gemini-like format (sometimes used by g4f or other proxies)
-                    elif hasattr(chunk, 'candidates') and chunk.candidates and chunk.candidates[0].content and \
-                            chunk.candidates[0].content.parts:
-                        response_content = chunk.candidates[0].content.parts[0].text or ""
-                except (AttributeError, IndexError) as e:
-                    logger.debug(f"Could not extract content from stream chunk: {chunk}, error: {e}")
-                    continue
-
-                if response_content:
-                    if stream_callback:
-                        stream_callback(response_content)
-                    full_response_parts.append(response_content)
-
-            full_text = "".join(full_response_parts)
-            logger.info("OpenAPI/g4f stream finished.")
-            return full_text
-        except Exception as e:
-            logger.error(f"Error processing OpenAI/g4f stream: {e}", exc_info=True)
-            return "".join(full_response_parts)  # Return what we have
-
-        # endregion
 
     def change_last_message_to_user_for_gemini(self, api_model, combined_messages):
         if combined_messages and ("gemini" in api_model.lower() or "gemma" in api_model.lower()) and \
@@ -1390,6 +1104,10 @@ class ChatModel:
     #endregion
 
     def GetOtherKey(self) -> str | None:
+        """
+        Получает альтернативный ключ из резервных.
+        Резервные ключи берутся из settings, так как не включены в пресеты.
+        """
         all_keys = []
         if self.api_key:
             all_keys.append(self.api_key)
@@ -1402,12 +1120,13 @@ class ChatModel:
         unique_keys = [x for x in all_keys if not (x in seen or seen.add(x))]
 
         if not unique_keys:
-            logger.warning("No API keys configured (main or reserve).")
+            logger.error("No API keys available (main from preset or reserve from settings)")
             return None
 
         if len(unique_keys) == 1:
             self.last_key = 0
             return unique_keys[0]
+        
         self.last_key = (self.last_key + 1) % len(unique_keys)
         selected_key = unique_keys[self.last_key]
 
@@ -1620,31 +1339,28 @@ class ChatModel:
     @contextmanager
     def _temporary_provider(self, provider_name: str):
         """
-        Временно подменяет ключ/URL/модель в соответствии
-        с provider_name из settings['API_PROVIDER_DATA'].
-
-        provider_name:
-            'Current' / 'Текущий' – взять активный API-провайдер,
-            любой другой — конкретное имя провайдера,
-            если данных нет – просто работаем как есть.
+        Временно подменяет настройки API на основе пресета.
+        provider_name может быть:
+        - "Current" / "Текущий" - использовать текущий пресет
+        - ID пресета (как строка) - использовать конкретный пресет
         """
-
-        # 1) какую «секцию» берём из хранилища
-        if not provider_name:
+        if not provider_name or provider_name.lower() in ("current", "текущий"):
             yield
             return
-
-        if provider_name.lower() in ("current", "текущий"):
-            provider_name = self.settings.get("API_PROVIDER", "")
-
-        provider_data_all = self.settings.get("API_PROVIDER_DATA", {})
-        cfg = provider_data_all.get(provider_name)
-
-        if not cfg:  # данных нет – ничего не меняем
+        
+        # Пытаемся интерпретировать provider_name как ID пресета
+        try:
+            preset_id = int(provider_name)
+            logger.info(f"Temporary switching to preset ID: {preset_id}")
+        except ValueError:
+            logger.warning(f"Invalid preset ID '{provider_name}', using current preset")
             yield
             return
-
-        # 2) запоминаем действующие настройки
+        
+        # Загружаем настройки пресета
+        cfg = self.load_preset_settings(preset_id)
+        
+        # Запоминаем текущие настройки
         original = {
             "api_key": self.api_key,
             "api_key_res": self.api_key_res,
@@ -1654,29 +1370,37 @@ class ChatModel:
             "NM_API_REQ": self.settings.get("NM_API_REQ"),
             "GEMINI_CASE": self.settings.get("GEMINI_CASE"),
         }
-
         
-
-        # 3) применяем конфигурацию провайдера (даже если совпадает)
-        self.apply_config({
-            "api_key": cfg.get("NM_API_KEY"),
-            "api_key_res": cfg.get("NM_API_KEY_RES"),
-            "api_url": cfg.get("NM_API_URL"),
-            "api_model": cfg.get("NM_API_MODEL"),
-            "makeRequest": cfg.get("NM_API_REQ"),
-        })
-        self.settings.set("NM_API_REQ", cfg.get("NM_API_REQ", False))
-        self.settings.set("GEMINI_CASE", cfg.get("GEMINI_CASE", False))
-
+        # Применяем настройки из пресета
+        self.api_key = cfg['api_key']
+        self.api_url = cfg['api_url']
+        self.api_model = cfg['api_model']
+        self.makeRequest = cfg['make_request']
+        self.settings.set("NM_API_REQ", cfg['make_request'])
+        self.settings.set("GEMINI_CASE", cfg['gemini_case'])
+        
+        # Обновляем OpenAI клиент с новыми настройками
+        if not cfg['is_g4f']:
+            self.update_openai_client()
+        
+        logger.info(f"Temporarily switched to preset: {cfg['preset_name']}")
+        
         try:
             yield
         finally:
-            # 4) откатываемся к исходным
-            self.apply_config(original)
+            # Восстанавливаем оригинальные настройки
+            self.api_key = original["api_key"]
+            self.api_key_res = original["api_key_res"]
+            self.api_url = original["api_url"]
+            self.api_model = original["api_model"]
+            self.makeRequest = original["makeRequest"]
             self.settings.set("NM_API_REQ", original["NM_API_REQ"])
             self.settings.set("GEMINI_CASE", original["GEMINI_CASE"])
-
-        
+            
+            # Восстанавливаем OpenAI клиент
+            self.update_openai_client()
+            
+            logger.info("Restored original API settings")
 
     def apply_config(self, cfg: dict) -> list[str]:
         """

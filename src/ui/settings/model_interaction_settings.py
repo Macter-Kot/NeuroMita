@@ -1,6 +1,6 @@
-from presets.api_presets import API_PRESETS
 from ui.gui_templates import create_settings_section, create_section_header
 from utils import getTranslationVariant as _
+from core.events import get_event_bus, Events
 
 def setup_model_interaction_controls(self, parent):
     create_section_header(parent, _("Настройки взаимодействия с моделью", "Model Interaction Settings"))
@@ -140,6 +140,14 @@ def setup_model_interaction_controls(self, parent):
         icon_name='fa5s.cogs'
     )
 
+    event_bus = get_event_bus()
+    presets_meta = event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_LIST, timeout=1.0)
+    hc_provider_names = [_('Текущий', 'Current')]
+    if presets_meta and presets_meta[0]:
+        all_presets = presets_meta[0].get('custom', [])
+        for preset in all_presets:
+            hc_provider_names.append(preset.name)
+
     history_compression_config = [
         {'label': _('Сжимать историю при достижении лимита', 'Compress history on limit'),
          'key': 'ENABLE_HISTORY_COMPRESSION_ON_LIMIT', 'type': 'checkbutton',
@@ -175,7 +183,7 @@ def setup_model_interaction_controls(self, parent):
         {'label': _('Провайдер для сжатия', 'Provider for compression'),
          'key': 'HC_PROVIDER',
          'type': 'combobox',
-         'options': list(dict.fromkeys(list(API_PRESETS.keys()) + ['Custom', 'Google AI Studio', 'ProxiApi'] + list(self.settings.get("CUSTOM_API_PRESETS", {}).keys()))),
+         'options': hc_provider_names,
          'default': _('Текущий', 'Current')},
     ]
     

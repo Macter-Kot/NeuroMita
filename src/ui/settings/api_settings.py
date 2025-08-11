@@ -554,7 +554,7 @@ def setup_api_controls(self, parent):
         
         self.test_button.setVisible(bool(preset.get('test_url')))
         
-        self.provider_label.setText(preset.get('name', ''))
+        self.provider_label.setText(f"{_("Пресет", "Preset")}: {preset.get('name', '')}")
         
         if preset.get('help_url'):
             for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
@@ -959,86 +959,170 @@ def setup_api_controls(self, parent):
     
     # 2. Панель со списком пресетов (прижата к верху)
     custom_presets_frame = QFrame()
-    custom_presets_frame.setFrameStyle(QFrame.Shape.Box)
+    custom_presets_frame.setObjectName("PresetsPanel")
+    custom_presets_frame.setFixedHeight(150)
     custom_presets_frame.setStyleSheet("""
-        QFrame {
-            border: 1px solid #cccccc;
-            border-radius: 2px;
-            padding: 5px;
+        QFrame#PresetsPanel {
+            background-color: #2b2b2b;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
         }
     """)
-    custom_presets_frame.setFixedHeight(150)
-    
+
     presets_layout = QHBoxLayout(custom_presets_frame)
-    presets_layout.setContentsMargins(5, 5, 5, 5)
-    
+    presets_layout.setContentsMargins(8, 8, 8, 8)
+    presets_layout.setSpacing(10)
+
+    # Список пресетов
     self.custom_presets_list = QListWidget()
+    self.custom_presets_list.setObjectName("PresetsList")
     self.custom_presets_list.itemSelectionChanged.connect(_on_custom_preset_selection_changed)
+    
+    self.custom_presets_list.setStyleSheet("""
+        QListWidget#PresetsList {
+            background: #1c1c1c;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            padding: 4px;
+            color: #ffffff; /* белый текст названий пресетов */
+            outline: 0;     /* убираем обводку при фокусе у списка */
+        }
+        QListWidget#PresetsList::item {
+            padding: 4px 4px;
+            color: #ffffff; /* белый текст элементов */
+            outline: 0;     /* убираем обводку при фокусе у элемента */
+        }
+        QListWidget#PresetsList::item:hover {
+            background: #23272b;
+            border-radius: 4px;
+        }
+        QListWidget#PresetsList::item:selected {
+            background: #2a2f34;
+            border-radius: 4px;
+            color: #ffffff; /* белый текст в selected */
+            outline: 0;     /* без фокуса-рамки */
+        }
+        /* Дополнительно гасим любые фокусные обводки */
+        QListWidget#PresetsList:focus,
+        QListWidget#PresetsList::item:focus,
+        QListWidget#PresetsList::item:selected:active,
+        QListWidget#PresetsList::item:selected:!active {
+            outline: 0;
+            border: none;
+        }
+    """)
+
+    
     presets_layout.addWidget(self.custom_presets_list, 1)
-    
+
+    # Вертикальная «панелька» с кнопками (сегментная как на скрине)
     buttons_layout = QVBoxLayout()
-    buttons_layout.setSpacing(2)
-    
-    button_style = """
-        QPushButton {
-            border: 1px solid #cccccc;
-            border-radius: 2px;
-            padding: 5px;
-            background-color: #f0f0f0;
+    buttons_layout.setContentsMargins(0, 0, 0, 0)
+    buttons_layout.setSpacing(0)
+
+    toolbar_btn_style = """
+        QPushButton#AddPresetButton, QPushButton#RemovePresetButton,
+        QPushButton#MoveUpButton, QPushButton#MoveDownButton {
+            background-color: #2a2a2a;
+            border: 1px solid #3c3c3c;
+            color: #e6e6e6;
+            padding: 0px;
+            min-width: 28px;
+            min-height: 28px;
         }
-        QPushButton:hover {
-            background-color: #e0e0e0;
+        QPushButton#AddPresetButton:hover, QPushButton#RemovePresetButton:hover,
+        QPushButton#MoveUpButton:hover, QPushButton#MoveDownButton:hover {
+            background-color: #333333;
         }
-        QPushButton:pressed {
-            background-color: #d0d0d0;
+        QPushButton#AddPresetButton:pressed, QPushButton#RemovePresetButton:pressed,
+        QPushButton#MoveUpButton:pressed, QPushButton#MoveDownButton:pressed {
+            background-color: #262626;
         }
-        QPushButton:disabled {
-            background-color: #f5f5f5;
-            color: #999999;
+        QPushButton#RemovePresetButton:disabled {
+            color: #6d6d6d;
+            border-color: #333333;
+        }
+
+        /* Группа + / - (верх-низ) */
+        QPushButton#AddPresetButton {
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        QPushButton#RemovePresetButton {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            border-bottom-left-radius: 6px;
+            border-bottom-right-radius: 6px;
+            margin-bottom: 8px; /* зазор как на скрине перед нижней группой */
+        }
+
+        /* Группа перемещения ↑ / ↓ */
+        QPushButton#MoveUpButton {
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        QPushButton#MoveDownButton {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            border-bottom-left-radius: 6px;
+            border-bottom-right-radius: 6px;
         }
     """
-    
+
     self.add_preset_btn = QPushButton()
-    self.add_preset_btn.setIcon(qta.icon('fa5s.plus', color='#27ae60'))
+    self.add_preset_btn.setObjectName("AddPresetButton")
+    self.add_preset_btn.setIcon(qta.icon('fa5s.plus', color='#e6e6e6'))
     self.add_preset_btn.setToolTip(_("Добавить пресет", "Add preset"))
     self.add_preset_btn.clicked.connect(_add_custom_preset)
-    self.add_preset_btn.setFixedSize(30, 30)
-    self.add_preset_btn.setStyleSheet(button_style)
-    
+    self.add_preset_btn.setFixedSize(28, 28)
+    self.add_preset_btn.setIconSize(QSize(14, 14))
+    self.add_preset_btn.setStyleSheet(toolbar_btn_style)
+
     self.remove_preset_btn = QPushButton()
-    self.remove_preset_btn.setIcon(qta.icon('fa5s.minus', color='#e74c3c'))
+    self.remove_preset_btn.setObjectName("RemovePresetButton")
+    self.remove_preset_btn.setIcon(qta.icon('fa5s.minus', color='#e6e6e6'))
     self.remove_preset_btn.setToolTip(_("Удалить пресет", "Remove preset"))
     self.remove_preset_btn.clicked.connect(_remove_custom_preset)
     self.remove_preset_btn.setEnabled(False)
-    self.remove_preset_btn.setFixedSize(30, 30)
-    self.remove_preset_btn.setStyleSheet(button_style)
-    
+    self.remove_preset_btn.setFixedSize(28, 28)
+    self.remove_preset_btn.setIconSize(QSize(14, 14))
+    self.remove_preset_btn.setStyleSheet(toolbar_btn_style)
+
     self.move_up_btn = QPushButton()
-    self.move_up_btn.setIcon(qta.icon('fa5s.arrow-up', color='#3498db'))
+    self.move_up_btn.setObjectName("MoveUpButton")
+    self.move_up_btn.setIcon(qta.icon('fa5s.arrow-up', color='#e6e6e6'))
     self.move_up_btn.setToolTip(_("Переместить вверх", "Move up"))
     self.move_up_btn.clicked.connect(_move_preset_up)
     self.move_up_btn.setEnabled(False)
-    self.move_up_btn.setFixedSize(30, 30)
-    self.move_up_btn.setStyleSheet(button_style)
-    
+    self.move_up_btn.setFixedSize(28, 28)
+    self.move_up_btn.setIconSize(QSize(14, 14))
+    self.move_up_btn.setStyleSheet(toolbar_btn_style)
+
     self.move_down_btn = QPushButton()
-    self.move_down_btn.setIcon(qta.icon('fa5s.arrow-down', color='#3498db'))
+    self.move_down_btn.setObjectName("MoveDownButton")
+    self.move_down_btn.setIcon(qta.icon('fa5s.arrow-down', color='#e6e6e6'))
     self.move_down_btn.setToolTip(_("Переместить вниз", "Move down"))
     self.move_down_btn.clicked.connect(_move_preset_down)
     self.move_down_btn.setEnabled(False)
-    self.move_down_btn.setFixedSize(30, 30)
-    self.move_down_btn.setStyleSheet(button_style)
-    
+    self.move_down_btn.setFixedSize(28, 28)
+    self.move_down_btn.setIconSize(QSize(14, 14))
+    self.move_down_btn.setStyleSheet(toolbar_btn_style)
+
     buttons_layout.addWidget(self.add_preset_btn)
     buttons_layout.addWidget(self.remove_preset_btn)
+    buttons_layout.addSpacing(6)
     buttons_layout.addWidget(self.move_up_btn)
     buttons_layout.addWidget(self.move_down_btn)
     buttons_layout.addStretch()
-    
+
     presets_layout.addLayout(buttons_layout)
-    
+
     main_layout.addWidget(custom_presets_frame)
-    
+
     # Контейнер для настроек (скрыт по умолчанию)
     self.api_settings_container = QWidget()
     api_container_layout = QVBoxLayout(self.api_settings_container)

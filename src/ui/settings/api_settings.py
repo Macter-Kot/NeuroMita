@@ -271,6 +271,10 @@ def setup_api_controls(self, parent):
         data['key'] = self.api_key_entry.text()
         data['known_models'] = self.current_preset_data.get('known_models', [])
         
+        # Сохраняем резервные ключи как массив
+        reserve_keys_text = self.nm_api_key_res_label.toPlainText() if hasattr(self, 'nm_api_key_res_label') else ""
+        data['reserve_keys'] = [k.strip() for k in reserve_keys_text.split('\n') if k.strip()]
+        
         if self.template_combo.currentData():
             data['base'] = self.template_combo.currentData()
         else:
@@ -287,7 +291,7 @@ def setup_api_controls(self, parent):
                 item.update_changes_indicator(False)
         
         return new_id[0] if new_id else None
-    
+
     def _test_connection():
         if self.current_preset_data and self.current_preset_data.get('test_url'):
             self.test_button.setEnabled(False)
@@ -467,6 +471,11 @@ def setup_api_controls(self, parent):
         self.api_model_entry.setText(self.original_preset_state.get('model', ''))
         self.api_key_entry.setText(self.original_preset_state.get('key', ''))
         
+        # Восстанавливаем резервные ключи
+        if hasattr(self, 'nm_api_key_res_label'):
+            reserve_keys = self.original_preset_state.get('reserve_keys', [])
+            self.nm_api_key_res_label.setPlainText('\n'.join(reserve_keys))
+        
         # Восстанавливаем шаблон
         original_base = self.original_preset_state.get('base')
         if original_base:
@@ -515,6 +524,14 @@ def setup_api_controls(self, parent):
         self.api_url_entry.setText(url)
         self.api_model_entry.setText(model)
         self.api_key_entry.setText(key)
+        
+        # Загружаем резервные ключи
+        if hasattr(self, 'nm_api_key_res_label'):
+            reserve_keys = state.get('reserve_keys', preset.get('reserve_keys', []))
+            if isinstance(reserve_keys, list):
+                self.nm_api_key_res_label.setPlainText('\n'.join(reserve_keys))
+            else:
+                self.nm_api_key_res_label.setPlainText('')
         
         if self.gemini_case_checkbox and preset.get('gemini_case') is None:
             self.gemini_case_checkbox.setChecked(state.get('gemini_case', False))
@@ -593,6 +610,14 @@ def setup_api_controls(self, parent):
             'key': self.api_key_entry.text(),
             'base': self.template_combo.currentData()
         }
+        
+        # Добавляем резервные ключи
+        if hasattr(self, 'nm_api_key_res_label'):
+            reserve_keys_text = self.nm_api_key_res_label.toPlainText()
+            state['reserve_keys'] = [k.strip() for k in reserve_keys_text.split('\n') if k.strip()]
+        else:
+            state['reserve_keys'] = []
+        
         # Включаем gemini_case если он редактируемый (None в пресете)
         if self.gemini_case_checkbox and self.current_preset_data.get('gemini_case') is None:
             state['gemini_case'] = self.gemini_case_checkbox.isChecked()
@@ -665,6 +690,27 @@ def setup_api_controls(self, parent):
                                 widget.setText(_('API Ключ', 'API Key'))
                                 widget.setStyleSheet("")
                             break
+        
+        # НОВОЕ: Обновляем метку Reserve Keys с индикатором изменений
+        if hasattr(self, 'nm_api_key_res_label_frame'):
+            reserve_layout = self.nm_api_key_res_label_frame.layout()
+            if reserve_layout and reserve_layout.count() > 0:
+                # Ищем метку в layout
+                for i in range(reserve_layout.count()):
+                    widget = reserve_layout.itemAt(i).widget()
+                    if isinstance(widget, QLabel) and not widget.openExternalLinks():
+                        # Сравниваем массивы резервных ключей
+                        current_reserve = current_state.get('reserve_keys', [])
+                        original_reserve = self.original_preset_state.get('reserve_keys', [])
+                        reserve_changed = current_reserve != original_reserve
+                        
+                        if reserve_changed:
+                            widget.setText(_('Резервные ключи*', 'Reserve keys*'))
+                            widget.setStyleSheet("color: #f39c12; font-weight: bold;")
+                        else:
+                            widget.setText(_('Резервные ключи', 'Reserve keys'))
+                            widget.setStyleSheet("")
+                        break
         
         # Обновляем состояние кнопок
         self.save_preset_button.setEnabled(has_changes)
@@ -1359,6 +1405,7 @@ def setup_api_controls(self, parent):
     self.api_model_entry.textChanged.connect(_on_field_changed)
     self.api_key_entry.textChanged.connect(_on_key_changed)
     self.api_url_entry.textChanged.connect(_on_field_changed)
+    self.nm_api_key_res_label.textChanged.connect(_on_field_changed)
     
     if self.gemini_case_checkbox:
         self.gemini_case_checkbox.stateChanged.connect(_on_gemini_case_changed)

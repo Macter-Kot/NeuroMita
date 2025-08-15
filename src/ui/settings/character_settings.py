@@ -100,7 +100,7 @@ def change_character_actions(gui, character=None):
         gui.prompt_pack_combobox.clear()
         gui.prompt_pack_combobox.addItems(new_options)
 
-        saved_key = f"PROMPT_SET"
+        saved_key = f"PROMPT_SET_{selected_character}"
         saved_prompt = gui.settings.get(saved_key, "")
         if saved_prompt and saved_prompt in new_options:
             gui.prompt_pack_combobox.setCurrentText(saved_prompt)

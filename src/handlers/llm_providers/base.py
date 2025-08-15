@@ -8,7 +8,6 @@ class LLMRequest:
     messages: List[Dict]
     api_key: Optional[str] = None
     api_url: Optional[str] = None
-    api_key_res: Optional[str] = None
     make_request: bool = False
     gemini_case: bool = False
     g4f_flag: bool = False

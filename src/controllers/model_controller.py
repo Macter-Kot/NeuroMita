@@ -66,27 +66,12 @@ class ModelController:
         if 'makeRequest' in data:
             self.model.makeRequest = data['makeRequest']
             
-        if self.model.api_key or self.model.api_url:
-            self.model.update_openai_client()
-            
     def _on_setting_changed(self, event: Event):
         key = event.data.get('key')
         value = event.data.get('value')
         
         if key == "CHARACTER":
             self.change_character(value)
-        elif key == "NM_API_MODEL":
-            self.model.api_model = value.strip()
-        elif key == "NM_API_KEY":
-            self.model.api_key = value.strip()
-            self.model.update_openai_client()
-        elif key == "NM_API_URL":
-            self.model.api_url = value.strip()
-            self.model.update_openai_client()
-        elif key == "NM_API_REQ":
-            self.model.makeRequest = bool(value)
-        elif key == "gpt4free_model":
-            self.model.gpt4free_model = value.strip()
         elif key == "MODEL_MAX_RESPONSE_TOKENS":
             self.model.max_response_tokens = int(value)
         elif key == "MODEL_TEMPERATURE":
@@ -135,7 +120,7 @@ class ModelController:
             self.model.token_cost_output = float(value)
         elif key == "MAX_MODEL_TOKENS":
             self.model.max_model_tokens = int(value)
-            
+                
     def change_character(self, character):
         if character:
             self.model.current_character_to_change = character

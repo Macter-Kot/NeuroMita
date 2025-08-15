@@ -4,26 +4,21 @@ import concurrent.futures
 import datetime
 import json
 import time
-from contextlib import contextmanager
-import copy
-import requests
 #import tiktoken
-from openai import OpenAI
 import re
 import importlib
 from typing import List, Dict, Any, Optional
-import queue
-import os  # Added for os.environ
 from io import BytesIO # Добавлено для обработки изображений
 from tools.manager import ToolManager,mk_tool_call_msg,mk_tool_resp_msg
 from main_logger import logger
 
-from characters import CrazyMita, KindMita, ShortHairMita, CappyMita, MilaMita, CreepyMita, SleepyMita, GameMaster, \
-    SpaceCartridge, DivanCartridge  # Updated imports
-from characters.character import Character  # Character base
+from characters import CrazyMita, KindMita, ShortHairMita, \
+    CappyMita, MilaMita, CreepyMita, SleepyMita, GameMaster, \
+    SpaceCartridge, DivanCartridge, GhostMita, Mitaphone
+from characters.character import Character
 from utils.pip_installer import PipInstaller
 
-from utils import SH, save_combined_messages, calculate_cost_for_combined_messages # Keep utils
+from utils import SH, save_combined_messages # Keep utils
 from utils import _ as translate
 
 from core.events import get_event_bus, Events
@@ -37,33 +32,17 @@ class ChatModel:
         self.settings = settings
         self.event_bus = get_event_bus()
         
-        # Подгружаем текущий пресет и устанавливаем параметры
+        # Подгружаем текущий пресет для инициализации параметров по умолчанию
         preset_settings = self.load_preset_settings()
         logger.info(f"Initializing ChatModel with preset: {preset_settings['preset_name']}")
         
-        self.api_key = preset_settings['api_key']
-        self.api_key_res = self.settings.get("NM_API_KEY_RES", "")  # Резервные из settings
-        self.api_url = preset_settings['api_url']
+        # Сохраняем только для логирования и legacy-кода
         self.api_model = preset_settings['api_model']
-        self.makeRequest = preset_settings['make_request']
         self.gpt4free_model = preset_settings['g4f_model'] if preset_settings['is_g4f'] else self.settings.get("gpt4free_model", "")
         
-        # Инициализация g4f только если пресет с is_g4f=True
-        if preset_settings['is_g4f']:
-            self._initialize_g4f()
+        self._initialize_g4f()
         
         self.tool_manager = ToolManager()
-
-        try:
-            if self.api_key and self.api_url:
-                self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
-                logger.info("OpenAI client initialized successfully.")
-            else:
-                logger.warning("No API key or URL in preset - OpenAI client not initialized")
-                self.client = None
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {e}")
-            self.client = None
 
         try:
             import tiktoken
@@ -140,7 +119,62 @@ class ChatModel:
         self.HideAiData = True
         self.max_request_attempts = int(self.settings.get("MODEL_MESSAGE_ATTEMPTS_COUNT", 5))
         self.request_delay = float(self.settings.get("MODEL_MESSAGE_ATTEMPTS_TIME", 0.20))
+
+    def load_preset_settings(self, preset_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Загружает настройки из пресета по ID.
+        Если preset_id не указан, берёт текущий из LAST_API_PRESET_ID.
+        """
+        if preset_id is None:
+            preset_id = self.settings.get("LAST_API_PRESET_ID", 0)
+            logger.info(f"Loading current preset ID: {preset_id}")
+        else:
+            logger.info(f"Loading specific preset ID: {preset_id}")
         
+        preset_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL, {'id': preset_id}, timeout=1.0)
+        if preset_data and preset_data[0]:
+            preset = preset_data[0]
+            logger.info(f"Preset {preset_id} loaded successfully: {preset.get('name', 'Unknown')}")
+            
+            # Если есть url_tpl, собираем URL
+            url = preset.get('url', '')
+            if preset.get('url_tpl'):
+                model = preset.get('default_model', '')
+                url = preset['url_tpl'].format(model=model) if '{model}' in preset['url_tpl'] else preset['url_tpl']
+                if preset.get('add_key') and preset.get('key'):
+                    sep = '&' if '?' in url else '?'
+                    url = f"{url}{sep}key={preset['key']}"
+            
+            return {
+                'api_key': preset.get('key', ''),
+                'api_url': url,
+                'api_model': preset.get('default_model', ''),
+                'make_request': preset.get('use_request', False),
+                'gemini_case': preset.get('gemini_case', False),
+                'is_g4f': preset.get('is_g4f', False),
+                'g4f_model': preset.get('default_model', '') if preset.get('is_g4f') else '',
+                'preset_name': preset.get('name', 'Unknown'),
+                'reserve_keys': preset.get('reserve_keys', []),  # Добавляем резервные ключи из пресета
+            }
+        else:
+            logger.error(f"Failed to load preset ID {preset_id}: using fallback from settings")
+            # Для обратной совместимости берем резервные ключи из settings
+            reserve_keys_str = self.settings.get("NM_API_KEY_RES", "")
+            reserve_keys = [key.strip() for key in reserve_keys_str.split() if key.strip()] if reserve_keys_str else []
+            
+            return {
+                'api_key': self.settings.get("NM_API_KEY", ""),
+                'api_url': self.settings.get("NM_API_URL", ""),
+                'api_model': self.settings.get("NM_API_MODEL", ""),
+                'make_request': self.settings.get("NM_API_REQ", False),
+                'gemini_case': self.settings.get("GEMINI_CASE", False),
+                'is_g4f': self.settings.get("gpt4free", False),
+                'g4f_model': self.settings.get("gpt4free_model", ""),
+                'preset_name': 'Fallback',
+                'reserve_keys': reserve_keys,
+            }
+
+
     def _initialize_g4f(self):
         logger.info("Проверка и инициализация g4f (после возможного обновления при запуске)...")
         try:
@@ -207,60 +241,34 @@ class ChatModel:
             self.g4f_available = False
 
     def init_characters(self):
-        self.crazy_mita_character = CrazyMita("Crazy", "Crazy Mita", "/speaker mita", short_name="CrazyMita", miku_tts_name="/set_person CrazyMita", silero_turn_off_video=True)
-        self.kind_mita_character = KindMita("Kind", "Kind Mita", "/speaker kind", short_name="MitaKind", miku_tts_name="/set_person KindMita", silero_turn_off_video=True)
-        self.cappy_mita_character = CappyMita("Cappy","Cappy Mita", "/speaker cap", short_name="CappieMita", miku_tts_name="/set_person CapMita", silero_turn_off_video=True)
-        self.shorthair_mita_character = ShortHairMita("ShortHair","ShortHair Mita", "/speaker shorthair", short_name="ShorthairMita", miku_tts_name="/set_person ShortHairMita", silero_turn_off_video=True)
-        self.mila_character = MilaMita("Mila","Mila", "/speaker mila", short_name="Mila", miku_tts_name="/set_person MilaMita", silero_turn_off_video=True)
-        self.sleepy_character = SleepyMita("Sleepy","Sleepy Mita", "/speaker dream", short_name="SleepyMita", miku_tts_name="/set_person SleepyMita", silero_turn_off_video=True)
-        self.creepy_character = CreepyMita("Creepy","Creepy Mita", "/speaker ghost", short_name="GhostMita", miku_tts_name="/set_person GhostMita", silero_turn_off_video=True)
-
-        self.cart_space = SpaceCartridge("Cart_portal", "Cart_portal", "/speaker wheatley", short_name="Player", miku_tts_name="/set_person Player", silero_turn_off_video=True,is_cartridge=True)
-        self.cart_divan = DivanCartridge("Cart_divan", "Cart_divan", "/speaker engineer", short_name="Player", miku_tts_name="/set_person Player", silero_turn_off_video=True,is_cartridge=True)
-        self.GameMaster = GameMaster("GameMaster", "GameMaster", "/speaker dryad", short_name="PhoneMita", miku_tts_name="/set_person PhoneMita", silero_turn_off_video=True)
-
-        self.mitaphone = Character("Mitaphone", "Mitaphone", "/speaker dryad", short_name="PhoneMita", miku_tts_name="/set_person PhoneMita", silero_turn_off_video=True)
-
-        self.characters = {
-            self.crazy_mita_character.char_id: self.crazy_mita_character,
-            self.kind_mita_character.char_id: self.kind_mita_character,
-            self.cappy_mita_character.char_id: self.cappy_mita_character,
-            self.shorthair_mita_character.char_id: self.shorthair_mita_character,
-            self.mila_character.char_id: self.mila_character,
-            self.sleepy_character.char_id: self.sleepy_character,
-            self.creepy_character.char_id: self.creepy_character,
-            self.cart_space.char_id: self.cart_space,
-            self.cart_divan.char_id: self.cart_divan,
-            self.GameMaster.char_id: self.GameMaster,
-            self.mitaphone.char_id: self.mitaphone,
-        }
+        character_classes = [
+            CrazyMita,
+            KindMita,
+            CappyMita,
+            ShortHairMita,
+            MilaMita,
+            SleepyMita,
+            CreepyMita,
+            GhostMita,
+            SpaceCartridge,
+            DivanCartridge,
+            GameMaster,
+            Mitaphone
+        ]
+        
+        self.characters = {}
+        for char_class in character_classes:
+            character = char_class()
+            self.characters[character.char_id] = character
+        
+        self.crazy_mita_character = self.characters.get("Crazy")
+        self.GameMaster = self.characters.get("GameMaster")
+        
         self.current_character = self.characters.get(self.current_character_to_change) or self.crazy_mita_character
 
     def get_all_mitas(self):
         logger.info(f"Available characters: {list(self.characters.keys())}")
         return list(self.characters.keys())
-
-    def update_openai_client(self, reserve_key_token=None):
-        logger.debug("Attempting to update OpenAI client.")
-        key_to_use = reserve_key_token if reserve_key_token else self.api_key
-
-        if not key_to_use:
-            logger.error("No API key available to update OpenAI client.")
-            self.client = None
-            return
-
-        try:
-            if self.api_url:
-                logger.debug(f"Using API key (masked): {SH(key_to_use)} and base URL: {self.api_url}")
-                self.client = OpenAI(api_key=key_to_use, base_url=self.api_url)
-            else:
-                logger.debug(f"Using API key (masked): {SH(key_to_use)} (no custom base URL)")
-                self.client = OpenAI(api_key=key_to_use)
-            logger.debug("OpenAI client updated successfully.")
-        except Exception as e:
-            logger.error(f"Failed to update OpenAI client: {e}")
-            self.client = None
-
     
     def generate_response(
             self,
@@ -379,86 +387,83 @@ class ChatModel:
             user_message_for_history["time"] = datetime.datetime.now().strftime("%d.%m.%Y_%H.%M")
             llm_messages_history_limited.append(user_message_for_history)
 
-
+        # Получаем preset_id для персонажа
         char_provider = self.get_character_provider()
-        with self._temporary_provider(char_provider):
-            # 8. Генерация ответа -----------------------------------------------------------
+        preset_id = None
+        if char_provider != "Current":
             try:
-                llm_response_content, success = self._generate_chat_response(combined_messages,stream_callback)
+                preset_id = int(char_provider)
+                logger.info(f"Using character-specific preset ID: {preset_id}")
+            except ValueError:
+                logger.warning(f"Invalid preset ID in CHAR_PROVIDER: {char_provider}, using current")
+        
+        # 8. Генерация ответа -----------------------------------------------------------
+        try:
+            llm_response_content, success = self._generate_chat_response(combined_messages, stream_callback, preset_id)
 
-                if not success or not llm_response_content:
-                    logger.warning("LLM generation failed or returned empty.")
-                    self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': translate("Не удалось получить ответ.", "Text generation failed.")})
-                    return None
+            if not success or not llm_response_content:
+                logger.warning("LLM generation failed or returned empty.")
+                self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': translate("Не удалось получить ответ.", "Text generation failed.")})
+                return None
 
-                processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
-                                                                                            self.settings.get("SAVE_MISSED_MEMORY",False))
+            processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
+                                                                                        self.settings.get("SAVE_MISSED_MEMORY",False))
 
-                # --- Встраивание «command replacer» (embeddings) ---------------------------
-                final_response_text = processed_response_text
-                try:
-                    use_cmd_replacer  = self.settings.get("USE_COMMAND_REPLACER", False)
-                    # enable_by_default = os.environ.get("ENABLE_COMMAND_REPLACER_BY_DEFAULT", "0") == "1"
+            # --- Встраивание «command replacer» (embeddings) ---------------------------
+            final_response_text = processed_response_text
+            try:
+                use_cmd_replacer  = self.settings.get("USE_COMMAND_REPLACER", False)
 
-                    if use_cmd_replacer:
-                        if not hasattr(self, 'model_handler'):
-                            from handlers.embedding_handler import EmbeddingModelHandler
-                            self.model_handler = EmbeddingModelHandler()
-                        if not hasattr(self, 'parser'):
-                            from utils.command_parser import CommandParser
-                            self.parser = CommandParser(model_handler=self.model_handler)
+                if use_cmd_replacer:
+                    if not hasattr(self, 'model_handler'):
+                        from handlers.embedding_handler import EmbeddingModelHandler
+                        self.model_handler = EmbeddingModelHandler()
+                    if not hasattr(self, 'parser'):
+                        from utils.command_parser import CommandParser
+                        self.parser = CommandParser(model_handler=self.model_handler)
 
-                        min_sim     = float(self.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
-                        cat_switch  = float(self.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
-                        skip_comma  = bool (self.settings.get("SKIP_COMMA_PARAMETERS", True))
+                    min_sim     = float(self.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
+                    cat_switch  = float(self.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
+                    skip_comma  = bool (self.settings.get("SKIP_COMMA_PARAMETERS", True))
 
-                        logger.info(f"Attempting command replacement on: {processed_response_text[:100]}...")
-                        final_response_text, _ = self.parser.parse_and_replace(
-                            processed_response_text,
-                            min_similarity_threshold=min_sim,
-                            category_switch_threshold=cat_switch,
-                            skip_comma_params=skip_comma
-                        )
-                        logger.info(f"After command replacement: {final_response_text[:100]}...")
-                    else:
-                        logger.info("Command replacer disabled.")
-                except Exception as ex:
-                    logger.error(f"Error during command replacement: {ex}", exc_info=True)
-                    # остаётся processed_response_text
+                    logger.info(f"Attempting command replacement on: {processed_response_text[:100]}...")
+                    final_response_text, _ = self.parser.parse_and_replace(
+                        processed_response_text,
+                        min_similarity_threshold=min_sim,
+                        category_switch_threshold=cat_switch,
+                        skip_comma_params=skip_comma
+                    )
+                    logger.info(f"After command replacement: {final_response_text[:100]}...")
+                else:
+                    logger.info("Command replacer disabled.")
+            except Exception as ex:
+                logger.error(f"Error during command replacement: {ex}", exc_info=True)
 
-                # 9. Сохраняем историю / TTS --------------------------------------------------
-                assistant_message_content = final_response_text
+            # 9. Сохраняем историю / TTS --------------------------------------------------
+            assistant_message_content = final_response_text
 
-                # Проверяем настройку замены изображений заглушками
-                if bool(self.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
-                    logger.info("Настройка REPLACE_IMAGES_WITH_PLACEHOLDERS включена. Заменяю изображения заглушками.")
-                    # Здесь предполагается, что final_response_text - это строка.
-                    # Если модель может возвращать изображения в ответе, нужно будет адаптировать эту логику.
-                    # Пока что просто добавляем заглушку, если в ответе есть что-то похожее на изображение (хотя модель не должна их генерировать в текстовом ответе).
-                    # В будущем, если модель сможет генерировать изображения, нужно будет обрабатывать мультимодальный контент и здесь.
-                    # Для текущей реализации, где модель возвращает только текст, эта заглушка не сработает для изображений,
-                    # но она готова к будущим изменениям, если модель начнет возвращать структурированный контент с изображениями.
-                    # Пока что, если в ответе есть URL или base64, мы можем это заменить.
-                    # Это очень грубая эвристика для текстового ответа.
-                    assistant_message_content = re.sub(r'https?://\S+\.(?:png|jpg|jpeg|gif|bmp)|data:image/\S+;base64,\S+', '[Изображение]', assistant_message_content)
+            # Проверяем настройку замены изображений заглушками
+            if bool(self.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
+                logger.info("Настройка REPLACE_IMAGES_WITH_PLACEHOLDERS включена. Заменяю изображения заглушками.")
+                assistant_message_content = re.sub(r'https?://\S+\.(?:png|jpg|jpeg|gif|bmp)|data:image/\S+;base64,\S+', '[Изображение]', assistant_message_content)
 
 
-                assistant_message = {"role": "assistant", "content": assistant_message_content}
-                assistant_message["time"] = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+            assistant_message = {"role": "assistant", "content": assistant_message_content}
+            assistant_message["time"] = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
 
-                llm_messages_history_limited.append(assistant_message)
+            llm_messages_history_limited.append(assistant_message)
 
-                self.current_character.save_character_state_to_history(llm_messages_history_limited)
+            self.current_character.save_character_state_to_history(llm_messages_history_limited)
 
 
-                self.event_bus.emit(Events.Model.ON_SUCCESSFUL_RESPONSE)
-                logger.success(translate("Получен успешный ответ от API.", "Successful response from API."))
-                return final_response_text
+            self.event_bus.emit(Events.Model.ON_SUCCESSFUL_RESPONSE)
+            logger.success(translate("Получен успешный ответ от API.", "Successful response from API."))
+            return final_response_text
 
-            except Exception as e:
-                logger.error(f"Error during LLM response generation or processing: {e}", exc_info=True)
-                self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': str(e)})
-                return f"Ошибка: {e}"
+        except Exception as e:
+            logger.error(f"Error during LLM response generation or processing: {e}", exc_info=True)
+            self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': str(e)})
+            return f"Ошибка: {e}"
 
     def process_history_compression(self,llm_messages_history):
         """Сжимает старые воспоминания"""
@@ -595,13 +600,13 @@ class ChatModel:
                 'g4f_model': self.settings.get("gpt4free_model", ""),
                 'preset_name': 'Fallback',
             }
-
-    def _generate_chat_response(self, combined_messages, stream_callback: callable = None):
+        
+    def _generate_chat_response(self, combined_messages, stream_callback: callable = None, preset_id: Optional[int] = None):
         max_attempts = self.max_request_attempts
         retry_delay = self.request_delay
         request_timeout = 45
 
-        self._log_generation_start()
+        self._log_generation_start(preset_id)
 
         self.event_bus.emit(Events.Model.ON_STARTED_RESPONSE_GENERATION)
 
@@ -630,21 +635,15 @@ class ChatModel:
                 from handlers.llm_providers.base import LLMRequest
                 
                 # Подгружаем пресет для текущей попытки
-                char_provider = self.get_character_provider()
-                preset_id = None
-                if char_provider != "Current":
-                    try:
-                        preset_id = int(char_provider)
-                        logger.info(f"Using character-specific preset ID: {preset_id}")
-                    except ValueError:
-                        logger.warning(f"Invalid preset ID in CHAR_PROVIDER: {char_provider}, using current")
-                
                 preset_settings = self.load_preset_settings(preset_id)
                 
-                # Обработка резервных ключей
-                if attempt > 1 and self.api_key_res:
-                    new_key = self.GetOtherKey()
-                    if new_key:
+                # Обработка резервных ключей из пресета
+                current_api_key = preset_settings['api_key']
+                reserve_keys = preset_settings.get('reserve_keys', [])
+                
+                if attempt > 1 and reserve_keys:
+                    new_key = self.GetReserveKey(current_api_key, reserve_keys, attempt - 1)
+                    if new_key and new_key != current_api_key:
                         logger.info(f"Attempt {attempt}: switching to reserve key (masked): {SH(new_key)}")
                         preset_settings['api_key'] = new_key
                         # Обновляем URL если нужно (для Gemini с ?key=)
@@ -674,12 +673,12 @@ class ChatModel:
                 if preset_settings['make_request'] and preset_settings['gemini_case']:
                     formatted_messages = self._format_messages_for_gemini(combined_messages)
                 
+                # api_key_res больше не передаем, так как резервные ключи теперь в пресете
                 req = LLMRequest(
                     model=effective_model,
                     messages=formatted_messages,
                     api_key=preset_settings['api_key'],
                     api_url=preset_settings['api_url'],
-                    api_key_res=self.api_key_res,
                     make_request=preset_settings['make_request'],
                     gemini_case=preset_settings['gemini_case'],
                     g4f_flag=use_gpt4free_for_this_attempt,
@@ -689,8 +688,8 @@ class ChatModel:
                     tools_on=tools_on,
                     tools_mode=tools_mode,
                     tools_payload=tools_payload,
-                    extra=params,                   # ← только json-параметры
-                    tool_manager=self.tool_manager  # ← ToolManager теперь здесь
+                    extra=params,
+                    tool_manager=self.tool_manager
                 )
                 
                 req.extra['tool_manager'] = self.tool_manager
@@ -742,17 +741,52 @@ class ChatModel:
                 logger.error(f"Exception in function {func.__name__} executed with timeout: {e}")
                 raise
 
-    def _log_generation_start(self):
+    def GetReserveKey(self, current_key: str, reserve_keys: List[str], attempt_index: int) -> str | None:
+        """
+        Получает резервный ключ из списка.
+        current_key - текущий ключ из пресета
+        reserve_keys - список резервных ключей из пресета
+        attempt_index - индекс попытки (0-based)
+        """
+        all_keys = []
+        if current_key:
+            all_keys.append(current_key)
+        
+        # Добавляем резервные ключи из пресета
+        if reserve_keys:
+            all_keys.extend(reserve_keys)
+
+        seen = set()
+        unique_keys = [x for x in all_keys if not (x in seen or seen.add(x))]
+
+        if not unique_keys:
+            logger.error("No API keys available")
+            return None
+
+        if len(unique_keys) == 1:
+            return unique_keys[0]
+        
+        # Циклический перебор ключей
+        key_index = attempt_index % len(unique_keys)
+        selected_key = unique_keys[key_index]
+
+        logger.info(
+            f"Selected API key index: {key_index} (masked: {SH(selected_key)}) from {len(unique_keys)} unique keys.")
+        return selected_key
+
+
+    def _log_generation_start(self, preset_id: Optional[int] = None):
         logger.info("Preparing to generate LLM response.")
+        preset_settings = self.load_preset_settings(preset_id)
+        logger.info(f"Using preset: {preset_settings['preset_name']}")
         logger.info(f"Max Response Tokens: {self.max_response_tokens}, Temperature: {self.temperature}")
         logger.info(
             f"Presence Penalty: {self.presence_penalty} (Used: {bool(self.settings.get('USE_MODEL_PRESENCE_PENALTY'))})")
-        logger.info(f"API URL: {self.api_url}, API Model: {self.api_model}")
-        logger.info(f"g4f Enabled: {bool(self.settings.get('gpt4free'))}, g4f Model: {self.gpt4free_model}")
-        logger.info(f"Custom Request (NM_API_REQ): {bool(self.settings.get('NM_API_REQ', False))}")
-        if bool(self.settings.get('NM_API_REQ', False)):
-            logger.info(f"  Custom Request Model (NM_API_MODEL): {self.settings.get('NM_API_MODEL')}")
-            logger.info(f"  Gemini Case for Custom Req: {bool(self.settings.get('GEMINI_CASE', False))}")
+        logger.info(f"API URL: {preset_settings['api_url']}, API Model: {preset_settings['api_model']}")
+        logger.info(f"g4f Enabled: {preset_settings['is_g4f']}, g4f Model: {preset_settings.get('g4f_model', 'N/A')}")
+        logger.info(f"Custom Request: {preset_settings['make_request']}")
+        if preset_settings['make_request']:
+            logger.info(f"  Gemini Case: {preset_settings['gemini_case']}")
 
     def _format_messages_for_gemini(self, combined_messages):
         formatted_messages = []
@@ -968,10 +1002,17 @@ class ChatModel:
             # 4. Вызов LLM для получения сжатой сводки
             system_message = {"role": "system", "content": full_prompt}
 
+            # Получаем preset_id для сжатия истории
             hc_provider = self.settings.get("HC_PROVIDER", "Current")
-            with self._temporary_provider(hc_provider):
-                compressed_summary, success = self._generate_chat_response(
-                    [system_message])  # ← как было
+            preset_id = None
+            if hc_provider != "Current":
+                try:
+                    preset_id = int(hc_provider)
+                    logger.info(f"Using history compression preset ID: {preset_id}")
+                except ValueError:
+                    logger.warning(f"Invalid preset ID in HC_PROVIDER: {hc_provider}, using current")
+
+            compressed_summary, success = self._generate_chat_response([system_message], preset_id=preset_id)
 
             if success and compressed_summary:
                 logger.info("История успешно сжата.")
@@ -1002,16 +1043,17 @@ class ChatModel:
         """
         Возвращает максимальное количество токенов для текущей активной модели.
         """
-        current_model = self.api_model
-        if bool(self.settings.get("gpt4free")):
-            current_model = self.gpt4free_model
-        elif bool(self.settings.get("NM_API_REQ", False)):
-            current_model = self.settings.get("NM_API_MODEL")
+        # Берем модель из текущего пресета
+        preset_settings = self.load_preset_settings()
+        current_model = preset_settings['api_model']
+        
+        if preset_settings['is_g4f']:
+            current_model = preset_settings.get('g4f_model', '') or self.gpt4free_model
 
         # Возвращаем лимит из настроек, если он задан и больше 0, иначе из маппинга
         if self.max_model_tokens > 0:
              return self.max_model_tokens
-        return self._model_token_limits.get(current_model, 128000) # Возвращаем дефолт, если модель не найдена
+        return self._model_token_limits.get(current_model, 128000)
 
     def get_current_context_token_count(self) -> int:
         """
@@ -1103,36 +1145,6 @@ class ChatModel:
 
     #endregion
 
-    def GetOtherKey(self) -> str | None:
-        """
-        Получает альтернативный ключ из резервных.
-        Резервные ключи берутся из settings, так как не включены в пресеты.
-        """
-        all_keys = []
-        if self.api_key:
-            all_keys.append(self.api_key)
-
-        reserve_keys_str = self.settings.get("NM_API_KEY_RES", "")
-        if reserve_keys_str:
-            all_keys.extend([key.strip() for key in reserve_keys_str.split() if key.strip()])
-
-        seen = set()
-        unique_keys = [x for x in all_keys if not (x in seen or seen.add(x))]
-
-        if not unique_keys:
-            logger.error("No API keys available (main from preset or reserve from settings)")
-            return None
-
-        if len(unique_keys) == 1:
-            self.last_key = 0
-            return unique_keys[0]
-        
-        self.last_key = (self.last_key + 1) % len(unique_keys)
-        selected_key = unique_keys[self.last_key]
-
-        logger.info(
-            f"Selected API key index: {self.last_key} (masked: {SH(selected_key)}) from {len(unique_keys)} unique keys.")
-        return selected_key
 
     def _format_multimodal_content_for_gemini(self, message_content):
         """Форматирует содержимое сообщения для Gemini API, поддерживая текст и изображения."""
@@ -1336,104 +1348,6 @@ class ChatModel:
         return new_response or response_text
 
 
-    @contextmanager
-    def _temporary_provider(self, provider_name: str):
-        """
-        Временно подменяет настройки API на основе пресета.
-        provider_name может быть:
-        - "Current" / "Текущий" - использовать текущий пресет
-        - ID пресета (как строка) - использовать конкретный пресет
-        """
-        if not provider_name or provider_name.lower() in ("current", "текущий"):
-            yield
-            return
-        
-        # Пытаемся интерпретировать provider_name как ID пресета
-        try:
-            preset_id = int(provider_name)
-            logger.info(f"Temporary switching to preset ID: {preset_id}")
-        except ValueError:
-            logger.warning(f"Invalid preset ID '{provider_name}', using current preset")
-            yield
-            return
-        
-        # Загружаем настройки пресета
-        cfg = self.load_preset_settings(preset_id)
-        
-        # Запоминаем текущие настройки
-        original = {
-            "api_key": self.api_key,
-            "api_key_res": self.api_key_res,
-            "api_url": self.api_url,
-            "api_model": self.api_model,
-            "makeRequest": self.makeRequest,
-            "NM_API_REQ": self.settings.get("NM_API_REQ"),
-            "GEMINI_CASE": self.settings.get("GEMINI_CASE"),
-        }
-        
-        # Применяем настройки из пресета
-        self.api_key = cfg['api_key']
-        self.api_url = cfg['api_url']
-        self.api_model = cfg['api_model']
-        self.makeRequest = cfg['make_request']
-        self.settings.set("NM_API_REQ", cfg['make_request'])
-        self.settings.set("GEMINI_CASE", cfg['gemini_case'])
-        
-        # Обновляем OpenAI клиент с новыми настройками
-        if not cfg['is_g4f']:
-            self.update_openai_client()
-        
-        logger.info(f"Temporarily switched to preset: {cfg['preset_name']}")
-        
-        try:
-            yield
-        finally:
-            # Восстанавливаем оригинальные настройки
-            self.api_key = original["api_key"]
-            self.api_key_res = original["api_key_res"]
-            self.api_url = original["api_url"]
-            self.api_model = original["api_model"]
-            self.makeRequest = original["makeRequest"]
-            self.settings.set("NM_API_REQ", original["NM_API_REQ"])
-            self.settings.set("GEMINI_CASE", original["GEMINI_CASE"])
-            
-            # Восстанавливаем OpenAI клиент
-            self.update_openai_client()
-            
-            logger.info("Restored original API settings")
-
-    def apply_config(self, cfg: dict) -> list[str]:
-        """
-        Горячо меняет любые ключевые поля ChatModel.
-        cfg – словарь с любыми из:
-            api_key / api_key_res / api_url / api_model /
-            gpt4free_model / makeRequest
-        Возвращает список реально изменённых полей.
-        """
-        changed = []
-
-        def _set(attr, value):
-            if value is None:
-                return
-            if getattr(self, attr, None) != value:
-                setattr(self, attr, value)
-                changed.append(attr)
-
-        _set("api_key", cfg.get("api_key"))
-        _set("api_key_res", cfg.get("api_key_res"))
-        _set("api_url", cfg.get("api_url"))
-        _set("api_model", cfg.get("api_model"))
-        _set("gpt4free_model", cfg.get("gpt4free_model"))
-        _set("makeRequest", cfg.get("makeRequest"))
-
-        # если трогаем ключ или url – пересоздаём OpenAI-клиент
-        if {"api_key", "api_url"} & set(changed):
-            logger.info(f"apply_config → пересоздаём OpenAI-клиент")
-            self.update_openai_client()
-
-        if changed:
-            logger.info(f"apply_config → обновлены: {', '.join(changed)}")
-        return changed
 
     def get_character_provider(self) -> str:
         if not self.current_character:

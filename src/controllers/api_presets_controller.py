@@ -38,10 +38,13 @@ class ApiPreset:
     add_key: bool = False
     help_url: str = ""
     key: str = ""
+    reserve_keys: List[str] = None
     
     def __post_init__(self):
         if self.known_models is None:
             self.known_models = []
+        if self.reserve_keys is None:
+            self.reserve_keys = []
 
 
 class ApiPresetsController:

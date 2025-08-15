@@ -93,7 +93,7 @@ class MainController:
 
     def _init_server_controller(self):
         """Инициализация правильного ServerController на основе настроек"""
-        use_new_api = self.settings.get('USE_NEW_API', True)
+        use_new_api = self.settings.get('USE_NEW_API', False)
         
         # Проверяем, нужно ли переключение
         if hasattr(self, 'server_controller') and self.server_controller:

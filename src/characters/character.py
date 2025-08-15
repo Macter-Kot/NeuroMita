@@ -2,10 +2,10 @@
 import datetime
 import re
 import os
-import logging # Use standard logging
 import sys # For traceback
 import traceback # For traceback
 from typing import Dict, List, Any, Optional
+import json
 
 # Assuming dsl_engine.py is in a DSL folder within NeuroMita
 from DSL.dsl_engine import DslInterpreter # PROMPTS_ROOT is managed by DslInterpreter
@@ -16,9 +16,6 @@ from managers.memory_manager import MemoryManager
 from managers.history_manager import HistoryManager
 from utils import clamp, SH # SH for masking keys if needed elsewhere
 
-import multiprocessing # Оставляем для Queue, т.к. они process-safe и thread-safe
-import threading # Добавляем для запуска GUI в потоке
-import importlib
 import os
 
 from managers.game_manager import GameManager
@@ -48,47 +45,44 @@ class Character:
     }
 
     def __init__(self, 
-                 char_id: str, 
-                 name: str, 
-                 # For NeuroMita specific constructor params:
-                 silero_command: str, 
-                 short_name: str, # NeuroMita used this
-                 miku_tts_name: str = "Player", 
-                 silero_turn_off_video: bool = False,
-                 initial_vars_override: Dict[str, Any] | None = None,
-                 is_cartridge = False
-                 ): # For explicit initial values passed in
-        
-        self.char_id = char_id # For DSL logging and Prompts path
-        self.name = name # Display name
+             char_id: str, 
+             name: str, 
+             silero_command: str, 
+             short_name: str,
+             miku_tts_name: str = "Player", 
+             silero_turn_off_video: bool = False,
+             initial_vars_override: Dict[str, Any] | None = None,
+             is_cartridge = False
+             ):
+    
+        self.char_id = char_id
+        self.name = name
 
-        # NeuroMita specific attributes
         self.silero_command = silero_command
         self.silero_turn_off_video = silero_turn_off_video
         self.miku_tts_name = miku_tts_name
         self.short_name = short_name
         self.prompts_root = os.path.abspath("Prompts") if not is_cartridge else os.path.abspath("Prompts/Cartridges")
-        self.base_data_path = os.path.join(self.prompts_root, self.char_id) # Path for character's DSL files
+        self.base_data_path = os.path.join(self.prompts_root, self.char_id)
         self.main_template_path_relative = "main_template.txt"
 
-        self.variables: Dict[str, Any] = {} # Initialize first
+        self.variables: Dict[str, Any] = {}
         self.is_cartridge = is_cartridge
         self.system_messages = []
 
         self._cached_system_setup: List[Dict] = []
-        self.app_vars: Dict[str, Any] = {}  # Новый: словарь для переменных программы
+        self.app_vars: Dict[str, Any] = {}
 
-        # Compose initial variables: Base -> Subclass Overrides -> Passed-in Overrides
         composed_initials = Character.BASE_DEFAULTS.copy()
-        # Subclass overrides (defined in subclasses like CrazyMita)
         if hasattr(self, "DEFAULT_OVERRIDES"):
-            composed_initials.update(self.DEFAULT_OVERRIDES) # type: ignore
+            composed_initials.update(self.DEFAULT_OVERRIDES)
         if initial_vars_override:
             composed_initials.update(initial_vars_override)
         
-        # Set all composed initial variables
         for key, value in composed_initials.items():
-            self.set_variable(key, value) # Use set_variable for normalization
+            self.set_variable(key, value)
+
+        self.load_config()
 
         logger.info(
             "\n\nCharacter '%s' (%s) initialized. Initial effective vars: %s\n\n",
@@ -96,31 +90,71 @@ class Character:
             ", ".join(f"\n • {k} = {v}" for k, v in self.variables.items() if k in composed_initials)
         )
         
-        # Initialize History and Memory Systems
-        self.history_manager = HistoryManager(self.char_id) # Use char_id for history folder
-        self.memory_system = MemoryManager(self.char_id)    # Use char_id for memory file
+        self.history_manager = HistoryManager(self.char_id)
+        self.memory_system = MemoryManager(self.char_id)
 
-        self.load_history() # Load persisted variables and message history
-                                                 # This will overwrite defaults if history exists.
+        self.load_history()
 
-        # Initialize DSL interpreter
         path_resolver_instance = LocalPathResolver(
                 global_prompts_root=self.prompts_root, 
                 character_base_data_path=self.base_data_path
             )
         self.dsl_interpreter = DslInterpreter(self, path_resolver_instance)
-        self.post_dsl_interpreter = PostDslInterpreter(self, path_resolver_instance)  # Use same resolver
-        # Set initial dynamic variables
+        self.post_dsl_interpreter = PostDslInterpreter(self, path_resolver_instance)
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().isoformat(" ", "minutes"))
 
-
-        # region GameVars
         self.set_variable("playingGame", False)
         self.set_variable("game_id", None)
         self.game_manager = GameManager(self)
-        # endregion
 
-
+    def load_config(self):
+        """
+        Загружает кастомные настройки из config.json в папке персонажа.
+        Если файла нет - создаёт его с базовыми значениями из DEFAULT_OVERRIDES.
+        """
+        
+        config_path = os.path.join(self.base_data_path, "config.json")
+        
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                
+                logger.info(f"[{self.char_id}] Loading custom config from {config_path}")
+                
+                for key, value in config_data.items():
+                    self.set_variable(key, value)
+                    logger.debug(f"[{self.char_id}] Set custom variable {key} = {value}")
+            else:
+                logger.info(f"[{self.char_id}] config.json not found at {config_path}, creating with default values")
+                
+                base_config = self.BASE_DEFAULTS.copy()
+                if hasattr(self, "DEFAULT_OVERRIDES"):
+                    base_config.update(self.DEFAULT_OVERRIDES)
+                
+                os.makedirs(os.path.dirname(config_path), exist_ok=True)
+                
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(base_config, f, indent=4, ensure_ascii=False)
+                
+                logger.info(f"[{self.char_id}] Default config saved to {config_path}")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"[{self.char_id}] Error parsing config.json: {e}, creating new config")
+            
+            base_config = self.BASE_DEFAULTS.copy()
+            if hasattr(self, "DEFAULT_OVERRIDES"):
+                base_config.update(self.DEFAULT_OVERRIDES)
+            
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(base_config, f, indent=4, ensure_ascii=False)
+                
+            logger.info(f"[{self.char_id}] New config created with defaults after JSON error")
+            
+        except Exception as e:
+            logger.error(f"[{self.char_id}] Error loading/creating config.json: {e}")
 
     def get_variable(self, name: str, default: Any = None) -> Any:
         return self.variables.get(name, default)

@@ -1,12 +1,7 @@
-
 import logging
 from .character import Character 
 from typing import Dict, Any, Optional
 import re
-import multiprocessing
-import threading
-import importlib 
-import os 
 
 logger = logging.getLogger("NeuroMita.Characters")
 
@@ -18,20 +13,20 @@ class CrazyMita(Character):
         "current_fsm_state": "Hello",
     }
 
-    def __init__(self, char_id: str, name: str, silero_command: str, short_name: str,
-                 miku_tts_name: str = "Player", silero_turn_off_video: bool = False,
-                 initial_vars_override: Dict[str, Any] | None = None):
-        super().__init__(char_id, name, silero_command, short_name,
-                         miku_tts_name, silero_turn_off_video, initial_vars_override)
+    def __init__(self):
+        super().__init__(
+            char_id="Crazy",
+            name="Crazy Mita",
+            silero_command="/speaker mita",
+            short_name="CrazyMita",
+            miku_tts_name="/set_person CrazyMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+        logger.info(f"Mita '{self.char_id}' fully initialized with overrides and chess attributes.")
 
-
-        logger.info(f"Mita '{char_id}' fully initialized with overrides and chess attributes.")
-
-
-
-
-    def process_response_nlp_commands(self, response: str,save_as_missed = False) -> str:
-        response = super().process_response_nlp_commands(response,save_as_missed)
+    def process_response_nlp_commands(self, response: str, save_as_missed=False) -> str:
+        response = super().process_response_nlp_commands(response, save_as_missed)
 
         if "<Secret!>" in response:
             if not self.get_variable("secretExposedFirst", False):
@@ -47,6 +42,17 @@ class KindMita(Character):
         "current_fsm_state": "Default",
     }
 
+    def __init__(self):
+        super().__init__(
+            char_id="Kind",
+            name="Kind Mita",
+            silero_command="/speaker kind",
+            short_name="MitaKind",
+            miku_tts_name="/set_person KindMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+
 class ShortHairMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
         "attitude": 70.0,
@@ -55,17 +61,69 @@ class ShortHairMita(Character):
         "current_fsm_state": "Default",
     }
 
+    def __init__(self):
+        super().__init__(
+            char_id="ShortHair",
+            name="ShortHair Mita",
+            silero_command="/speaker shorthair",
+            short_name="ShorthairMita",
+            miku_tts_name="/set_person ShortHairMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+
+class GhostMita(Character):
+    DEFAULT_OVERRIDES: Dict[str, Any] = {
+        "attitude": 30.0,
+        "boredom": 10.0,
+        "stress": 30.0,
+        "current_fsm_state": "Default",
+    }
+
+    def __init__(self):
+        super().__init__(
+            char_id="Ghost",
+            name="Ghost Mita",
+            silero_command="/speaker ghost",
+            short_name="GhostMita",
+            miku_tts_name="/set_person GhostMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+
 class CappyMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
         "boredom": 25.0,
         "current_fsm_state": "Default",
     }
 
+    def __init__(self):
+        super().__init__(
+            char_id="Cappy",
+            name="Cappy Mita",
+            silero_command="/speaker cap",
+            short_name="CappieMita",
+            miku_tts_name="/set_person CapMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+
 class MilaMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
         "attitude": 75.0,
         "current_fsm_state": "Default",
     }
+
+    def __init__(self):
+        super().__init__(
+            char_id="Mila",
+            name="Mila",
+            silero_command="/speaker mila",
+            short_name="Mila",
+            miku_tts_name="/set_person MilaMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
 
 class CreepyMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -74,33 +132,87 @@ class CreepyMita(Character):
         "current_fsm_state": "Default",
     }
 
+    def __init__(self):
+        super().__init__(
+            char_id="Creepy",
+            name="Creepy Mita",
+            silero_command="/speaker ghost",
+            short_name="GhostMita",
+            miku_tts_name="/set_person GhostMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+
 class SleepyMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
         "boredom": 40.0,
         "current_fsm_state": "Sleeping",
     }
 
+    def __init__(self):
+        super().__init__(
+            char_id="Sleepy",
+            name="Sleepy Mita",
+            silero_command="/speaker dream",
+            short_name="SleepyMita",
+            miku_tts_name="/set_person SleepyMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
+
 class SpaceCartridge(Character):
-    DEFAULT_OVERRIDES: Dict[str, Any] = {"attitude": 50.0, "current_fsm_state": "Space"}
-    # def __init__(self, char_id: str, name: str, silero_command: str, short_name: str,
-    #              miku_tts_name: str = "Player", silero_turn_off_video: bool = False,
-    #              initial_vars_override: Dict[str, Any] | None = None):
-    #     # Cartridges might not need all the same params, adjust as necessary
-    #     # Or, they are instantiated with default names if not interactive in the same way.
-    #     # For now, keeping constructor consistent.
-    #     super().__init__(char_id, name, silero_command, short_name,
-    #                      miku_tts_name, silero_turn_off_video, initial_vars_override)
+    DEFAULT_OVERRIDES: Dict[str, Any] = {
+        "attitude": 50.0,
+        "current_fsm_state": "Space"
+    }
+
+    def __init__(self):
+        super().__init__(
+            char_id="Cart_portal",
+            name="Cart_portal",
+            silero_command="/speaker wheatley",
+            short_name="Player",
+            miku_tts_name="/set_person Player",
+            silero_turn_off_video=True,
+            is_cartridge=True
+        )
+        self.load_config()
 
 class DivanCartridge(Character):
-    DEFAULT_OVERRIDES: Dict[str, Any] = {"attitude": 50.0, "current_fsm_state": "Divan"}
-    # def __init__(self, char_id: str, name: str, silero_command: str, short_name: str, 
-    #              miku_tts_name: str = "Player", silero_turn_off_video: bool = False,
-    #              initial_vars_override: Dict[str, Any] | None = None):
-    #     super().__init__(char_id, name, silero_command, short_name,
-    #                      miku_tts_name, silero_turn_off_video, initial_vars_override)
+    DEFAULT_OVERRIDES: Dict[str, Any] = {
+        "attitude": 50.0,
+        "current_fsm_state": "Divan"
+    }
+
+    def __init__(self):
+        super().__init__(
+            char_id="Cart_divan",
+            name="Cart_divan",
+            silero_command="/speaker engineer",
+            short_name="Player",
+            miku_tts_name="/set_person Player",
+            silero_turn_off_video=True,
+            is_cartridge=True
+        )
+        self.load_config()
 
 class GameMaster(Character):
-    DEFAULT_OVERRIDES: Dict[str, Any] = {"attitude": 100.0, "boredom": 0.0, "stress": 0.0}
+    DEFAULT_OVERRIDES: Dict[str, Any] = {
+        "attitude": 100.0,
+        "boredom": 0.0,
+        "stress": 0.0
+    }
+
+    def __init__(self):
+        super().__init__(
+            char_id="GameMaster",
+            name="GameMaster",
+            silero_command="/speaker dryad",
+            short_name="PhoneMita",
+            miku_tts_name="/set_person PhoneMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()
 
     def _process_behavior_changes_from_llm(self, response: str) -> str:
         logger.debug(f"[{self.char_id}] GameMaster is not processing <p> tags for self.")
@@ -119,3 +231,17 @@ class GameMaster(Character):
             logger.error(f"[{self.char_id}] Error accessing GM_SMALL_PROMPT: {e}")
             self.set_variable("GM_INSTRUCTION", "")
         return super().get_llm_system_prompts()
+
+class Mitaphone(Character):
+    DEFAULT_OVERRIDES: Dict[str, Any] = {}
+
+    def __init__(self):
+        super().__init__(
+            char_id="Mitaphone",
+            name="Mitaphone",
+            silero_command="/speaker dryad",
+            short_name="PhoneMita",
+            miku_tts_name="/set_person PhoneMita",
+            silero_turn_off_video=True
+        )
+        self.load_config()

@@ -17,6 +17,7 @@ from .path_resolver import AbstractPathResolver, PathResolverError
 
 RED = "\033[91m"
 YEL = "\033[93m"
+AQUA = "\033[96m"
 RST = "\033[0m"
 
 LOG_FILE = os.path.join(LOG_DIR, "dsl_execution.log")
@@ -601,7 +602,7 @@ class DslInterpreter:
                         val = self._eval_expr(args, resolved_script_id, num, raw)
                         prefix = f"{os.path.basename(rel_script_path)}:{num}"
                         message = f"{prefix.ljust(40)}| {val}"
-                        dsl_script_logger.info(message)
+                        dsl_script_logger.info(f"{AQUA}{message}{RST}")
                         continue
                     
                     if command == "RETURN":

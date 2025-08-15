@@ -172,6 +172,7 @@ class ChatGUI(QMainWindow):
 
     # api_settings.py
     test_result_received = pyqtSignal(dict)
+    test_result_failed = pyqtSignal(dict)
 
     def __init__(self, settings):
         super().__init__()

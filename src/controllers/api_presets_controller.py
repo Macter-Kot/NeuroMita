@@ -265,15 +265,33 @@ class ApiPresetsController:
     
     def _on_test_connection(self, event: Event):
         preset_id = event.data.get('id')
+        base_id = event.data.get('base')
         key = event.data.get('key', '')
-        p = self._get_all_presets().get(preset_id)
+        
+        p = None
+        if preset_id:
+            p = self._get_all_presets().get(preset_id)
+        
+        if (not p or not p.test_url) and base_id:
+            base_preset = self._get_all_presets().get(base_id)
+            if base_preset:
+                logger.info(f"Using base preset {base_id} for test connection")
+                p = base_preset
+        
         if not p or not p.test_url:
-            logger.warning(f"No test_url for preset {preset_id}")
+            logger.warning(f"No test_url for preset {preset_id} and base {base_id}")
+            self.event_bus.emit(Events.ApiPresets.TEST_FAILED, {
+                'id': preset_id,
+                'error': 'no_test_url',
+                'message': _("URL для тестирования не найден", "Test URL not found")
+            })
             return
+        
         test_url = p.test_url.replace('{key}', key)
         logger.info(f"Starting sync test connection for preset {preset_id} to {test_url}")
         
-        threading.Thread(target=self._sync_test_connection, args=(preset_id, test_url, p.filter_fn)).start()
+        threading.Thread(target=self._sync_test_connection, 
+                        args=(preset_id, test_url, p.filter_fn)).start()
 
     def _sync_test_connection(self, preset_id: int, url: str, filter_fn: str):
         try:

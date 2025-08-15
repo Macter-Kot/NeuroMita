@@ -293,14 +293,38 @@ def setup_api_controls(self, parent):
         return new_id[0] if new_id else None
 
     def _test_connection():
+        base_id = self.template_combo.currentData()
+        
+        if not self.current_preset_id and not base_id:
+            QMessageBox.warning(self, _("Предупреждение", "Warning"), 
+                            _("Выберите пресет или шаблон для тестирования", 
+                                "Select a preset or template to test"))
+            return
+        
+        has_test_url = False
         if self.current_preset_data and self.current_preset_data.get('test_url'):
-            self.test_button.setEnabled(False)
-            self.test_button.setText(_("Тестирование...", "Testing..."))
-            logger.info(f"Initiating test connection for preset {self.current_preset_id}")
-            self.event_bus.emit(Events.ApiPresets.TEST_CONNECTION, {
-                'id': self.current_preset_id,
-                'key': self.api_key_entry.text()
-            })
+            has_test_url = True
+        elif base_id:
+            template_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL,
+                                                        {'id': base_id}, timeout=1.0)
+            if template_data and template_data[0] and template_data[0].get('test_url'):
+                has_test_url = True
+        
+        if not has_test_url:
+            QMessageBox.warning(self, _("Предупреждение", "Warning"),
+                            _("Тестирование недоступно для данного пресета/шаблона",
+                                "Testing is not available for this preset/template"))
+            return
+        
+        self.test_button.setEnabled(False)
+        self.test_button.setText(_("Тестирование...", "Testing..."))
+        logger.info(f"Initiating test connection for preset {self.current_preset_id} with base {base_id}")
+        
+        self.event_bus.emit(Events.ApiPresets.TEST_CONNECTION, {
+            'id': self.current_preset_id,
+            'base': base_id,
+            'key': self.api_key_entry.text()
+        })
     
     def _toggle_key_visibility():
         if self.api_key_entry.echoMode() == QLineEdit.EchoMode.Password:
@@ -917,15 +941,24 @@ def setup_api_controls(self, parent):
         self.test_result_received.emit(data)
 
     def _process_test_result(data):
+        """Обработка результата тестирования в UI потоке"""
         self.test_button.setEnabled(True)
         self.test_button.setText(_("Тест подключения", "Test connection"))
         
         logger.info(f"Handling test result in UI: success={data.get('success')}, message={data.get('message')}")
         
         if data.get('success'):
-            QMessageBox.information(self, _("Успех", "Success"), data.get('message', 'OK'))
+            # Успешное подключение
+            message = data.get('message', 'OK')
             
+            # Если есть модели, показываем их количество
             models = data.get('models', [])
+            if models:
+                message = f"{message}\n{_('Найдено моделей:', 'Models found:')} {len(models)}"
+            
+            QMessageBox.information(self, _("Успех", "Success"), message)
+            
+            # Обновляем список моделей
             if models:
                 self.event_bus.emit(Events.ApiPresets.UPDATE_PRESET_MODELS, {
                     'id': self.current_preset_id,
@@ -933,20 +966,64 @@ def setup_api_controls(self, parent):
                 })
                 logger.info(f"Emitted update models for preset {self.current_preset_id}")
                 
+                # Перезагружаем список моделей для автодополнения
                 preset_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL, 
                                                         {'id': self.current_preset_id}, timeout=1.0)
                 if preset_data and preset_data[0]:
                     preset = preset_data[0]
                     known_models = preset.get('known_models', [])
                     self.api_model_list_model.setStringList(known_models)
-                    logger.info(f"Reloaded and updated completer with {len(known_models)} models for preset {self.current_preset_id}")
-                else:
-                    logger.warning(f"Failed to reload preset {self.current_preset_id} after test")
+                    logger.info(f"Reloaded and updated completer with {len(known_models)} models")
         else:
-            QMessageBox.warning(self, _("Ошибка", "Error"), data.get('message', 'Connection failed'))
-
+            # Ошибка подключения - показываем детальную информацию
+            error_message = data.get('message', _('Неизвестная ошибка', 'Unknown error'))
+            
+            # Форматируем сообщение об ошибке
+            detailed_message = _("Не удалось подключиться к API", "Failed to connect to API")
+            detailed_message += f"\n\n{_('Причина:', 'Reason:')} {error_message}"
+            
+            # Добавляем рекомендации в зависимости от типа ошибки
+            if "Invalid API key" in error_message or "403" in error_message:
+                detailed_message += f"\n\n{_('Рекомендация:', 'Recommendation:')}"
+                detailed_message += f"\n{_('Проверьте правильность API ключа', 'Check if API key is correct')}"
+            elif "timeout" in error_message.lower():
+                detailed_message += f"\n\n{_('Рекомендация:', 'Recommendation:')}"
+                detailed_message += f"\n{_('Проверьте подключение к интернету или попробуйте позже', 'Check internet connection or try again later')}"
+            elif "400" in error_message:
+                detailed_message += f"\n\n{_('Рекомендация:', 'Recommendation:')}"
+                detailed_message += f"\n{_('Проверьте правильность URL и формата запроса', 'Check URL and request format')}"
+            elif "404" in error_message:
+                detailed_message += f"\n\n{_('Рекомендация:', 'Recommendation:')}"
+                detailed_message += f"\n{_('Проверьте правильность URL адреса', 'Check if URL is correct')}"
+            
+            QMessageBox.critical(self, _("Ошибка подключения", "Connection Error"), detailed_message)
     
+    def _on_test_failed(event):
+        """Обработчик события TEST_FAILED - эмитит сигнал для UI потока"""
+        data = event.data
+        
+        # Эмитим сигнал для обработки в UI потоке
+        self.test_result_failed.emit(data)
+
+    def _process_test_failed(data):
+        """Обработка ошибки тестирования в UI потоке"""
+        self.test_button.setEnabled(True)
+        self.test_button.setText(_("Тест подключения", "Test connection"))
+        
+        error_type = data.get('error')
+        message = data.get('message', _('Неизвестная ошибка', 'Unknown error'))
+        
+        if error_type == 'no_test_url':
+            QMessageBox.warning(self, _("Предупреждение", "Warning"), message)
+        else:
+            detailed_message = _("Не удалось выполнить тестирование", "Failed to perform test")
+            detailed_message += f"\n\n{_('Причина:', 'Reason:')} {message}"
+            
+            QMessageBox.critical(self, _("Ошибка тестирования", "Test Error"), detailed_message)
+
+    self.test_result_failed.connect(_process_test_failed)
     self.test_result_received.connect(_process_test_result)
+
     
     def _on_preset_saved(event):
         preset_id = event.data.get('id')
@@ -1411,6 +1488,7 @@ def setup_api_controls(self, parent):
         self.gemini_case_checkbox.stateChanged.connect(_on_gemini_case_changed)
     
     self.event_bus.subscribe(Events.ApiPresets.TEST_RESULT, _on_test_result, weak=False)
+    self.event_bus.subscribe(Events.ApiPresets.TEST_FAILED, _on_test_failed, weak=False)
     self.event_bus.subscribe(Events.ApiPresets.PRESET_SAVED, _on_preset_saved, weak=False)
     self.event_bus.subscribe(Events.ApiPresets.PRESET_DELETED, _on_preset_deleted, weak=False)
     

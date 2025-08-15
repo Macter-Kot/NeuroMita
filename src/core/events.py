@@ -518,6 +518,7 @@ class Events:
         IMPORT_PRESET = "import_preset"
         TEST_CONNECTION = "test_connection"
         TEST_RESULT = "test_result"
+        TEST_FAILED = "test_failed"
         SET_GEMINI_CASE = "set_gemini_case"
         PRESET_SAVED = "preset_saved"
         PRESET_DELETED = "preset_deleted"

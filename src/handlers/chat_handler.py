@@ -270,21 +270,36 @@ class ChatModel:
         logger.info(f"Available characters: {list(self.characters.keys())}")
         return list(self.characters.keys())
     
+    # def load_prehistory(self) -> List[Dict]:
+    #     """Загружает предысторию из файла mita_prehistory.json"""
+    #     try:
+    #         with open("crazy_prehistory.json", "r", encoding="utf-8") as f:
+    #             prehistory = json.load(f)
+    #             logger.success(f"Loaded {len(prehistory)} messages from crazy_prehistory.json")
+    #             return prehistory
+    #     except FileNotFoundError:
+    #         logger.warning("crazy_prehistory.json.json not found")
+    #         return []
+    #     except json.JSONDecodeError as e:
+    #         logger.error(f"Error parsing crazy_prehistory.json: {e}")
+    #         return []
+    #     except Exception as e:
+    #         logger.error(f"Error loading crazy_prehistory.json: {e}")
+    #         return []
+    
     def generate_response(
-            self,
-            user_input : str,
-            system_input : str = "",
-            image_data : list[bytes] | None = None,
-            stream_callback: callable = None,
-            message_id: int | None = None
+        self,
+        user_input : str,
+        system_input : str = "",
+        image_data : list[bytes] | None = None,
+        stream_callback: callable = None,
+        message_id: int | None = None
     ):
-        # 0. Подготовка -----------------------------------------------------------------
         if image_data is None:
             image_data = []
 
         self.check_change_current_character()
 
-        # 1. История --------------------------------------------------------------------
         history_data           = self.current_character.history_manager.load_history()
         llm_messages_history   = history_data.get("messages", [])
 
@@ -292,14 +307,12 @@ class ChatModel:
             llm_messages_history.extend(self.infos_to_add_to_history)
             self.infos_to_add_to_history.clear()
 
-        # 2. Игровые переменные ---------------------------------------------------------
         self.current_character.set_variable("GAME_DISTANCE",self.distance)
         self.current_character.set_variable("GAME_ROOM_PLAYER",self.get_room_name(self.roomPlayer))
         self.current_character.set_variable("GAME_ROOM_MITA",self.get_room_name(self.roomMita))
         self.current_character.set_variable("GAME_NEAR_OBJECTS",self.nearObjects)
         self.current_character.set_variable("GAME_ACTUAL_INFO",self.actualInfo)
 
-        # 3. Шахматы --------------------------------------------------------------------
         game_state_prompt_content: Optional[str] = None
         if self.current_character.get_variable("playingGame", False):
             if hasattr(self.current_character, 'game_manager'):
@@ -309,50 +322,45 @@ class ChatModel:
             else:
                 logger.warning(f"[{self.current_character.char_id}] Игра активна, но GameManager отсутствует.")
 
-        # 4. Системные промпты / память -------------------------------------------------
         combined_messages = []
 
         separate_prompts =  bool(self.settings.get("SEPARATE_PROMPTS", True))
         messages = self.current_character.get_full_system_setup_for_llm(separate_prompts)
         combined_messages.extend(messages)
 
-
-        # Добавляем промпт состояния игры (если он был сформирован)
         if game_state_prompt_content:
-            combined_messages.append({"role": "system",
-                                    "content": game_state_prompt_content})
+            combined_messages.append({"role": "system", "content": game_state_prompt_content})
 
+        # prehistory = self.load_prehistory()
+        # if prehistory:
+        #     combined_messages.extend(prehistory)
+        #     logger.info(f"Added {len(prehistory)} prehistory messages to combined messages")
 
-
-        # 5. История памяти
         llm_messages_history = self.process_history_compression(llm_messages_history)
 
         if self.current_character != self.GameMaster:
-            # Определяем сообщения, которые будут "потеряны"
             missed_messages = llm_messages_history[:-self.memory_limit]
             llm_messages_history_limited = llm_messages_history[-self.memory_limit:]
         else:
-            # Для GameMaster также определяем потерянные сообщения, если лимит превышен
             missed_messages = llm_messages_history[:-8]
             llm_messages_history_limited = llm_messages_history[-8:]
 
-        # Если включена настройка сохранения пропущенных сообщений и есть что сохранять
         if missed_messages and bool(self.settings.get("SAVE_MISSED_HISTORY", True)):
-            logger.info(
-                f"Сохраняю {len(missed_messages)} пропущенных сообщений для персонажа {self.current_character.char_id}.")
+            logger.info(f"Сохраняю {len(missed_messages)} пропущенных сообщений для персонажа {self.current_character.char_id}.")
             self.current_character.history_manager.save_missed_history(missed_messages)
 
-        # Применяем снижение качества к изображениям в истории, если включено
         if self.image_quality_reduction_enabled:
             llm_messages_history_limited = self._apply_history_image_quality_reduction(llm_messages_history_limited)
 
+        # ВАЖНО: system infos — это строки -> оборачиваем в {role, content}
         event_system_infos = self.current_character.get_system_infos()
         if event_system_infos:
-            llm_messages_history_limited.extend(event_system_infos)
+            llm_messages_history_limited.extend(
+                [{"role": "system", "content": s} if isinstance(s, str) else s for s in event_system_infos]
+            )
 
         combined_messages.extend(llm_messages_history_limited)
 
-        # 5.1. Добавляем системное сообщение с текущим временем (current state)
         current_time = datetime.datetime.now()
         current_state_message = {
             "role": "system", 
@@ -360,11 +368,9 @@ class ChatModel:
         }
         combined_messages.append(current_state_message)
 
-        # 6. Добавляем system_input -----------------------------------------------------
         if system_input:
             combined_messages.append({"role": "system", "content": system_input})
 
-        # 7. Пользовательское сообщение (текст + картинки) ------------------------------
         user_message_for_history = None
         user_content_chunks = []
 
@@ -374,9 +380,7 @@ class ChatModel:
         for img_bytes in image_data:
             user_content_chunks.append({
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
-                }
+                "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"}
             })
 
         if user_content_chunks:
@@ -387,7 +391,6 @@ class ChatModel:
             user_message_for_history["time"] = datetime.datetime.now().strftime("%d.%m.%Y_%H.%M")
             llm_messages_history_limited.append(user_message_for_history)
 
-        # Получаем preset_id для персонажа
         char_provider = self.get_character_provider()
         preset_id = None
         if char_provider != "Current":
@@ -397,7 +400,6 @@ class ChatModel:
             except ValueError:
                 logger.warning(f"Invalid preset ID in CHAR_PROVIDER: {char_provider}, using current")
         
-        # 8. Генерация ответа -----------------------------------------------------------
         try:
             llm_response_content, success = self._generate_chat_response(combined_messages, stream_callback, preset_id)
 
@@ -406,14 +408,13 @@ class ChatModel:
                 self.event_bus.emit(Events.Model.ON_FAILED_RESPONSE, {'error': translate("Не удалось получить ответ.", "Text generation failed.")})
                 return None
 
-            processed_response_text = self.current_character.process_response_nlp_commands(llm_response_content,
-                                                                                        self.settings.get("SAVE_MISSED_MEMORY",False))
+            processed_response_text = self.current_character.process_response_nlp_commands(
+                llm_response_content, self.settings.get("SAVE_MISSED_MEMORY", False)
+            )
 
-            # --- Встраивание «command replacer» (embeddings) ---------------------------
             final_response_text = processed_response_text
             try:
                 use_cmd_replacer  = self.settings.get("USE_COMMAND_REPLACER", False)
-
                 if use_cmd_replacer:
                     if not hasattr(self, 'model_handler'):
                         from handlers.embedding_handler import EmbeddingModelHandler
@@ -424,7 +425,7 @@ class ChatModel:
 
                     min_sim     = float(self.settings.get("MIN_SIMILARITY_THRESHOLD", 0.40))
                     cat_switch  = float(self.settings.get("CATEGORY_SWITCH_THRESHOLD", 0.18))
-                    skip_comma  = bool (self.settings.get("SKIP_COMMA_PARAMETERS", True))
+                    skip_comma  = bool(self.settings.get("SKIP_COMMA_PARAMETERS", True))
 
                     logger.info(f"Attempting command replacement on: {processed_response_text[:100]}...")
                     final_response_text, _ = self.parser.parse_and_replace(
@@ -439,14 +440,14 @@ class ChatModel:
             except Exception as ex:
                 logger.error(f"Error during command replacement: {ex}", exc_info=True)
 
-            # 9. Сохраняем историю / TTS --------------------------------------------------
             assistant_message_content = final_response_text
 
-            # Проверяем настройку замены изображений заглушками
             if bool(self.settings.get("REPLACE_IMAGES_WITH_PLACEHOLDERS", False)):
                 logger.info("Настройка REPLACE_IMAGES_WITH_PLACEHOLDERS включена. Заменяю изображения заглушками.")
-                assistant_message_content = re.sub(r'https?://\S+\.(?:png|jpg|jpeg|gif|bmp)|data:image/\S+;base64,\S+', '[Изображение]', assistant_message_content)
-
+                assistant_message_content = re.sub(
+                    r'https?://\S+\.(?:png|jpg|jpeg|gif|bmp)|data:image/\S+;base64,\S+',
+                    '[Изображение]', assistant_message_content
+                )
 
             assistant_message = {"role": "assistant", "content": assistant_message_content}
             assistant_message["time"] = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
@@ -454,7 +455,6 @@ class ChatModel:
             llm_messages_history_limited.append(assistant_message)
 
             self.current_character.save_character_state_to_history(llm_messages_history_limited)
-
 
             self.event_bus.emit(Events.Model.ON_SUCCESSFUL_RESPONSE)
             logger.success(translate("Получен успешный ответ от API.", "Successful response from API."))
@@ -1056,17 +1056,11 @@ class ChatModel:
         return self._model_token_limits.get(current_model, 128000)
 
     def get_current_context_token_count(self) -> int:
-        """
-        Считает количество токенов в текущем контексте, который будет отправлен в LLM.
-        Это включает системные промпты, историю и текущий ввод пользователя.
-        """
         if not self.hasTokenizer:
             return 0
 
-        # Логика формирования combined_messages из generate_response
         combined_messages = []
 
-        # 1. Системные промпты / память
         separate_prompts = bool(self.settings.get("SEPARATE_PROMPTS", True))
         messages = self.current_character.get_cached_system_setup()
         combined_messages.extend(messages)
@@ -1074,14 +1068,6 @@ class ChatModel:
         if not messages:
             messages = self.current_character.get_full_system_setup_for_llm(separate_prompts)
 
-            
-        # Добавляем шахматы (если сформировано) - для точного подсчета нужно бы формировать, но пока заглушка
-        # В реальной ситуации здесь нужно было бы вызвать логику формирования chess_system_message_for_llm_content
-        # Для простоты пока не включаем, так как это усложнит подсчет без реального запроса
-        # if hasattr(self.current_character, 'chess_state_queue') and self.current_character.get_variable("playingChess", False):
-        #     combined_messages.append({"role": "system", "content": "Chess game state (placeholder)"})
-
-        # 2. История памяти
         history_data = self.current_character.history_manager.load_history()
         llm_messages_history = history_data.get("messages", [])
 
@@ -1090,26 +1076,29 @@ class ChatModel:
         else:
             llm_messages_history_limited = llm_messages_history[-8:]
 
-        # Применяем снижение качества к изображениям в истории, если включено
         if self.image_quality_reduction_enabled:
             llm_messages_history_limited = self._apply_history_image_quality_reduction(llm_messages_history_limited)
 
         combined_messages.extend(llm_messages_history_limited)
 
-        # 3. Временные системные сообщения
         if self.infos_to_add_to_history:
             combined_messages.extend(self.infos_to_add_to_history)
 
+        # ВАЖНО: system infos — строки -> оборачиваем
         event_system_infos = self.current_character.get_system_infos(clear=False)
         if event_system_infos:
-            combined_messages.extend(event_system_infos)
+            combined_messages.extend(
+                [{"role": "system", "content": s} if isinstance(s, str) else s for s in event_system_infos]
+            )
 
-        # 4. Текущий ввод пользователя (если есть)
         user_input = self.event_bus.emit_and_wait(Events.Speech.GET_USER_INPUT)
         user_input_from_gui = user_input[0] if user_input else ""
 
         if user_input_from_gui:
             combined_messages.append({"role": "user", "content": user_input_from_gui})
+
+        if not self.hasTokenizer:
+            return 0
 
         total_tokens = 0
         for msg in combined_messages:
@@ -1117,17 +1106,12 @@ class ChatModel:
                 content = msg["content"]
                 if isinstance(content, str):
                     total_tokens += len(self.tokenizer.encode(content))
-                elif isinstance(content, list):  # Для мультимодального контента
+                elif isinstance(content, list):
                     for item in content:
                         if item.get("type") == "text" and item.get("text"):
                             total_tokens += len(self.tokenizer.encode(item["text"]))
                         elif item.get("type") == "image_url" and item.get("image_url", {}).get("url"):
-                            # Для изображений, добавляем фиксированное количество токенов или 0,
-                            # так как tiktoken не считает токены изображений напрямую.
-                            # Google Gemini Vision Pro оценивает изображения по-разному,
-                            # но для общего подсчета можно использовать приближение.
-                            # Например, 1 изображение = 1000 токенов (очень грубо)
-                            total_tokens += 1000 # Примерное количество токенов за изображение
+                            total_tokens += 1000
         return total_tokens
 
     def calculate_cost_for_current_context(self) -> float:

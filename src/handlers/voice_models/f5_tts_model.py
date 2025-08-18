@@ -15,6 +15,9 @@ from utils import getTranslationVariant as _, get_character_voice_paths
 
 from core.events import get_event_bus, Events
 
+
+import math, os, time
+
 import requests
 import math
 from PyQt6.QtCore import QTimer
@@ -199,25 +202,87 @@ class F5TTSModel(IVoiceModel):
             progress_cb(50)
 
             # Скачиваем веса
-            import requests, math, os
+            import requests, math, os, time
+
             model_dir = os.path.join("checkpoints", "F5-TTS")
             os.makedirs(model_dir, exist_ok=True)
 
+            def _fmt_bytes(n):
+                try:
+                    n = float(n)
+                except Exception:
+                    return "?"
+                for unit in ["B", "KB", "MB", "GB"]:
+                    if n < 1024.0:
+                        return f"{n:.1f} {unit}"
+                    n /= 1024.0
+                return f"{n:.1f} TB"
+
+            def _fmt_eta(seconds: float) -> str:
+                seconds = max(0, int(seconds))
+                if seconds < 3600:
+                    m, s = divmod(seconds, 60)
+                    return f"{m:02d}:{s:02d}"
+                h, rem = divmod(seconds, 3600)
+                m, s = divmod(rem, 60)
+                return f"{h}:{m:02d}:{s:02d}"
+
             def dl(url, dest, descr, start_prog, end_prog):
-                if os.path.exists(dest): return
+                if os.path.exists(dest):
+                    progress_cb(end_prog)
+                    status_cb(_(f"{descr} — уже скачано.", f"{descr} — already downloaded."))
+                    return
+
                 status_cb(descr)
-                r = requests.get(url, stream=True, timeout=30)
+                r = requests.get(url, stream=True, timeout=(10, 30))
                 r.raise_for_status()
                 total = int(r.headers.get("content-length", 0))
                 done = 0
+                start_t = time.time()
+                last_status_t = start_t
+
+                chunk = 1024 * 1024
                 with open(dest, "wb") as fh:
-                    for chunk in r.iter_content(8192):
-                        fh.write(chunk)
-                        done += len(chunk)
+                    for part in r.iter_content(chunk_size=chunk):
+                        if not part:
+                            continue
+                        fh.write(part)
+                        done += len(part)
+
+                        now = time.time()
                         if total:
                             pct = done / total
                             prog = start_prog + (end_prog - start_prog) * pct
-                            progress_cb(math.floor(prog))
+                            progress_cb(min(99, int(prog)))
+
+                            elapsed = max(0.001, now - start_t)
+                            speed = done / elapsed  # bytes/sec
+                            eta = (total - done) / speed if speed > 0 else None
+
+                            if now - last_status_t >= 0.5:
+                                status_cb(
+                                    _(
+                                        f"{descr} ({_fmt_bytes(done)}/{_fmt_bytes(total)}, {_fmt_bytes(speed)}/s"
+                                        + (f", ETA {_fmt_eta(eta)})" if eta else ")"),
+                                        f"{descr} ({_fmt_bytes(done)}/{_fmt_bytes(total)}, {_fmt_bytes(speed)}/s"
+                                        + (f", ETA {_fmt_eta(eta)})" if eta else ")")
+                                    )
+                                )
+                                last_status_t = now
+                        else:
+                            if now - last_status_t >= 0.5:
+                                elapsed = max(0.001, now - start_t)
+                                speed = done / elapsed
+                                status_cb(
+                                    _(
+                                        f"{descr} ({_fmt_bytes(done)} загружено, {_fmt_bytes(speed)}/s)",
+                                        f"{descr} ({_fmt_bytes(done)} downloaded, {_fmt_bytes(speed)}/s)"
+                                    )
+                                )
+                                last_status_t = now
+
+                progress_cb(end_prog)
+                status_cb(_(f"{descr} — готово.", f"{descr} — done."))
 
             dl(
                 "https://huggingface.co/Misha24-10/F5-TTS_RUSSIAN/resolve/main/"

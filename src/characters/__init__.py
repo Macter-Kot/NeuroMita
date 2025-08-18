@@ -22,7 +22,7 @@ class CrazyMita(Character):
             miku_tts_name="/set_person CrazyMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
         logger.info(f"Mita '{self.char_id}' fully initialized with overrides and chess attributes.")
 
     def process_response_nlp_commands(self, response: str, save_as_missed=False) -> str:
@@ -51,7 +51,7 @@ class KindMita(Character):
             miku_tts_name="/set_person KindMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class ShortHairMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -70,7 +70,7 @@ class ShortHairMita(Character):
             miku_tts_name="/set_person ShortHairMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class GhostMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -89,7 +89,7 @@ class GhostMita(Character):
             miku_tts_name="/set_person GhostMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class CappyMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -106,7 +106,7 @@ class CappyMita(Character):
             miku_tts_name="/set_person CapMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class MilaMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -123,7 +123,7 @@ class MilaMita(Character):
             miku_tts_name="/set_person MilaMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class CreepyMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -141,7 +141,7 @@ class CreepyMita(Character):
             miku_tts_name="/set_person GhostMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class SleepyMita(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -158,7 +158,7 @@ class SleepyMita(Character):
             miku_tts_name="/set_person SleepyMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
 class SpaceCartridge(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -176,7 +176,7 @@ class SpaceCartridge(Character):
             silero_turn_off_video=True,
             is_cartridge=True
         )
-        self.load_config()
+        
 
 class DivanCartridge(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -194,7 +194,7 @@ class DivanCartridge(Character):
             silero_turn_off_video=True,
             is_cartridge=True
         )
-        self.load_config()
+        
 
 class GameMaster(Character):
     DEFAULT_OVERRIDES: Dict[str, Any] = {
@@ -212,7 +212,7 @@ class GameMaster(Character):
             miku_tts_name="/set_person PhoneMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        
 
     def _process_behavior_changes_from_llm(self, response: str) -> str:
         logger.debug(f"[{self.char_id}] GameMaster is not processing <p> tags for self.")
@@ -244,4 +244,4 @@ class Mitaphone(Character):
             miku_tts_name="/set_person PhoneMita",
             silero_turn_off_video=True
         )
-        self.load_config()
+        

@@ -7,11 +7,13 @@ from typing import Any, Optional
 # -----------------------------------------------------------------------------
 # Кастомные уровни логирования
 # -----------------------------------------------------------------------------
+PROGRESS_LEVEL = 45  # между DEBUG (10) и INFO (20)
 NOTIFY_LEVEL = 25  # между INFO (20) и WARNING (30)
 SUCCESS_LEVEL = 35  # между WARNING (30) и ERROR (40)
 
 logging.addLevelName(NOTIFY_LEVEL, "NOTIFY")
 logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
+logging.addLevelName(PROGRESS_LEVEL, "PROGRESS")
 
 # -----------------------------------------------------------------------------
 # Фильтры
@@ -56,6 +58,10 @@ class CustomLogger(logging.Logger):
         if self.isEnabledFor(NOTIFY_LEVEL):
             self._log(NOTIFY_LEVEL, message, args, **kwargs)
     
+    def progress(self, message: str, *args: Any, **kwargs: Any) -> None:
+        if self.isEnabledFor(PROGRESS_LEVEL):
+            self._log(PROGRESS_LEVEL, message, args, **kwargs)
+
     def success(self, message: str, *args: Any, **kwargs: Any) -> None:
         """
         Логирование успешных операций с уровнем SUCCESS (35).
@@ -77,10 +83,12 @@ class CustomLogger(logging.Logger):
             colorlog.ColoredFormatter(
                 '%(log_color)s%(levelname)-8s %(location)-30s | %(message)s',
                 log_colors={
+                    'DEBUG':    'white',
+                    'PROGRESS': 'light_blue',
                     'INFO':     'white',
-                    'NOTIFY':   'light_purple',    # Розовый
+                    'NOTIFY':   'light_purple',
                     'WARNING':  'yellow',
-                    'SUCCESS':  'light_green',     # Лаймовый
+                    'SUCCESS':  'light_green',
                     'ERROR':    'red',
                     'CRITICAL': 'red,bg_white',
                 },

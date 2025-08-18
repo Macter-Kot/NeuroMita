@@ -143,8 +143,28 @@ class TelegramBotHandler:
         path_to_file: str | None = None
 
         if response.media and isinstance(response.media, MessageMediaDocument):
-            file_path = await self.client.download_media(response.media)
+            # Качаем в ./temp (создаём при необходимости)
+            temp_dir = os.path.join(os.getcwd(), "temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            file_path = await self.client.download_media(response.media, file=temp_dir)
             logger.info(f"Файл загружен: {file_path}")
+
+            # Ждём, пока файл появится и стабилизируется по размеру
+            start_time = time.time()
+            last_size = -1
+            while True:
+                try:
+                    if os.path.exists(file_path):
+                        size = os.path.getsize(file_path)
+                        if size > 0 and size == last_size:
+                            break
+                        last_size = size
+                except OSError:
+                    pass
+                if time.time() - start_time > 10.0:
+                    break
+                await asyncio.sleep(0.1)
+
             sound_absolute_path = os.path.abspath(file_path)
 
             # Получаем статус подключения к игре через событие

@@ -153,10 +153,9 @@ class SeaBattleGame(GameInterface):
 
         template_filename = f"{self.game_id}.system"
         try:
-            logger.warning('ТУТ ТИПА НЕ ДОЛЖЕН ВЫЗЫВАТЬСЯ ЛИШНИЙ РАЗ СКРИПТ')
-            prompt_content, _ = self.character.dsl_interpreter.execute_dsl_script(template_filename)
-            logger.warning('ТУТ ТИПА НЕ ДОЛЖЕН ВЫЗЫВАТЬСЯ ЛИШНИЙ РАЗ СКРИПТ')
-            return prompt_content
+            # Используем process_file вместо execute_dsl_script, как и в Chess
+            content, _ = self.character.dsl_interpreter.process_file(template_filename)
+            return content
         except FileNotFoundError:
             logger.error(f"[{self.character.char_id}] Скрипт для игры '{self.game_id}' не найден: {template_filename}")
             return f"ОШИБКА: Не найден системный скрипт для игры '{self.game_id}'."

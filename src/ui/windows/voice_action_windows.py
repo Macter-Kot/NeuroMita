@@ -1,30 +1,41 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-                             QTextEdit, QProgressBar, QApplication, QWidget)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QProgressBar, QApplication, QWidget
+)
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
-
 from utils import getTranslationVariant as _
 
+import re
+from html import escape as html_escape
+
+# Широкий регэксп: чистит и CSI-последовательности (\x1b[...),
+# и одиночные ESC-последовательности (\x1bX), и OSC/прочие escape-формы.
+ANSI_RE = re.compile(r'\x1B(?:\[[0-?]*[ -/]*[@-~]|][^ \x07\x1B]*[^ \x07\x1B\\](?:\x1B\\|\x07))')
+
+
+def strip_ansi(s: str) -> str:
+    """Удаляет ANSI escape-коды из строки."""
+    if not s:
+        return ""
+    return ANSI_RE.sub('', s)
+
+
+
 class VoiceInstallationWindow(QDialog):
-    
     progress_updated = pyqtSignal(int)
     status_updated = pyqtSignal(str)
     log_updated = pyqtSignal(str)
     window_closed = pyqtSignal()
-    
+
     def __init__(self, parent, title, initial_status=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setFixedSize(700, 400)
         self.setModal(True)
-        
+
         self.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e1e;
-            }
-            QLabel {
-                color: #ffffff;
-            }
+            QDialog { background-color: #1e1e1e; }
+            QLabel { color: #ffffff; }
             QTextEdit {
                 background-color: #101010;
                 color: #cccccc;
@@ -41,152 +52,309 @@ class VoiceInstallationWindow(QDialog):
                 border-radius: 5px;
             }
         """)
-        
+
         layout = QVBoxLayout(self)
-        
+
         title_label = QLabel(title)
         title_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
-        
+
         info_layout = QHBoxLayout()
         self.status_label = QLabel(initial_status or _("Подготовка...", "Preparing..."))
         self.status_label.setFont(QFont("Segoe UI", 9))
         info_layout.addWidget(self.status_label, 1)
-        
+
         self.progress_value_label = QLabel("0%")
         self.progress_value_label.setFont(QFont("Segoe UI", 9))
         info_layout.addWidget(self.progress_value_label)
-        
+
+        self.eta_label = QLabel("ETA --:--")
+        self.eta_label.setFont(QFont("Segoe UI", 9))
+        self.eta_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        info_layout.addWidget(self.eta_label)
+
         layout.addLayout(info_layout)
-        
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setTextVisible(False)
         layout.addWidget(self.progress_bar)
-        
+
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
         layout.addWidget(self.log_text, 1)
-        
+
         self.progress_updated.connect(self._on_progress_update)
         self.status_updated.connect(self._on_status_update)
         self.log_updated.connect(self._on_log_update)
-        
+
         if parent and hasattr(parent, 'geometry'):
             parent_rect = parent.geometry()
             self.move(
                 parent_rect.center().x() - self.width() // 2,
                 parent_rect.center().y() - self.height() // 2
             )
-    
-    def _on_progress_update(self, value):
+
+        # Диапазон «живого» блока снапшота (начало и конец)
+        self._snap_start: int | None = None
+        self._snap_end: int | None = None
+        
+    def _on_progress_update(self, value: int):
         self.progress_bar.setValue(int(value))
         self.progress_value_label.setText(f"{int(value)}%")
-    
-    def _on_status_update(self, message):
+
+    def _on_status_update(self, message: str):
+        message = strip_ansi(message)
         self.status_label.setText(message)
-    
-    def _on_log_update(self, text):
-        self.log_text.append(text)
+        # 1) Поддержка старого маркера
+        m = re.search(r'KATEX_INLINE_OPENETA\s+([^)]+)KATEX_INLINE_CLOSE', message, flags=re.IGNORECASE)
+        # 2) И стандартный "(ETA mm:ss)" из статуса
+        if not m:
+            m = re.search(r'\bETA\s+(\d{1,2}:\d{2}(?::\d{2})?)\b', message, flags=re.IGNORECASE)
+        if m:
+            self.eta_label.setText(f"ETA {m.group(1)}")
+        elif "завершено" in message.lower() or "complete" in message.lower():
+            self.eta_label.setText("ETA 00:00")
+
+
+    def _on_log_update(self, text: str):
+        # Блок-снимок прогресса между маркерами
+        if text.startswith("__SNAPSHOT_START__"):
+            in_snap = False
+            lines = []
+            for ln in text.splitlines():
+                if ln == "__SNAPSHOT_START__":
+                    in_snap = True
+                    continue
+                if ln == "__SNAPSHOT_END__":
+                    in_snap = False
+                    continue
+                if in_snap:
+                    # Очищаем ANSI + одиночные ESC
+                    clean = strip_ansi(ln).replace("\x1b", "")
+                    if clean.strip():
+                        lines.append(clean)
+            self._render_snapshot(lines)  # у тебя уже есть этот метод — он заменяет блок по диапазону
+            return
+
+        # Обычная строка — добавляем (она не будет затираться снапшотом)
+        self._append_colored_log(text)
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
     
+    def _render_snapshot(self, lines: list[str]):
+        from html import escape as html_escape
+
+        html = (
+            "<div style='margin:6px 0; padding:6px; background:#14161a; border:1px solid #30343a; "
+            "border-radius:6px;'>"
+            "<pre style='font-family:Consolas,monospace; font-size:9pt; margin:0; color:#cfe4ff;'>"
+            + html_escape("\n".join(lines)) +
+            "</pre></div>"
+        )
+
+        doc = self.log_text.document()
+        cursor = self.log_text.textCursor()
+
+        if self._snap_start is None or self._snap_end is None:
+            # гарантируем разрыв со строкой выше
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertBlock()  # ВАЖНО: новый блок до снимка
+            self._snap_start = cursor.position()
+            cursor.insertHtml(html)
+            cursor.insertBlock()
+            self._snap_end = cursor.position()
+        else:
+            cursor.setPosition(self._snap_start)
+            cursor.setPosition(self._snap_end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.insertHtml(html)
+            cursor.insertBlock()
+            self._snap_end = cursor.position()
+
+        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+        self.log_text.ensureCursorVisible()
+
+    def _append_colored_log(self, text: str):
+        text = strip_ansi(text)
+        low = text.lower()
+        if any(w in low for w in ("error", "ошибка", "failed", "traceback", "exception", "critical")):
+            html = f'<span style="color:#ff5555;">{html_escape(text)}</span>'
+        elif any(w in low for w in ("warning", "предупреж", "warn")):
+            html = f'<span style="color:#ffb86c;">{html_escape(text)}</span>'
+        else:
+            html = html_escape(text)
+        self.log_text.append(html)
+
     def closeEvent(self, event):
         self.window_closed.emit()
         super().closeEvent(event)
-    
-    def update_progress(self, value):
+
+    def update_progress(self, value: int):
         self.progress_updated.emit(value)
-    
-    def update_status(self, message):
+
+    def update_status(self, message: str):
         self.status_updated.emit(message)
-    
-    def update_log(self, text):
+
+    def update_log(self, text: str):
         self.log_updated.emit(text)
 
 
 class VoiceActionWindow(QDialog):
-    
-
-    
     status_updated = pyqtSignal(str)
     log_updated = pyqtSignal(str)
     window_closed = pyqtSignal()
-    
+
     def get_threadsafe_callbacks(self):
-            return (
-                None,
-                self.status_updated.emit,
-                self.log_updated.emit
-            )
+        return (
+            None,
+            self.status_updated.emit,
+            self.log_updated.emit
+        )
 
     def __init__(self, parent, title, initial_status=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setFixedSize(700, 400)
         self.setModal(True)
-        
+
         self.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e1e;
-            }
-            QLabel {
-                color: #ffffff;
-            }
+            QDialog { background-color: #1e1e1e; }
+            QLabel { color: #ffffff; }
             QTextEdit {
                 background-color: #101010;
                 color: #cccccc;
                 border: 1px solid #333;
             }
         """)
-        
+
         layout = QVBoxLayout(self)
-        
+
         title_label = QLabel(title)
         title_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
-        
+
         self.status_label = QLabel(initial_status or _("Подготовка...", "Preparing..."))
         self.status_label.setFont(QFont("Segoe UI", 9))
         layout.addWidget(self.status_label)
-        
+
+        self.eta_label = QLabel("ETA --:--")
+        self.eta_label.setFont(QFont("Segoe UI", 9))
+        layout.addWidget(self.eta_label)
+
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
         layout.addWidget(self.log_text, 1)
-        
+
         self.status_updated.connect(self._on_status_update)
         self.log_updated.connect(self._on_log_update)
-        
+
         if parent and hasattr(parent, 'geometry'):
             parent_rect = parent.geometry()
             self.move(
                 parent_rect.center().x() - self.width() // 2,
                 parent_rect.center().y() - self.height() // 2
             )
-    
-    def _on_status_update(self, message):
+
+        # Диапазон «живого» блока снапшота (начало и конец)
+        self._snap_start: int | None = None
+        self._snap_end: int | None = None
+
+    def _on_status_update(self, message: str):
+        message = strip_ansi(message)
         self.status_label.setText(message)
-    
-    def _on_log_update(self, text):
-        self.log_text.append(text)
+        # 1) Поддержка старого маркера
+        m = re.search(r'KATEX_INLINE_OPENETA\s+([^)]+)KATEX_INLINE_CLOSE', message, flags=re.IGNORECASE)
+        # 2) И стандартный "(ETA mm:ss)" из статуса
+        if not m:
+            m = re.search(r'\bETA\s+(\d{1,2}:\d{2}(?::\d{2})?)\b', message, flags=re.IGNORECASE)
+        if m:
+            self.eta_label.setText(f"ETA {m.group(1)}")
+        elif "завершено" in message.lower() or "complete" in message.lower():
+            self.eta_label.setText("ETA 00:00")
+
+    def _append_colored_log(self, text: str):
+        text = strip_ansi(text)
+        low = text.lower()
+        if any(w in low for w in ("error", "ошибка", "failed", "traceback", "exception", "critical")):
+            html = f'<span style="color:#ff5555;">{html_escape(text)}</span>'
+        elif any(w in low for w in ("warning", "предупреж", "warn")):
+            html = f'<span style="color:#ffb86c;">{html_escape(text)}</span>'
+        else:
+            html = html_escape(text)
+        self.log_text.append(html)
+
+    def _on_log_update(self, text: str):
+        if text.startswith("__SNAPSHOT_START__"):
+            in_snap = False
+            lines = []
+            for ln in text.splitlines():
+                if ln == "__SNAPSHOT_START__":
+                    in_snap = True
+                    continue
+                if ln == "__SNAPSHOT_END__":
+                    in_snap = False
+                    continue
+                if in_snap:
+                    clean = strip_ansi(ln).replace("\x1b", "")
+                    if clean.strip():
+                        lines.append(clean)
+            self._render_snapshot(lines)
+            return
+
+        self._append_colored_log(text)
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
     
+    def _render_snapshot(self, lines: list[str]):
+        from html import escape as html_escape
+
+        html = (
+            "<div style='margin:6px 0; padding:6px; background:#14161a; border:1px solid #30343a; "
+            "border-radius:6px;'>"
+            "<pre style='font-family:Consolas,monospace; font-size:9pt; margin:0; color:#cfe4ff;'>"
+            + html_escape("\n".join(lines)) +
+            "</pre></div>"
+        )
+
+        doc = self.log_text.document()
+        cursor = self.log_text.textCursor()
+
+        if self._snap_start is None or self._snap_end is None:
+            # гарантируем разрыв со строкой выше
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertBlock()  # ВАЖНО: новый блок до снимка
+            self._snap_start = cursor.position()
+            cursor.insertHtml(html)
+            cursor.insertBlock()
+            self._snap_end = cursor.position()
+        else:
+            cursor.setPosition(self._snap_start)
+            cursor.setPosition(self._snap_end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.insertHtml(html)
+            cursor.insertBlock()
+            self._snap_end = cursor.position()
+
+        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+        self.log_text.ensureCursorVisible()
+
     def closeEvent(self, event):
         self.window_closed.emit()
         super().closeEvent(event)
-    
-    def update_status(self, message):
+
+    def update_status(self, message: str):
         self.status_updated.emit(message)
-    
-    def update_log(self, text):
+
+    def update_log(self, text: str):
         self.log_updated.emit(text)
+
 
 class VCRedistWarningDialog(QDialog):
     def __init__(self, parent=None):

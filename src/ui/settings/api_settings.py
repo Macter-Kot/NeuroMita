@@ -342,29 +342,27 @@ def setup_api_controls(self, parent):
         if not self.current_preset_id:
             return
         
-        # БЕЗ ШАБЛОНА - разблокировать URL, скрыть help, показать стандартные поля, скрыть g4f-поля
         if template_id is None:
             self.api_url_entry.setEnabled(True)
             for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
                 label.setVisible(False)
             self.test_button.setVisible(False)
             
-            # Показываем стандартные поля (как в старом коде)
             is_g4f = False
             for field in ['api_url_entry', 'api_model_entry', 'api_key_entry', 'nm_api_key_res_label']:
                 frame = getattr(self, f"{field}_frame", None)
                 if frame:
-                    frame.setVisible(True)  # Всегда показываем для "Без шаблона"
+                    frame.setVisible(True)  
             
             for field in ['g4f_version_entry', 'g4f_update_button']:
                 frame = getattr(self, f"{field}_frame", None)
                 if frame:
-                    frame.setVisible(False)  # Скрываем g4f-поля
+                    frame.setVisible(False)
             
             if self.gemini_case_checkbox:
                 frame = getattr(self, "gemini_case_checkbox_frame", None)
                 if frame:
-                    frame.setVisible(True)  # Показываем для "Без шаблона"
+                    frame.setVisible(True)
             
             self.current_preset_data['base'] = None
             self.current_preset_data['is_g4f'] = False
@@ -378,7 +376,6 @@ def setup_api_controls(self, parent):
             _check_changes()
             return
         
-        # С ШАБЛОНОМ - заблокировать URL, применить настройки шаблона
         template_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL,
                                                     {'id': template_id}, timeout=1.0)
         if not template_data or not template_data[0]:
@@ -456,14 +453,34 @@ def setup_api_controls(self, parent):
         
         self.test_button.setVisible(bool(template.get('test_url')))
         
-        if template.get('help_url'):
-            for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
-                label.setVisible(True)
-            base_help_url = template.get('help_url')
-            self.url_help_label.setText(f'<a href="{base_help_url}">{_("Документация", "Documentation")}</a>')
-            self.model_help_label.setText(f'<a href="{base_help_url}">{_("Список моделей", "Models list")}</a>')
-            self.key_help_label.setText(f'<a href="{base_help_url}">{_("Получить ключ", "Get API key")}</a>')
+        if template.get('documentation_url') or template.get('models_url') or template.get('key_url'):
+            # Показываем только те ссылки, которые есть
+            doc_url = template.get('documentation_url', '')
+            models_url = template.get('models_url', '')
+            key_url = template.get('key_url', '')
+            
+            # Документация
+            if doc_url:
+                self.url_help_label.setVisible(True)
+                self.url_help_label.setText(f'<a href="{doc_url}">{_("Документация", "Documentation")}</a>')
+            else:
+                self.url_help_label.setVisible(False)
+            
+            # Список моделей
+            if models_url:
+                self.model_help_label.setVisible(True)
+                self.model_help_label.setText(f'<a href="{models_url}">{_("Список моделей", "Models list")}</a>')
+            else:
+                self.model_help_label.setVisible(False)
+            
+            # Получить ключ
+            if key_url:
+                self.key_help_label.setVisible(True)
+                self.key_help_label.setText(f'<a href="{key_url}">{_("Получить ключ", "Get API key")}</a>')
+            else:
+                self.key_help_label.setVisible(False)
         else:
+            # Скрываем все ссылки если нет ни одной
             for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
                 label.setVisible(False)
         
@@ -478,7 +495,9 @@ def setup_api_controls(self, parent):
         self.current_preset_data['test_url'] = template.get('test_url', '')
         self.current_preset_data['url_tpl'] = template.get('url_tpl', '')
         self.current_preset_data['add_key'] = template.get('add_key', False)
-        self.current_preset_data['help_url'] = template.get('help_url', '')
+        self.current_preset_data['documentation_url'] = template.get('documentation_url', '')
+        self.current_preset_data['models_url'] = template.get('models_url', '')
+        self.current_preset_data['key_url'] = template.get('key_url', '')
         
         self.is_loading_preset = False
         _check_changes()
@@ -597,14 +616,33 @@ def setup_api_controls(self, parent):
         
         self.provider_label.setText(f"{_("Пресет", "Preset")}: {preset.get('name', '')}")
         
-        if preset.get('help_url'):
-            for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
-                label.setVisible(True)
-            base_help_url = preset.get('help_url')
-            self.url_help_label.setText(f'<a href="{base_help_url}">{_("Документация", "Documentation")}</a>')
-            self.model_help_label.setText(f'<a href="{base_help_url}">{_("Список моделей", "Models list")}</a>')
-            self.key_help_label.setText(f'<a href="{base_help_url}">{_("Получить ключ", "Get API key")}</a>')
+        if preset.get('documentation_url') or preset.get('models_url') or preset.get('key_url'):
+            doc_url = preset.get('documentation_url', '')
+            models_url = preset.get('models_url', '')
+            key_url = preset.get('key_url', '')
+            
+            # Документация
+            if doc_url:
+                self.url_help_label.setVisible(True)
+                self.url_help_label.setText(f'<a href="{doc_url}">{_("Документация", "Documentation")}</a>')
+            else:
+                self.url_help_label.setVisible(False)
+            
+            # Список моделей
+            if models_url:
+                self.model_help_label.setVisible(True)
+                self.model_help_label.setText(f'<a href="{models_url}">{_("Список моделей", "Models list")}</a>')
+            else:
+                self.model_help_label.setVisible(False)
+            
+            # Получить ключ
+            if key_url:
+                self.key_help_label.setVisible(True)
+                self.key_help_label.setText(f'<a href="{key_url}">{_("Получить ключ", "Get API key")}</a>')
+            else:
+                self.key_help_label.setVisible(False)
         else:
+            # Скрываем все ссылки если нет ни одной
             for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
                 label.setVisible(False)
         

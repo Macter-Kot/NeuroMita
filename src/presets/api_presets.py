@@ -7,7 +7,7 @@ API_PRESETS_DATA = [
         "known_models": ["deepseek-v3", "gpt-4o-mini", "claude-3.5-sonnet"],
         "is_g4f": True,
         "use_request": False,
-        "help_url": "https://github.com/xtekky/gpt4free"
+        "documentation_url": "https://github.com/xtekky/gpt4free"
     },
     {
         "id": 2,
@@ -23,7 +23,7 @@ API_PRESETS_DATA = [
         "gemini_case": None,
         "use_request": False,
         "add_key": False,
-        "help_url": "https://openrouter.ai/keys"
+        "documentation_url": "https://openrouter.ai/keys"
     },
     {
         "id": 3,
@@ -34,7 +34,7 @@ API_PRESETS_DATA = [
         "known_models": [],
         "use_request": False,
         "add_key": False,
-        "help_url": "https://intelligence.io.solutions"
+        "documentation_url": "https://intelligence.io.solutions"
     },
     {
         "id": 4,
@@ -54,7 +54,9 @@ API_PRESETS_DATA = [
         "add_key": True,
         "test_url": "https://generativelanguage.googleapis.com/v1beta/models?key={key}",
         "filter_fn": "filter_generate_content",
-        "help_url": "https://makersuite.google.com/app/apikey"
+        'documentation_url': 'https://ai.google.dev/gemini-api/docs',
+        'models_url': 'https://ai.google.dev/gemini-api/docs/models/gemini',
+        'key_url': 'https://aistudio.google.com/apikey'
     },
     {
         "id": 5,
@@ -66,7 +68,7 @@ API_PRESETS_DATA = [
         "gemini_case": True,
         "use_request": True,
         "add_key": False,
-        "help_url": "https://proxyapi.ru"
+        "documentation_url": "https://proxyapi.ru"
     },
     {
         "id": 6,
@@ -77,7 +79,7 @@ API_PRESETS_DATA = [
         "known_models": ["deepseek-chat", "deepseek-reasoner"],
         "use_request": False,
         "add_key": False,
-        "help_url": "https://proxyapi.ru"
+        "documentation_url": "https://proxyapi.ru"
     },
     {
         "id": 7,
@@ -88,7 +90,7 @@ API_PRESETS_DATA = [
         "known_models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o1-mini", "o1-preview"],
         "use_request": False,
         "add_key": False,
-        "help_url": "https://platform.openai.com/api-keys"
+        "documentation_url": "https://platform.openai.com/api-keys"
     },
     {
         "id": 8,
@@ -99,7 +101,7 @@ API_PRESETS_DATA = [
         "known_models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         "use_request": False,
         "add_key": False,
-        "help_url": "https://console.anthropic.com/settings/keys"
+        "documentation_url": "https://console.anthropic.com/settings/keys"
     },
     {
         "id": 9,
@@ -110,7 +112,7 @@ API_PRESETS_DATA = [
         "known_models": ["deepseek-chat", "deepseek-reasoner"],
         "use_request": False,
         "add_key": False,
-        "help_url": "https://platform.deepseek.com/api_keys"
+        "documentation_url": "https://platform.deepseek.com/api_keys"
     },
     {
         "id": 10,
@@ -121,6 +123,6 @@ API_PRESETS_DATA = [
         "known_models": ["deepseek-ai/DeepSeek-V3-0324"],
         "use_request": True,
         "add_key": False,
-        "help_url": "https://chutes.ai"
+        "documentation_url": "https://chutes.ai"
     }
 ]

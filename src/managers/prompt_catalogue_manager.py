@@ -61,19 +61,53 @@ def write_info_json(set_path, data):
         logger.exception(f"Error writing info.json to {info_file_path}: {e}")
         QMessageBox.critical(None, "Error", f"Error writing info.json: {e}")
         return False
-
-def copy_prompt_set(set_path, character_path):
-    """
-    Copies the contents of set_path to character_path.
+def copy_prompt_set(set_path: str, character_path: str, clean_target: bool = True) -> bool:
+    """Копирует набор промптов в папку персонажа.
+    Если в наборе НЕТ config.json, то существующий config.json в Prompts/<char> сохраняется и пробрасывается обратно.
+    Если в наборе ЕСТЬ config.json — он заменяет существующий.
     """
     try:
+        set_config = os.path.join(set_path, "config.json")
+        target_config = os.path.join(character_path, "config.json")
+        preserve_config = clean_target and (not os.path.exists(set_config)) and os.path.exists(target_config)
+
+        tmp_config = None
+        if preserve_config:
+            try:
+                import tempfile
+                fd, tmp_config = tempfile.mkstemp(prefix="nm_cfg_backup_", suffix=".json")
+                os.close(fd)
+                shutil.copy2(target_config, tmp_config)
+                logger.info(f"Preserving existing config.json for '{character_path}' (no config.json in set).")
+            except Exception as e:
+                logger.warning(f"Failed to back up existing config.json at {target_config}: {e}")
+                tmp_config = None  # если не смогли сохранить — продолжим без восстановления
+
+        if clean_target and os.path.exists(character_path):
+            shutil.rmtree(character_path)
+
         shutil.copytree(set_path, character_path, dirs_exist_ok=True)
+
+        if preserve_config and tmp_config and not os.path.exists(os.path.join(character_path, "config.json")):
+            try:
+                shutil.copy2(tmp_config, os.path.join(character_path, "config.json"))
+                logger.info(f"Restored preserved config.json into '{character_path}'.")
+            except Exception as e:
+                logger.warning(f"Failed to restore preserved config.json to {character_path}: {e}")
+
         return True
     except Exception as e:
         logger.exception(f"Error copying prompt set from {set_path} to {character_path}: {e}")
         QMessageBox.critical(None, "Error", f"Error copying prompt set: {e}")
         return False
+    finally:
+        try:
+            if 'tmp_config' in locals() and tmp_config and os.path.exists(tmp_config):
+                os.remove(tmp_config)
+        except Exception:
+            pass
 
+        
 def create_new_set(character_name, catalogue_path, prompts_path):
     """
     Creates a new set directory in catalogue_path with name character_name_YYYYMMDD_HHMMSS,

@@ -18,13 +18,14 @@ def check_gpu_provider():
         logger.info("Предупреждение: Определение вендора GPU реализовано только для Windows.")
         return None
 
-    amd_test = os.environ.get('TEST_AS_AMD', '').upper() == 'TRUE'
+    if os.environ.get('TEST_AS_AMD', '').upper() == 'TRUE':
+        return "AMD"
+    elif os.environ.get('TEST_AS_NVIDIA', '').upper() == 'TRUE':
+        return "NVIDIA"
 
     def parse_output(output):
         """Вспомогательная функция для анализа вывода"""
-        if amd_test:
-            return "AMD"
-        elif "NVIDIA" in output:
+        if "NVIDIA" in output:
             return "NVIDIA"
         elif "AMD" in output or "Radeon" in output:
             return "AMD"

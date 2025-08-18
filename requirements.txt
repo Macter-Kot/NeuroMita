@@ -87,3 +87,4 @@ qtawesome
 pyqt6
 pillow
 portalocker
+pywinpty

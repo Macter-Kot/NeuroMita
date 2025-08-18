@@ -125,14 +125,12 @@ class ChessGame(GameInterface):
             try:
                 latest_state_data = self.state_queue.get_nowait()
             except Exception:
-                break # Очередь пуста или ошибка
+                break
 
         if not latest_state_data:
-            # Если данных нет, запросим их у модуля игры
             self._send_command({"action": "get_state"})
             return "Шахматная игра активна, но нет данных от модуля. Запрашиваю текущее состояние."
 
-        # 1. Устанавливаем все данные из состояния в переменные персонажа
         player_gui_is_white = latest_state_data.get('player_is_white_in_gui', True)
         current_board_turn = latest_state_data.get('turn', 'N/A')
         llm_actual_color = 'white' if not player_gui_is_white else 'black'
@@ -152,19 +150,17 @@ class ChessGame(GameInterface):
         
         legal_moves = latest_state_data.get('legal_moves_uci', [])
         self.character.set_variable("GAME_STATE_HAS_LEGAL_MOVES", bool(legal_moves))
-        self.character.set_variable("GAME_STATE_LEGAL_MOVES_STRING", ", ".join(legal_moves)) # в этой строчке можно ограничить доступные пути
+        self.character.set_variable("GAME_STATE_LEGAL_MOVES_STRING", ", ".join(legal_moves))
         self.character.set_variable("GAME_STATE_HAS_PROMOTION_MOVE", any(len(m) == 5 and m[4] in 'qrbn' for m in legal_moves))
         
         self.character.set_variable("GAME_STATE_ERROR_MSG", latest_state_data.get("error", None))
         self.character.set_variable("GAME_STATE_INVALID_MOVE_TEXT", latest_state_data.get("error_move", None))
         self.character.set_variable("GAME_STATE_INVALID_MOVE_REASON", latest_state_data.get("error_message_for_move", None))
 
-        # 2. Обрабатываем DSL-шаблон
         template_filename = f"{self.game_id}.system"
         try:
-            # Используем правильную функцию для исполнения файла с логикой
-            prompt_content, _ = self.character.dsl_interpreter.execute_dsl_script(template_filename)
-            return prompt_content
+            content, _ = self.character.dsl_interpreter.process_file(template_filename)
+            return content
         except FileNotFoundError:
             logger.error(f"[{self.character.char_id}] Скрипт для игры '{self.game_id}' не найден: {template_filename}")
             return f"ОШИБКА: Не найден системный скрипт для игры '{self.game_id}'."

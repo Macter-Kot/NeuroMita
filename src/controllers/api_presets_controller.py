@@ -7,6 +7,7 @@ from dataclasses import dataclass, asdict
 from core.events import get_event_bus, Events, Event
 from main_logger import logger
 
+from utils import _
 import threading
 import requests
 
@@ -36,7 +37,9 @@ class ApiPreset:
     filter_fn: str = ""
     base: Optional[int] = None
     add_key: bool = False
-    help_url: str = ""
+    documentation_url: str = ""  
+    models_url: str = ""         
+    key_url: str = ""            
     key: str = ""
     reserve_keys: List[str] = None
     

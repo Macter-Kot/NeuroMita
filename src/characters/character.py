@@ -45,15 +45,15 @@ class Character:
     }
 
     def __init__(self, 
-             char_id: str, 
-             name: str, 
-             silero_command: str, 
-             short_name: str,
-             miku_tts_name: str = "Player", 
-             silero_turn_off_video: bool = False,
-             initial_vars_override: Dict[str, Any] | None = None,
-             is_cartridge = False
-             ):
+         char_id: str, 
+         name: str, 
+         silero_command: str, 
+         short_name: str,
+         miku_tts_name: str = "Player", 
+         silero_turn_off_video: bool = False,
+         initial_vars_override: Dict[str, Any] | None = None,
+         is_cartridge = False
+         ):
     
         self.char_id = char_id
         self.name = name
@@ -95,12 +95,13 @@ class Character:
 
         self.load_history()
 
-        path_resolver_instance = LocalPathResolver(
+        from managers.dsl_manager import create_dsl_interpreter
+        self.dsl_interpreter = create_dsl_interpreter(self)
+
+        self.post_dsl_interpreter = PostDslInterpreter(self, LocalPathResolver(
                 global_prompts_root=self.prompts_root, 
                 character_base_data_path=self.base_data_path
-            )
-        self.dsl_interpreter = DslInterpreter(self, path_resolver_instance)
-        self.post_dsl_interpreter = PostDslInterpreter(self, path_resolver_instance)
+            ))
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().isoformat(" ", "minutes"))
 
         self.set_variable("playingGame", False)
@@ -111,48 +112,101 @@ class Character:
         """
         Загружает кастомные настройки из config.json в папке персонажа.
         Если файла нет - создаёт его с базовыми значениями из DEFAULT_OVERRIDES.
+        Добавляет и поддерживает 6 новых статичных переменных с ограничениями:
+        - attitude_min / attitude_max
+        - boredom_min / boredom_max
+        - stress_min / stress_max
+        null (None) допускается — означает отсутствие ограничения.
+        Логируем ошибку, если max < min.
         """
-        
         config_path = os.path.join(self.base_data_path, "config.json")
-        
+
+        bounds_defaults = {
+            "attitude_min": 0.0, "attitude_max": 100.0,
+            "boredom_min": 0.0,  "boredom_max": 100.0,
+            "stress_min": 0.0,   "stress_max": 100.0,
+        }
+
+        def _validate_pairs(cfg: Dict[str, Any]):
+            def _check_pair(min_key: str, max_key: str, label: str):
+                vmin = cfg.get(min_key)
+                vmax = cfg.get(max_key)
+                if isinstance(vmin, (int, float)) and isinstance(vmax, (int, float)) and vmax < vmin:
+                    logger.error(f"[{self.char_id}] Config error: {label} max ({vmax}) < min ({vmin}).")
+            _check_pair("attitude_min", "attitude_max", "attitude")
+            _check_pair("boredom_min",  "boredom_max",  "boredom")
+            _check_pair("stress_min",   "stress_max",   "stress")
+
         try:
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config_data = json.load(f)
-                
+
+                # Гарантируем наличие новых ключей с дефолтами
+                changed = False
+                for k, v in bounds_defaults.items():
+                    if k not in config_data:
+                        config_data[k] = v
+                        changed = True
+
+                _validate_pairs(config_data)
+
                 logger.info(f"[{self.char_id}] Loading custom config from {config_path}")
-                
                 for key, value in config_data.items():
                     self.set_variable(key, value)
                     logger.debug(f"[{self.char_id}] Set custom variable {key} = {value}")
+
+                # Если добавили новые ключи — перезапишем файл
+                if changed:
+                    try:
+                        with open(config_path, 'w', encoding='utf-8') as f:
+                            json.dump(config_data, f, indent=4, ensure_ascii=False)
+                        logger.info(f"[{self.char_id}] Missing config keys added and saved to {config_path}")
+                    except Exception as e:
+                        logger.error(f"[{self.char_id}] Failed to update config.json with missing keys: {e}")
+
             else:
                 logger.info(f"[{self.char_id}] config.json not found at {config_path}, creating with default values")
-                
+
                 base_config = self.BASE_DEFAULTS.copy()
                 if hasattr(self, "DEFAULT_OVERRIDES"):
                     base_config.update(self.DEFAULT_OVERRIDES)
-                
+
+                # Новые статичные ключи ограничений
+                for k, v in bounds_defaults.items():
+                    base_config.setdefault(k, v)
+
                 os.makedirs(os.path.dirname(config_path), exist_ok=True)
-                
+
                 with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(base_config, f, indent=4, ensure_ascii=False)
-                
+
+                # Применяем значения и в рантайме
+                for key, value in base_config.items():
+                    self.set_variable(key, value)
+
                 logger.info(f"[{self.char_id}] Default config saved to {config_path}")
-                
+
         except json.JSONDecodeError as e:
             logger.error(f"[{self.char_id}] Error parsing config.json: {e}, creating new config")
-            
+
             base_config = self.BASE_DEFAULTS.copy()
             if hasattr(self, "DEFAULT_OVERRIDES"):
                 base_config.update(self.DEFAULT_OVERRIDES)
-            
+
+            for k, v in bounds_defaults.items():
+                base_config.setdefault(k, v)
+
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
-            
+
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(base_config, f, indent=4, ensure_ascii=False)
-                
+
+            for key, value in base_config.items():
+                self.set_variable(key, value)
+
             logger.info(f"[{self.char_id}] New config created with defaults after JSON error")
-            
+
         except Exception as e:
             logger.error(f"[{self.char_id}] Error loading/creating config.json: {e}")
 
@@ -180,43 +234,35 @@ class Character:
         # logger.debug(f"Variable '{name}' set to: {value} (type: {type(value)}) for char '{self.char_id}'")
 
 
-    def get_llm_system_prompts(self) -> list:
+    def get_llm_system_prompts(self) -> list[str]:
         """
-        Generates the main system prompt string using the DSL engine.
+        Генерирует список текстовых блоков системного промпта через DSL.
+        Возвращает массив строк; системная инфа из ADD_SYSTEM_INFO складывается в self.system_messages (как строки).
         """
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().strftime("%Y %B %d (%A) %H:%M"))
         self.update_app_vars(SettingsController.get_app_vars())
 
-        if hasattr(self.dsl_interpreter, 'char_ctx_filter'):
-            self.dsl_interpreter.char_ctx_filter.set_character_id(self.char_id) # type: ignore
-            
         try:
-            generated_prompt,system_messages = self.dsl_interpreter.process_main_template_file(self.main_template_path_relative)
-            self.system_messages.extend(system_messages)
-            return generated_prompt
+            blocks, system_infos = self.dsl_interpreter.process_main_template(self.main_template_path_relative)
+            if system_infos:
+                self.system_messages.extend(system_infos)
+            return blocks or []
         except Exception as e:
             logger.error(f"Critical error during DSL processing for {self.char_id}: {e}", exc_info=True)
-            print(f"{RED_COLOR}Critical error in get_llm_system_prompt_string for {self.char_id}: {e}{RESET_COLOR}\n{traceback.format_exc()}", file=sys.stderr)
+            print(f"{RED_COLOR}Critical error in get_llm_system_prompts for {self.char_id}: {e}{RESET_COLOR}\n{traceback.format_exc()}", file=sys.stderr)
             return []
 
     def get_full_system_setup_for_llm(self, separate_prompts = False):
         """
-        Prepares all system messages for the LLM.
+        Собирает системные сообщения для LLM на основе массива строк из DSL.
+        Если separate_prompts=True — по одному сообщению на блок; иначе — один общий промпт.
         """
+        from utils.prompt_builder import build_system_prompts
+
         messages = []
-        dsl_generated_content = self.get_llm_system_prompts()
+        dsl_blocks = self.get_llm_system_prompts()
 
-        if separate_prompts:
-            if dsl_generated_content:
-                messages.extend(dsl_generated_content)
-
-        else:
-            total_text = ""
-            for message in dsl_generated_content:
-                total_text += f"\n{message["content"]}"
-
-            if total_text:
-                messages.append({"role": "system", "content": total_text})
+        messages.extend(build_system_prompts(dsl_blocks, separate=separate_prompts))
 
         memory_message_content = self.memory_system.get_memories_formatted()
         if memory_message_content and memory_message_content.strip():
@@ -390,15 +436,18 @@ class Character:
 
     # In OpenMita/character.py, class Character
     def reload_character_data(self):
-        logger.info(f"[{self.char_id}] Reloading character data from history file.")
+        logger.info(f"[{self.char_id}] Reloading character data from disk (config + history).")
+
+        # Сначала перезагружаем config, затем историю (история может переопределить значения)
+        self.load_config()
         self.load_history()
         self.memory_system.load_memories()
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().isoformat(" ", "minutes"))
 
         if hasattr(self, 'post_dsl_interpreter') and self.post_dsl_interpreter:
-            self.post_dsl_interpreter._load_rules_and_configs()  # Ensure _load_rules can be called to refresh
+            self.post_dsl_interpreter._load_rules_and_configs()
             logger.info(f"[{self.char_id}] Post-DSL rules reloaded.")
-        else:  # Initialize if it wasn't (e.g. loading an old character state)
+        else:
             path_resolver_instance = LocalPathResolver(
                 global_prompts_root=self.prompts_root,
                 character_base_data_path=self.base_data_path
@@ -443,13 +492,16 @@ class Character:
             subclass_overrides = getattr(self, "DEFAULT_OVERRIDES", {})
             composed_initials.update(subclass_overrides) 
         
-        self.variables.clear() # Clear current vars
-        for key, value in composed_initials.items(): # Set back to composed initials
+        self.variables.clear()
+        for key, value in composed_initials.items():
             self.set_variable(key, value)
+
+        # Перезагружаем конфиг после сброса — чтобы применить новые/актуальные значения
+        self.load_config()
 
         self.memory_system.clear_memories()
         self._cached_system_setup = []
-        self.history_manager.clear_history() # This saves an empty history file
+        self.history_manager.clear_history()
         logger.info(f"[{self.char_id}] History cleared and state reset to initial defaults/overrides.")
 
     def add_message_to_history(self, message: Dict[str, str]): 
@@ -494,24 +546,126 @@ class Character:
 
     def adjust_attitude(self, amount: float):
         current = self.get_variable("attitude", 60.0)
-        amount = round(amount,2)
-        amount = clamp(float(amount), -6.0, 6.0) # Max adjustment per original prompt
-        self.set_variable("attitude", clamp(current + amount, 0.0, 100.0))
+        amount = round(amount, 2)
+        amount = clamp(float(amount), -6.0, 6.0)  # ограничение шага изменения
+
+        # Динамические границы (None = без ограничения)
+        min_bound = self.get_variable("attitude_min", 0.0)
+        max_bound = self.get_variable("attitude_max", 100.0)
+
+        def to_num_or_none(v):
+            if v is None:
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
+            try:
+                return float(v)
+            except Exception:
+                return None
+
+        min_val = to_num_or_none(min_bound)
+        max_val = to_num_or_none(max_bound)
+
+        if (min_val is not None and max_val is not None) and max_val < min_val:
+            logger.error(f"[{self.char_id}] Invalid config: attitude_max ({max_val}) is less than attitude_min ({min_val}).")
+            min_val, max_val = None, None  # отключаем ограничение при некорректной паре
+
+        new_value = current + amount
+        if min_val is None and max_val is None:
+            pass
+        elif min_val is None:
+            if new_value > max_val:
+                new_value = max_val
+        elif max_val is None:
+            if new_value < min_val:
+                new_value = min_val
+        else:
+            new_value = clamp(new_value, min_val, max_val)
+
+        self.set_variable("attitude", new_value)
         logger.info(f"[{self.char_id}] Attitude changed by {amount:.2f} to {self.get_variable('attitude'):.2f}")
+
 
     def adjust_boredom(self, amount: float):
         current = self.get_variable("boredom", 10.0)
         amount = round(amount, 2)
         amount = clamp(float(amount), -6.0, 6.0)
-        self.set_variable("boredom", clamp(current + amount, 0.0, 100.0))
+
+        min_bound = self.get_variable("boredom_min", 0.0)
+        max_bound = self.get_variable("boredom_max", 100.0)
+
+        def to_num_or_none(v):
+            if v is None:
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
+            try:
+                return float(v)
+            except Exception:
+                return None
+
+        min_val = to_num_or_none(min_bound)
+        max_val = to_num_or_none(max_bound)
+
+        if (min_val is not None and max_val is not None) and max_val < min_val:
+            logger.error(f"[{self.char_id}] Invalid config: boredom_max ({max_val}) is less than boredom_min ({min_val}).")
+            min_val, max_val = None, None
+
+        new_value = current + amount
+        if min_val is None and max_val is None:
+            pass
+        elif min_val is None:
+            if new_value > max_val:
+                new_value = max_val
+        elif max_val is None:
+            if new_value < min_val:
+                new_value = min_val
+        else:
+            new_value = clamp(new_value, min_val, max_val)
+
+        self.set_variable("boredom", new_value)
         logger.info(f"[{self.char_id}] Boredom changed by {amount:.2f} to {self.get_variable('boredom'):.2f}")
+
 
     def adjust_stress(self, amount: float):
         current = self.get_variable("stress", 5.0)
         amount = round(amount, 2)
         amount = clamp(float(amount), -6.0, 6.0)
-        self.set_variable("stress", clamp(current + amount, 0.0, 100.0))
-        logger.info(f"[{self.char_id}] Stress changed by {amount:.2f} to {self.get_variable('stress'):.2f}")
 
+        min_bound = self.get_variable("stress_min", 0.0)
+        max_bound = self.get_variable("stress_max", 100.0)
+
+        def to_num_or_none(v):
+            if v is None:
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
+            try:
+                return float(v)
+            except Exception:
+                return None
+
+        min_val = to_num_or_none(min_bound)
+        max_val = to_num_or_none(max_bound)
+
+        if (min_val is not None and max_val is not None) and max_val < min_val:
+            logger.error(f"[{self.char_id}] Invalid config: stress_max ({max_val}) is less than stress_min ({min_val}).")
+            min_val, max_val = None, None
+
+        new_value = current + amount
+        if min_val is None and max_val is None:
+            pass
+        elif min_val is None:
+            if new_value > max_val:
+                new_value = max_val
+        elif max_val is None:
+            if new_value < min_val:
+                new_value = min_val
+        else:
+            new_value = clamp(new_value, min_val, max_val)
+
+        self.set_variable("stress", new_value)
+        logger.info(f"[{self.char_id}] Stress changed by {amount:.2f} to {self.get_variable('stress'):.2f}")
+        
     def __str__(self):
         return f"Character(id='{self.char_id}', name='{self.name}')"

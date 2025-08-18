@@ -14,6 +14,21 @@ from ui.gui_templates import create_section_header
 
 from core.events import get_event_bus, Events
 
+
+def _prompt_set_key(char_name: str) -> str:
+    """Ключ Settings для конкретного персонажа (импортируем логику из character_settings)"""
+    return f"PROMPT_SET_{char_name}"
+
+
+def _update_sync_indicator(gui):
+    """Обновляет индикатор синхронизации, если он существует"""
+    try:
+        from ui.settings.character_settings import _update_sync_indicator as update_indicator
+        update_indicator(gui)
+    except ImportError:
+        pass  # Если не можем импортировать, просто пропускаем
+
+
 def setup_prompt_catalogue_controls(gui, parent_layout):
     catalogue_path = "PromptsCatalogue"
     
@@ -162,9 +177,14 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
             set_path = os.path.join(catalogue_path, selected_set_name)
             character_prompts_path = os.path.join("Prompts", character_name)
             
-            if copy_prompt_set(set_path, character_prompts_path):
+            if copy_prompt_set(set_path, character_prompts_path, clean_target=True):
+                # Запоминаем выбор для конкретного персонажа
+                gui.settings.set(_prompt_set_key(character_name), selected_set_name)
+                gui.settings.save_settings()
+                
                 QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно применен к текущему персонажу.", "Prompt set successfully applied to the current character."))
                 event_bus.emit(Events.Model.RELOAD_CHARACTER_DATA)
+                _update_sync_indicator(gui)  # индикатор сразу позеленеет
             else:
                 QMessageBox.critical(gui, _("Ошибка", "Error"), _("Не удалось применить набор промптов.", "Failed to apply prompt set."))
         else:
@@ -206,9 +226,18 @@ def setup_prompt_catalogue_controls(gui, parent_layout):
         selected_set_name = prompt_set_combobox.currentText()
         if selected_set_name:
             set_path = os.path.join(catalogue_path, selected_set_name)
-            if delete_prompt_set(set_path, gui):
-                QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно удален.", "Prompt set deleted successfully."))
-                update_prompt_set_combobox()
+            
+            # Используем delete_prompt_set из менеджера
+            reply = QMessageBox.question(None, "Confirm Delete", f"Are you sure you want to delete the prompt set at {set_path}?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    import shutil
+                    shutil.rmtree(set_path)
+                    QMessageBox.information(gui, _("Успех", "Success"), _("Набор промптов успешно удален.", "Prompt set deleted successfully."))
+                    update_prompt_set_combobox()
+                except Exception as e:
+                    QMessageBox.critical(None, "Error", f"Error deleting prompt set: {e}")
         else:
             QMessageBox.warning(gui, _("Внимание", "Warning"), _("Набор промптов не выбран.", "No prompt set selected."))
 

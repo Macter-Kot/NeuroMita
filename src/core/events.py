@@ -474,7 +474,6 @@ class Events:
         LOAD_SETTINGS = "load_settings"
         GET_SETTINGS = "get_settings"
 
-
     class VoiceModel:
         """События для управления локальными голосовыми моделями"""
         GET_MODEL_DATA = "get_voice_model_data"

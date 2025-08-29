@@ -172,7 +172,7 @@ def setup_mita_controls(gui, parent_layout):
         {'label': 'Персонажи', 'key': 'CHARACTER', 'type': 'combobox', 'options': character_list, 
          'default': "Crazy", 'widget_name': "character_combobox", 
          'command': lambda: change_character_actions(gui)},
-        {'label': 'Набор промтов', 'type': 'combobox',  # без 'key'
+        {'label': 'Набор промтов', 'type': 'combobox',
          'options': list_prompt_sets("PromptsCatalogue", current_char_id), 
          'default': _("Выберите", "Choose"), 'widget_name': 'prompt_pack_combobox'},
         {'label': _('Провайдер для персонажа', 'Provider for character'),

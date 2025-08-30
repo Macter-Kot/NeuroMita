@@ -356,7 +356,7 @@ def clipboard_image_to_controller(gui) -> bool:
     return True
 
 def attach_images(gui):
-    file_paths, _ = QFileDialog.getOpenFileNames(
+    file_paths, __ = QFileDialog.getOpenFileNames(
         gui,
         _("Выберите изображения", "Select Images"),
         "",

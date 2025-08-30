@@ -372,39 +372,45 @@ def wire_api_settings_logic(self):
 
     def _load_preset(preset_id):
         self.is_loading_preset = True
+
         preset_data = self.event_bus.emit_and_wait(Events.ApiPresets.GET_PRESET_FULL, 
-                                                   {'id': preset_id}, timeout=1.0)
+                                                {'id': preset_id}, timeout=1.0)
         if not preset_data or not preset_data[0]:
             self.is_loading_preset = False
             return
+
         preset = preset_data[0]
         self.current_preset_data = preset
         self.current_preset_id = preset_id
-        
+
+        # Определяем, является ли пресет кастомным
         is_custom = preset_id in self.custom_presets_list_items
-        
+
+        # Загружаем состояние (state) для приоритета поверх пресета
         state = self.event_bus.emit_and_wait(Events.ApiPresets.LOAD_PRESET_STATE,
-                                             {'id': preset_id}, timeout=1.0)
+                                            {'id': preset_id}, timeout=1.0)
         state = state[0] if state and state[0] else {}
-        
-        url = state.get('url', preset.get('url', ''))
+
+        # Модель/ключ — state имеет приоритет
         model = state.get('model', preset.get('default_model', ''))
         key = state.get('key', preset.get('key', ''))
-        
-        self.api_url_entry.setText(url)
+
         self.api_model_entry.setText(model)
         self.api_key_entry.setText(key)
-        
+
+        # Резервные ключи
         if hasattr(self, 'nm_api_key_res_label'):
             reserve_keys = state.get('reserve_keys', preset.get('reserve_keys', []))
             if isinstance(reserve_keys, list):
                 self.nm_api_key_res_label.setPlainText('\n'.join(reserve_keys))
             else:
                 self.nm_api_key_res_label.setPlainText('')
-        
+
+        # Переключатель Gemini — активен только если в шаблоне gemini_case == None
         if self.gemini_case_checkbox and preset.get('gemini_case') is None:
             self.gemini_case_checkbox.setChecked(state.get('gemini_case', False))
-        
+
+        # Устанавливаем выбранный шаблон в комбобоксе
         base = preset.get('base')
         if base:
             for i in range(self.template_combo.count()):
@@ -413,43 +419,82 @@ def wire_api_settings_logic(self):
                     break
         else:
             self.template_combo.setCurrentIndex(0)
-        
+
         is_g4f = preset.get('is_g4f', False)
         has_template = base is not None
+
+        # Доступность полей
         self.api_url_entry.setEnabled(is_custom and not is_g4f and not has_template)
         self.api_model_entry.setEnabled(True)
         self.api_key_entry.setEnabled(not is_g4f)
-        
+
+        # Видимость блоков
         for field in ['api_url_entry', 'api_model_entry', 'api_key_entry', 'nm_api_key_res_label']:
             frame = getattr(self, f"{field}_frame", None)
             if frame:
                 frame.setVisible(not is_g4f)
+
         for field in ['g4f_version_entry', 'g4f_update_button']:
             frame = getattr(self, f"{field}_frame", None)
             if frame:
                 frame.setVisible(is_g4f)
+
         if self.gemini_case_checkbox:
             frame = getattr(self, "gemini_case_checkbox_frame", None)
             if frame:
-                frame.setVisible(preset.get('gemini_case') is None)
-        
+                # Для g4f скрываем, иначе видим только если gemini_case настраиваемый (None)
+                frame.setVisible((preset.get('gemini_case') is None) and (not is_g4f))
+
+        # Сборка и установка URL ДЛЯ ОТОБРАЖЕНИЯ
+        def _compute_url_for_display(p: dict) -> str:
+            """
+            Если есть url_tpl — подставляем текущую модель и (опционально) key.
+            Иначе — возвращаем прямой url (может прийти из шаблона).
+            """
+            url_tpl = p.get('url_tpl') or ''
+            if url_tpl:
+                cur_model = self.api_model_entry.text() or p.get('default_model', '')
+                url = url_tpl.format(model=cur_model) if '{model}' in url_tpl else url_tpl
+                if p.get('add_key'):
+                    cur_key = self.api_key_entry.text().strip()
+                    if cur_key:
+                        sep = '&' if '?' in url else '?'
+                        url = f"{url}{sep}key={cur_key}"
+                return url
+            return p.get('url', '')
+
+        if has_template:
+            # При наличии шаблона URL не хранится в кастоме — вычисляем из шаблона
+            display_url = _compute_url_for_display(preset)
+            self.api_url_entry.setText(display_url)
+        else:
+            # Полностью ручной пресет — используем state.url или preset.url
+            manual_url = state.get('url', preset.get('url', ''))
+            self.api_url_entry.setText(manual_url)
+
+        # Кнопка теста подключения
         self.test_button.setVisible(bool(preset.get('test_url')))
-        self.provider_label.setText(f"{_("Пресет", "Preset")}: {preset.get('name', '')}")
-        
+
+        # Заголовок и ссылки помощи
+        self.provider_label.setText(f"{_('Пресет', 'Preset')}: {preset.get('name', '')}")
+
         if preset.get('documentation_url') or preset.get('models_url') or preset.get('key_url'):
             doc_url = preset.get('documentation_url', '')
             models_url = preset.get('models_url', '')
             key_url = preset.get('key_url', '')
+
             if doc_url:
                 self.url_help_label.setVisible(True)
                 self.url_help_label.setText(f'<a href="{doc_url}">{_("Документация", "Documentation")}</a>')
             else:
                 self.url_help_label.setVisible(False)
+
             if models_url:
                 self.model_help_label.setVisible(True)
                 self.model_help_label.setText(f'<a href="{models_url}">{_("Список моделей", "Models list")}</a>')
             else:
                 self.model_help_label.setVisible(False)
+
             if key_url:
                 self.key_help_label.setVisible(True)
                 self.key_help_label.setText(f'<a href="{key_url}">{_("Получить ключ", "Get API key")}</a>')
@@ -458,20 +503,26 @@ def wire_api_settings_logic(self):
         else:
             for label in [self.url_help_label, self.model_help_label, self.key_help_label]:
                 label.setVisible(False)
-        
+
+        # Обновляем список моделей для автодополнения
         known_models = preset.get('known_models', [])
         if known_models:
             self.api_model_list_model.setStringList(known_models)
-        
+
+        # Применяем настройки и запоминаем последний пресет
         _apply_settings_from_preset(preset)
-        
         self.settings.set("LAST_API_PRESET_ID", preset_id)
         self.settings.save_settings()
+
+        # ОРИГИНАЛЬНОЕ СОСТОЯНИЕ — ПОСЛЕ всех setText/setIndex/setChecked
         self.original_preset_state = _get_current_state()
+
+        # Кнопки сохранения (только для кастомных)
         self.save_preset_button.setVisible(is_custom)
         self.save_preset_button.setEnabled(False)
+
         self.is_loading_preset = False
-        _check_changes()
+        _check_changes()  # Проверяем изменения в конце загрузки
 
     def _get_current_state():
         state = {

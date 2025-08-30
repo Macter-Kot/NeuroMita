@@ -68,6 +68,7 @@ def get_stylesheet():
         QTextEdit:focus, QLineEdit:focus {
             border: 1px solid #007acc;
             background-color: #3c3c3c;
+            outline: none;
         }
         
         QTextEdit:disabled, QLineEdit:disabled {

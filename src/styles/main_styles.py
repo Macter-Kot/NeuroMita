@@ -32,6 +32,7 @@ def get_stylesheet():
         QTextEdit:focus, QLineEdit:focus {
             border: 1px solid #8a2be2;
             background-color: #2a2a2a;
+            outline: none;
         }
         QTextEdit#DebugWindow {
             font-family: "Consolas", "Courier New", monospace;

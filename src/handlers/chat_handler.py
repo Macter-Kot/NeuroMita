@@ -136,7 +136,6 @@ class ChatModel:
             preset = preset_data[0]
             logger.info(f"Preset {preset_id} loaded successfully: {preset.get('name', 'Unknown')}")
             
-            # Если есть url_tpl, собираем URL
             url = preset.get('url', '')
             if preset.get('url_tpl'):
                 model = preset.get('default_model', '')
@@ -144,17 +143,24 @@ class ChatModel:
                 if preset.get('add_key') and preset.get('key'):
                     sep = '&' if '?' in url else '?'
                     url = f"{url}{sep}key={preset['key']}"
-            
+
+            # ВАЖНО: если gemini_case в шаблоне настраиваемый (None), берём фактическое значение из state
+            effective_gemini = preset.get('gemini_case', False)
+            if preset.get('gemini_case') is None:
+                state = self.event_bus.emit_and_wait(Events.ApiPresets.LOAD_PRESET_STATE, {'id': preset_id}, timeout=1.0)
+                if state and state[0]:
+                    effective_gemini = bool(state[0].get('gemini_case', False))
+
             return {
                 'api_key': preset.get('key', ''),
                 'api_url': url,
                 'api_model': preset.get('default_model', ''),
                 'make_request': preset.get('use_request', False),
-                'gemini_case': preset.get('gemini_case', False),
+                'gemini_case': effective_gemini,
                 'is_g4f': preset.get('is_g4f', False),
                 'g4f_model': preset.get('default_model', '') if preset.get('is_g4f') else '',
                 'preset_name': preset.get('name', 'Unknown'),
-                'reserve_keys': preset.get('reserve_keys', []),  # Добавляем резервные ключи из пресета
+                'reserve_keys': preset.get('reserve_keys', []),
             }
         else:
             logger.error(f"Failed to load preset ID {preset_id}: using fallback from settings")

@@ -25,6 +25,7 @@ from win32 import win32file
 import pyworld
 import cProfile
 import filecmp
+import soxr
 
 try:
     import google.api_core
@@ -48,6 +49,8 @@ import os
 if os.environ.get("VERBOSE_TRITON_LOGS", "0") == "1":
     os.environ["TORCH_LOGS"] = "+dynamo"
     os.environ["TORCHDYNAMO_VERBOSE"] = "1"
+    
+os.environ["UV_LINK_MODE"] = "copy"
 
 libs_dir = os.path.join(os.path.dirname(sys.executable), "Lib")
 if not os.path.exists(libs_dir):

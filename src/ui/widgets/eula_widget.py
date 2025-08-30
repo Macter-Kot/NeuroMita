@@ -21,66 +21,87 @@ class EULAWidget(QWidget):
                 background-color: transparent;
             }
             #EULAContainer {
-                background-color: #2a2a2a;
-                border: 2px solid #5a5a5a;
-                border-radius: 12px;
+                background-color: rgba(24,24,28,0.95);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 16px;
             }
             #EULATitle {
                 font-size: 18px;
-                font-weight: bold;
-                color: #ffffff;
-                padding: 10px;
+                font-weight: 700;
+                color: #f5f5f7;
+                padding: 6px 8px;
+                border-radius: 8px;
+                background-color: rgba(255,255,255,0.04);
             }
             #EULAText {
-                background-color: #1a1a1a;
-                color: #e0e0e0;
-                border: 1px solid #3a3a3a;
-                border-radius: 8px;
+                background-color: rgba(16,16,20,0.92);
+                color: #e6e6eb;
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 12px;
                 padding: 12px;
                 font-size: 12px;
-                line-height: 1.4;
+                line-height: 1.55;
+                selection-background-color: #8a2be2;
+                selection-color: #ffffff;
             }
             QPushButton {
                 min-width: 120px;
-                min-height: 35px;
+                min-height: 36px;
                 font-size: 14px;
-                font-weight: bold;
-                border-radius: 8px;
-                border: none;
+                font-weight: 600;
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.08);
+                background-color: rgba(255,255,255,0.04);
+                color: #e6e6eb;
+            }
+            QPushButton:hover {
+                background-color: rgba(255,255,255,0.07);
+            }
+            QPushButton:pressed {
+                background-color: rgba(255,255,255,0.10);
             }
             #AcceptButton {
-                background-color: #4a7c59;
-                color: white;
+                background-color: #3da66e;
+                color: #ffffff;
+                border: 1px solid rgba(61,166,110,0.35);
             }
             #AcceptButton:hover {
-                background-color: #5d8f6f;
+                background-color: #49b57b;
+            }
+            #AcceptButton:pressed {
+                background-color: #349a69;
             }
             #RejectButton {
-                background-color: #d32f2f;
-                color: white;
+                background-color: #d64545;
+                color: #ffffff;
+                border: 1px solid rgba(214,69,69,0.35);
             }
             #RejectButton:hover {
-                background-color: #e53935;
+                background-color: #e25757;
+            }
+            #RejectButton:pressed {
+                background-color: #bf3838;
             }
             QRadioButton {
-                color: #e0e0e0;
+                color: #e6e6eb;
                 font-size: 12px;
-                padding: 5px;
+                padding: 5px 8px;
             }
             QRadioButton::indicator {
-                width: 14px;
-                height: 14px;
-                border-radius: 7px;
-                border: 2px solid #666666;
-                background-color: #2a2a2a;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.18);
+                background-color: rgba(24,24,28,1);
+                margin-right: 6px;
             }
             QRadioButton::indicator:checked {
-                background-color: #6a4c93;
-                border: 2px solid #6a4c93;
+                background-color: #8a2be2;
+                border: 1px solid #a270ff;
             }
             QFrame#Separator {
-                background-color: #5a5a5a;
-                max-height: 2px;
+                background-color: rgba(255,255,255,0.08);
+                max-height: 1px;
                 border-radius: 1px;
             }
         """)

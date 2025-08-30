@@ -79,61 +79,66 @@ class AudioController:
             logger.error(f"_on_open_voice_model_settings: {e}", exc_info=True)
             return None
 
+    
     def _on_voiceover_requested(self, event: Event):
         data = event.data
         text = data.get('text', '')
         speaker = data.get('speaker', self.textSpeaker)
-        task_uid = data.get('task_uid')  # Изменено с message_id
-        
+        task_uid = data.get('task_uid')
+
         if not text:
             return
-            
-        logger.info(f"Получен запрос на озвучку: {text[:50]}... с task_uid: {task_uid}")
-        
+
         loop = self.event_bus.emit_and_wait(Events.Core.GET_EVENT_LOOP)[0]
-        if loop and loop.is_running():
-            try:
-                self.waiting_answer = True
-                self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
-
-                if self.voiceover_method == "TG":
-                    logger.info(f"Используем Telegram (Silero/Miku) для озвучки: {speaker}")
-                    self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
-                        'coroutine': self.run_send_and_receive(text, speaker, task_uid)
-                    })
-
-                elif self.voiceover_method == "Local":
-                    selected_local_model_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
-                    if selected_local_model_id:
-                        logger.info(f"Используем {selected_local_model_id} для локальной озвучки")
-                        if self.local_voice.is_model_initialized(selected_local_model_id):
-                            self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
-                                'coroutine': self.run_local_voiceover(text, task_uid)
-                            })
-                        else:
-                            logger.warning(f"Модель {selected_local_model_id} выбрана, но не инициализирована.")
-                            if task_uid:
-                                self._update_task_failed_voiceover(task_uid, "Model not initialized")
-                    else:
-                        logger.warning("Локальная озвучка выбрана, но конкретная модель не установлена/не выбрана.")
-                        if task_uid:
-                            self._update_task_failed_voiceover(task_uid, "No model selected")
-                else:
-                    logger.warning(f"Неизвестный метод озвучки: {self.voiceover_method}")
-                    if task_uid:
-                        self._update_task_failed_voiceover(task_uid, "Unknown voiceover method")
-
-                logger.info("Выполнено")
-            except Exception as e:
-                logger.error(f"Ошибка при отправке текста на озвучку: {e}")
-                if task_uid:
-                    self._update_task_failed_voiceover(task_uid, str(e))
-            finally:
-                self.waiting_answer = False
-        else:
+        if not (loop and loop.is_running()):
             logger.error("Ошибка: Цикл событий не готов.")
             if task_uid:
                 self._update_task_failed_voiceover(task_uid, "Event loop not ready")
+            return
+
+        try:
+            self.waiting_answer = True
+            self.voiceover_method = self.settings.get("VOICEOVER_METHOD", "TG")
+
+            if self.voiceover_method == "TG":
+                logger.info(f"Используем Telegram (Silero/Miku) для озвучки: {speaker}")
+                self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
+                    'coroutine': self.run_send_and_receive(text, speaker, task_uid)
+                })
+
+            elif self.voiceover_method == "Local":
+                selected_local_model_id = self.settings.get("NM_CURRENT_VOICEOVER", None)
+                if selected_local_model_id:
+                    logger.info(f"Используем {selected_local_model_id} для локальной озвучки")
+                    if self.local_voice.is_model_initialized(selected_local_model_id):
+                        # ВАЖНО: активируем именно выбранную модель, чтобы LocalVoice.current_model_id совпадал
+                        try:
+                            self.local_voice.select_model(selected_local_model_id)
+                        except Exception as e:
+                            logger.warning(f"Не удалось активировать модель {selected_local_model_id}: {e}")
+                        self.event_bus.emit(Events.Core.RUN_IN_LOOP, {
+                            'coroutine': self.run_local_voiceover(text, task_uid)
+                        })
+                    else:
+                        logger.warning(f"Модель {selected_local_model_id} выбрана, но не инициализирована.")
+                        if task_uid:
+                            self._update_task_failed_voiceover(task_uid, "Model not initialized")
+                else:
+                    logger.warning("Локальная озвучка выбрана, но конкретная модель не установлена/не выбрана.")
+                    if task_uid:
+                        self._update_task_failed_voiceover(task_uid, "No model selected")
+            else:
+                logger.warning(f"Неизвестный метод озвучки: {self.voiceover_method}")
+                if task_uid:
+                    self._update_task_failed_voiceover(task_uid, "Unknown voiceover method")
+
+            logger.info("Выполнено")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке текста на озвучку: {e}")
+            if task_uid:
+                self._update_task_failed_voiceover(task_uid, str(e))
+        finally:
+            self.waiting_answer = False
 
     def _update_task_failed_voiceover(self, task_uid: str, error: str):
         """Вспомогательный метод для обновления статуса задачи при ошибке озвучки"""

@@ -88,3 +88,4 @@ pyqt6
 pillow
 portalocker
 pywinpty
+soxr

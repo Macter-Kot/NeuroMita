@@ -50,77 +50,95 @@ class GuideWidget(QWidget):
                 background-color: transparent;
             }
             #GuideContainer {
-                background-color: #2a2a2a;
-                border: 2px solid #5a5a5a;
-                border-radius: 12px;
+                background-color: rgba(24,24,28,0.95);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 16px;
             }
             #GuideTitle {
-                font-size: 16px;
-                font-weight: bold;
-                color: #ffffff;
-                padding: 10px;
+                font-size: 18px;
+                font-weight: 700;
+                color: #f5f5f7;
+                padding: 6px 8px;
+                border-radius: 8px;
+                background-color: rgba(255,255,255,0.04);
             }
             #GuideDescription {
-                font-size: 12px;
-                color: #e0e0e0;
+                font-size: 13px;
+                color: #e6e6eb;
                 padding: 10px;
-                line-height: 1.4;
+                line-height: 1.55;
+                border-radius: 8px;
+                background-color: rgba(255,255,255,0.02);
             }
             #NavigationButton {
-                background-color: #6a4c93;
-                color: white;
-                border: none;
+                background-color: #8a2be2;
+                color: #ffffff;
+                border: 1px solid rgba(138,43,226,0.35);
                 padding: 8px 16px;
-                font-weight: bold;
-                border-radius: 8px;
+                font-weight: 600;
+                border-radius: 10px;
                 min-width: 80px;
             }
             #NavigationButton:hover {
-                background-color: #7b5aa6;
+                background-color: #9b47ea;
+            }
+            #NavigationButton:pressed {
+                background-color: #7a1fda;
             }
             #NavigationButton:disabled {
-                background-color: #4a4a4a;
-                color: #888888;
+                background-color: #3a3a3f;
+                color: #9a9aa2;
+                border: 1px solid rgba(255,255,255,0.06);
             }
             #SkipButton {
-                background-color: #555555;
-                color: white;
-                border: none;
+                background-color: rgba(255,255,255,0.05);
+                color: #ffffff;
+                border: 1px solid rgba(255,255,255,0.10);
                 padding: 8px 16px;
-                font-weight: bold;
-                border-radius: 8px;
+                font-weight: 600;
+                border-radius: 10px;
             }
             #SkipButton:hover {
-                background-color: #666666;
+                background-color: rgba(255,255,255,0.09);
+            }
+            #SkipButton:pressed {
+                background-color: rgba(255,255,255,0.12);
             }
             #PageIndicator {
-                color: #aaaaaa;
+                color: #c2c2c9;
                 font-size: 11px;
+                padding: 4px 8px;
+                border-radius: 6px;
+                background-color: rgba(255,255,255,0.04);
             }
             #ImageFrame {
-                background-color: #1a1a1a;
-                border: 1px solid #3a3a3a;
-                border-radius: 8px;
+                background-color: rgba(16,16,20,0.92);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 12px;
             }
             #ImageLabel {
-                color: #888888;
+                color: #a9a9b2;
                 background-color: transparent;
             }
             QRadioButton {
-                color: #e0e0e0;
+                background-color: rgba(255,255,255,0.06);
+                color: #e6e6eb;
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 14px;
+                padding: 5px 8px;
                 font-size: 12px;
-                padding: 5px;
             }
             QRadioButton::indicator {
-                width: 14px;
-                height: 14px;
-                border-radius: 7px;
-                border: 2px solid #666666;
-                background-color: #2a2a2a;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.18);
+                background-color: rgba(24,24,28,1);
+                margin-right: 6px;
             }
             QRadioButton::indicator:checked {
-                background-color: #6a4c93;
-                border: 2px solid #6a4c93;
+                background-color: #8a2be2;
+                border: 1px solid #a270ff;
             }
         """)
         

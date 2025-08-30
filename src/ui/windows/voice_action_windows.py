@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QProgressBar, QApplication, QWidget
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QProgressBar, QApplication, QWidget, QPushButton
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor

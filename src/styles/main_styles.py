@@ -184,7 +184,10 @@ QCheckBox::indicator:hover {{ border-color: {accent}; }}
 QCheckBox::indicator:checked {{
     background-color: {accent};
     border: 1px solid #a270ff;
-    image: url(./pyqt_styles/check.png);
+}}
+QCheckBox::indicator:checked:disabled {{
+    background-color: {accent};
+    border: 1px solid #a270ff;
 }}
 QCheckBox:disabled {{ color: {muted}; }}
 QCheckBox::indicator:disabled {{

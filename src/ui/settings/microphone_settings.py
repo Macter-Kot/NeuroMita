@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QSizePolicy, QFrame, QLineEdit, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFontMetrics
 import qtawesome as qta
 
 from ui.gui_templates import create_section_header
@@ -20,15 +21,15 @@ def setup_microphone_controls(gui, parent_layout):
     bus = get_event_bus()
     theme = get_theme()
 
-    # ширина колонки лейблов так, чтобы с Overlay=400px всё влезало
+    # Уменьшенная ширина колонки лейблов для лучшего вмещения в панель
     overlay_w = getattr(gui, "SETTINGS_PANEL_WIDTH", 400)
-    label_w = max(110, min(160, int(overlay_w * 0.35)))  # при 400 ≈ 140
+    label_w = max(90, min(120, int(overlay_w * 0.3)))  # Уменьшено с 110-160 до 90-120
 
     def make_row(label_text: str, field_widget: QWidget) -> QWidget:
         row = QWidget()
         hl = QHBoxLayout(row)
         hl.setContentsMargins(0, 0, 0, 0)
-        hl.setSpacing(8)
+        hl.setSpacing(6)  # Уменьшено с 8 до 6
 
         lbl = QLabel(label_text)
         lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -69,8 +70,8 @@ def setup_microphone_controls(gui, parent_layout):
             br = theme["border_soft"]
         lbl.setText(text)
         lbl.setStyleSheet(
-            f"QLabel {{ padding: 2px 8px; border-radius: 8px; "
-            f"font-weight: 600; color: {fg}; background: {bg}; border: 1px solid {br}; }}"
+            f"QLabel {{ padding: 2px 6px; border-radius: 8px; "  # Уменьшен padding с 8px до 6px
+            f"font-weight: 600; font-size: 11px; color: {fg}; background: {bg}; border: 1px solid {br}; }}"
         )
 
     gui.asr_set_pill.connect(set_pill)
@@ -79,13 +80,13 @@ def setup_microphone_controls(gui, parent_layout):
     root = QWidget()
     root_lay = QVBoxLayout(root)
     root_lay.setContentsMargins(0, 0, 0, 0)
-    root_lay.setSpacing(8)
+    root_lay.setSpacing(6)  # Уменьшено с 8 до 6
 
     # ----- Строка: Тип распознавания + статус + установка
     engine_field = QWidget()
     eng_h = QHBoxLayout(engine_field)
     eng_h.setContentsMargins(0, 0, 0, 0)
-    eng_h.setSpacing(8)
+    eng_h.setSpacing(6)  # Уменьшено с 8 до 6
 
     gui.recognizer_combobox = QComboBox()
     gui.recognizer_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -99,73 +100,105 @@ def setup_microphone_controls(gui, parent_layout):
     set_pill_called(gui.asr_status_label, "—", "info")
     eng_h.addWidget(gui.asr_status_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-    # Кнопка установки (ограничим ширину, чтобы не распирало)
+    # Кнопка установки (ограничим ширину еще больше)
     gui.install_model_button = QPushButton(_("Установить", "Install"))
     gui.install_model_button.setObjectName("SecondaryButton")
     gui.install_model_button.setIcon(qta.icon('fa5s.download', color='#ffffff'))
     gui.install_model_button.setVisible(False)
-    gui.install_model_button.setMaximumWidth(150)
+    gui.install_model_button.setMaximumWidth(100)  # Уменьшено с 150 до 100
     gui.install_model_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     eng_h.addWidget(gui.install_model_button, 0)
 
-    # Компактная строка прогресса установки справа от кнопки (чтобы текст статуса не раздувал кнопку)
+    # Компактная строка прогресса установки (скрыта по умолчанию)
     gui.install_status_label = QLabel("")
-    gui.install_status_label.setStyleSheet(f"color: {theme['muted']};")
+    gui.install_status_label.setStyleSheet(f"color: {theme['muted']}; font-size: 10px;")  # Уменьшен шрифт
+    gui.install_status_label.setVisible(False)  # Скрываем когда не используется
     eng_h.addWidget(gui.install_status_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-    root_lay.addWidget(make_row(_("Тип распознавания", "Recognition Type"), engine_field))
+    root_lay.addWidget(make_row(_("Распознавание", "Recognition"), engine_field))
 
     # ----- Строка: Микрофон + кнопка "Обновить" (иконка, фикс. размер)
     mic_field = QWidget()
     mic_h = QHBoxLayout(mic_field)
     mic_h.setContentsMargins(0, 0, 0, 0)
-    mic_h.setSpacing(8)
+    mic_h.setSpacing(6)  # Уменьшено с 8 до 6
 
     gui.mic_combobox = QComboBox()
     gui.mic_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    # ВАЖНО: Ограничиваем максимальную ширину комбобокса
+    gui.mic_combobox.setMaximumWidth(200)  # Фиксированная максимальная ширина
+    gui.mic_combobox.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
     mic_h.addWidget(gui.mic_combobox, 1)
 
     btn_refresh = QPushButton()
     btn_refresh.setObjectName("SecondaryButton")
     btn_refresh.setIcon(qta.icon('fa5s.sync', color='#ffffff'))
     btn_refresh.setToolTip(_("Обновить список микрофонов", "Refresh microphone list"))
-    btn_refresh.setFixedSize(30, 28)  # компактно, чтобы строка не переполнялась
+    btn_refresh.setFixedSize(28, 26)  # Еще более компактно
     mic_h.addWidget(btn_refresh, 0)
 
     root_lay.addWidget(make_row(_("Микрофон", "Microphone"), mic_field))
 
-    # ----- Строка: Переключатели (вертикально, чтобы не ломать ширину)
+    # ----- Строка: Переключатели (горизонтально для экономии места)
     toggles_field = QWidget()
-    toggles_v = QVBoxLayout(toggles_field)
-    toggles_v.setContentsMargins(0, 0, 0, 0)
-    toggles_v.setSpacing(4)
+    toggles_h = QHBoxLayout(toggles_field)  # Изменено на горизонтальный layout
+    toggles_h.setContentsMargins(0, 0, 0, 0)
+    toggles_h.setSpacing(10)
 
-    gui.mic_active_checkbox = QCheckBox(_("Включить", "Enable"))
+    gui.mic_active_checkbox = QCheckBox(_("Вкл", "On"))  # Сокращенный текст
     gui.mic_active_checkbox.setChecked(bool(gui.settings.get("MIC_ACTIVE")))
-    toggles_v.addWidget(gui.mic_active_checkbox, 0, Qt.AlignmentFlag.AlignLeft)
+    toggles_h.addWidget(gui.mic_active_checkbox, 0)
 
-    gui.mic_instant_checkbox = QCheckBox(_("Мгновенная отправка", "Immediate sending"))
+    gui.mic_instant_checkbox = QCheckBox(_("Мгновенно", "Instant"))  # Сокращенный текст
     gui.mic_instant_checkbox.setChecked(bool(gui.settings.get("MIC_INSTANT_SENT")))
-    toggles_v.addWidget(gui.mic_instant_checkbox, 0, Qt.AlignmentFlag.AlignLeft)
+    gui.mic_instant_checkbox.setToolTip(_("Мгновенная отправка распознанного текста", "Send recognized text immediately"))
+    toggles_h.addWidget(gui.mic_instant_checkbox, 0)
+    
+    toggles_h.addStretch()
 
-    root_lay.addWidget(make_row(_("Распознавание", "Recognition"), toggles_field))
+    root_lay.addWidget(make_row(_("Опции", "Options"), toggles_field))
 
     # ----- Строка: Статус инициализации (пилюля)
     gui.asr_init_status = QLabel("—")
     set_pill_called(gui.asr_init_status, "—", "info")
-    root_lay.addWidget(make_row(_("Статус инициализации", "Initialization status"), gui.asr_init_status))
+    root_lay.addWidget(make_row(_("Статус", "Status"), gui.asr_init_status))
 
     # ----- Динамические опции движка (как раньше, но с тем же выравниванием)
     gui.model_settings_frame = QFrame()
     gui.model_settings_layout = QVBoxLayout(gui.model_settings_frame)
     gui.model_settings_layout.setContentsMargins(0, 0, 0, 0)
-    gui.model_settings_layout.setSpacing(6)
+    gui.model_settings_layout.setSpacing(4)  # Уменьшено с 6 до 4
     root_lay.addWidget(gui.model_settings_frame)
 
     parent_layout.addWidget(root)
     parent_layout.addStretch()
 
     # ===== Логика =====
+    def truncate_text_for_width(text, widget, max_width):
+        """Обрезает текст чтобы он помещался в заданную ширину с учетом '...' """
+        metrics = QFontMetrics(widget.font())
+        ellipsis = "..."
+        ellipsis_width = metrics.horizontalAdvance(ellipsis)
+        available_width = max_width - ellipsis_width - 20  # Оставляем немного места для padding
+        
+        if metrics.horizontalAdvance(text) <= available_width:
+            return text
+            
+        # Бинарный поиск оптимальной длины
+        left, right = 0, len(text)
+        result = ""
+        
+        while left <= right:
+            mid = (left + right) // 2
+            truncated = text[:mid]
+            if metrics.horizontalAdvance(truncated) <= available_width:
+                result = truncated
+                left = mid + 1
+            else:
+                right = mid - 1
+                
+        return result + ellipsis if result else ellipsis
+
     def populate_mics():
         res = bus.emit_and_wait(Events.Speech.GET_MICROPHONE_LIST, timeout=1.0)
         mic_list = res[0] if res else [_("Микрофоны не найдены", "No microphones found")]
@@ -173,12 +206,25 @@ def setup_microphone_controls(gui, parent_layout):
         gui.mic_combobox.blockSignals(True)
         try:
             gui.mic_combobox.clear()
+            
+            # Получаем максимальную доступную ширину для текста в комбобоксе
+            max_text_width = gui.mic_combobox.maximumWidth() if gui.mic_combobox.maximumWidth() < 10000 else 180
+            
             for mic_name in mic_list:
-                display = mic_name if len(mic_name) <= 48 else mic_name[:45] + "..."
+                # Обрезаем отображаемое имя для комбобокса
+                display = truncate_text_for_width(mic_name, gui.mic_combobox, max_text_width)
+                
+                # Дополнительная защита - если все еще слишком длинно, обрезаем по символам
+                if len(display) > 30:  # Максимум 30 символов
+                    display = mic_name[:27] + "..."
+                    
                 gui.mic_combobox.addItem(display)
                 idx = gui.mic_combobox.count() - 1
+                # Сохраняем полное имя в UserRole для последующего использования
                 gui.mic_combobox.setItemData(idx, mic_name, Qt.ItemDataRole.UserRole)
+                # Полное имя в tooltip
                 gui.mic_combobox.setItemData(idx, mic_name, Qt.ItemDataRole.ToolTipRole)
+                
             current_full = gui.settings.get('MIC_DEVICE', mic_list[0] if mic_list else "")
             for i in range(gui.mic_combobox.count()):
                 if gui.mic_combobox.itemData(i, Qt.ItemDataRole.UserRole) == current_full:
@@ -234,11 +280,13 @@ def setup_microphone_controls(gui, parent_layout):
             field_widget = QWidget()
             fw_h = QHBoxLayout(field_widget)
             fw_h.setContentsMargins(0, 0, 0, 0)
-            fw_h.setSpacing(8)
+            fw_h.setSpacing(6)  # Уменьшено с 8 до 6
 
             if ftype == "combobox":
                 cb = QComboBox()
                 cb.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                # Ограничиваем ширину динамических комбобоксов тоже
+                cb.setMaximumWidth(150)
                 for opt in field.get("options", []):
                     cb.addItem(str(opt))
                 current = str(values.get(key, field.get("default", "")))
@@ -281,7 +329,8 @@ def setup_microphone_controls(gui, parent_layout):
         res = bus.emit_and_wait(Events.Speech.CHECK_ASR_MODEL_INSTALLED, {'model': engine}, timeout=1.0)
         installed = bool(res and res[0])
 
-        gui.install_status_label.setText("")  # очищаем компактную строку прогресса
+        gui.install_status_label.setText("")
+        gui.install_status_label.setVisible(False)  # Скрываем когда не используется
 
         if engine == "google":
             set_pill_called(gui.asr_status_label, _('Готово', 'Ready'), "ok")
@@ -304,6 +353,7 @@ def setup_microphone_controls(gui, parent_layout):
         engine = gui.recognizer_combobox.currentText()
         gui.install_model_button.setEnabled(False)
         set_pill_called(gui.asr_status_label, _('Установка...', 'Installing...'), "progress")
+        gui.install_status_label.setVisible(True)  # Показываем при установке
         gui.install_status_label.setText(_("Подготовка...", "Preparing..."))
         subs = []
 
@@ -312,12 +362,16 @@ def setup_microphone_controls(gui, parent_layout):
                 bus.unsubscribe(name, cb)
             subs.clear()
             gui.install_model_button.setEnabled(True)
+            gui.install_status_label.setVisible(False)  # Скрываем после завершения
 
         def on_progress(event):
             if event.data.get('model') == engine:
                 status = event.data.get('status', '')
                 pr = event.data.get('progress', 0)
-                gui.install_status_label.setText(f"{status} ({pr}%)")
+                # Сокращаем текст статуса чтобы не распирало панель
+                if len(status) > 30:
+                    status = status[:27] + "..."
+                gui.install_status_label.setText(f"{pr}%")  # Показываем только процент
 
         def on_finished(event):
             if event.data.get('model') == engine:
@@ -327,7 +381,7 @@ def setup_microphone_controls(gui, parent_layout):
 
         def on_failed(event):
             if event.data.get('model') == engine:
-                gui.install_status_label.setText(_("Ошибка установки", "Install error"))
+                gui.install_status_label.setText(_("Ошибка", "Error"))
                 set_pill_called(gui.asr_status_label, _('Ошибка', 'Error'), "warn")
                 cleanup()
                 apply_asr_install_status(engine)

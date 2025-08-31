@@ -343,24 +343,34 @@ class ChatGUI(QMainWindow):
         QTimer.singleShot(0, lambda: position_mita_status(self))
 
     def eventFilter(self, obj, event):
+
+        # кнопка "вниз" — на скролле чата
         if obj == self.chat_window.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
             if hasattr(self, 'scroll_to_bottom_btn'):
                 chat_panel.reposition_scroll_button(self)
 
-        if obj == self.user_entry and event.type() == QEvent.Type.KeyPress:
-            if not isinstance(event, QKeyEvent) and not hasattr(event, "key"):
-                return super().eventFilter(obj, event)
-            key = event.key()
-            modifiers = event.modifiers()
-            if key == Qt.Key.Key_V and modifiers & Qt.KeyboardModifier.ControlModifier:
-                if chat_panel.clipboard_image_to_controller(self):
-                    return True
-            if key == Qt.Key.Key_Return and not (modifiers & Qt.KeyboardModifier.ShiftModifier):
-                self.send_message()
-                return True
-
+        # позиционирование статуса при ресайзе чата
         if obj == self.chat_window and event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, lambda: chat_panel.position_mita_status(self))
+
+        # хоткеи в поле ввода
+        if obj == self.user_entry and event.type() == QEvent.Type.KeyPress:
+            if not isinstance(event, QKeyEvent) or not hasattr(event, "key"):
+                return super().eventFilter(obj, event)
+
+            key = event.key()
+            mods = event.modifiers()
+
+            # Ctrl+V (или Meta+V на mac) — попытка вставить картинку из буфера
+            if (key == Qt.Key.Key_V and (mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier))) \
+            or (key == Qt.Key.Key_Insert and (mods & Qt.KeyboardModifier.ShiftModifier)):  # Shift+Insert
+                if chat_panel.clipboard_image_to_controller(self):
+                    return True  # съели событие, чтобы не вставлялся текст/эмодзи
+
+            # Enter без Shift — отправить сообщение
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (mods & Qt.KeyboardModifier.ShiftModifier):
+                self.send_message()
+                return True  # не даём вставлять перенос строки
 
         return super().eventFilter(obj, event)
 

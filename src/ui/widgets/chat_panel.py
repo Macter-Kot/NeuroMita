@@ -94,6 +94,7 @@ def setup_chat_panel(gui, main_layout):
     """)
     gui.user_entry.textChanged.connect(lambda: adjust_input_height(gui))
     gui.user_entry.textChanged.connect(lambda: update_send_button_state(gui))
+    gui.user_entry.installEventFilter(gui)
     container_layout.addWidget(gui.user_entry, 0, 0, 1, 2)
     
     button_container = QWidget()

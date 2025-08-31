@@ -424,6 +424,12 @@ class Events:
         ASR_MODEL_INSTALL_FAILED = "asr_model_install_failed"
         ASR_MODEL_INITIALIZED = "asr_model_initialized"
         
+        GET_RECOGNIZER_SETTINGS_SCHEMA = "get_asr_settings_schema"
+        GET_RECOGNIZER_SETTINGS = "get_asr_settings"
+        SET_RECOGNIZER_OPTION = "set_recognizer_option"
+        APPLY_RECOGNIZER_SETTINGS = "apply_recognizer_settings"
+        ASR_MODEL_INIT_STARTED = "asr_model_init_started"
+        
 
     class Capture:
         """События для захвата экрана и камеры"""

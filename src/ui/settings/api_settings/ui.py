@@ -19,40 +19,20 @@ def build_api_settings_ui(self, parent_layout):
     section_header = QLabel(_("Настройки API", "API Settings"))
     section_header.setObjectName('SectionTitle')
     section_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    section_header.setStyleSheet('''
-        QLabel#SectionTitle {
-            font-size: 14px;
-            font-weight: bold;
-            color: #ffffff;
-            padding: 5px 0;
-        }
-    ''')
+
     main_layout.addWidget(section_header)
     
     # Разделитель
     separator = QFrame()
     separator.setFrameShape(QFrame.Shape.HLine)
     separator.setFrameShadow(QFrame.Shadow.Sunken)
-    separator.setStyleSheet('''
-        QFrame {
-            background-color: #4a4a4a;
-            max-height: 2px;
-            margin: 0 10px 10px 10px;
-        }
-    ''')
+    separator.setObjectName("SeparatorH")
     main_layout.addWidget(separator)
     
     # 2. Панель со списком пресетов
     custom_presets_frame = QFrame()
     custom_presets_frame.setObjectName("PresetsPanel")
     custom_presets_frame.setFixedHeight(150)
-    custom_presets_frame.setStyleSheet("""
-        QFrame#PresetsPanel {
-            background-color: #2b2b2b;
-            border: 1px solid #3a3a3a;
-            border-radius: 8px;
-        }
-    """)
 
     presets_layout = QHBoxLayout(custom_presets_frame)
     presets_layout.setContentsMargins(8, 8, 8, 8)
@@ -61,38 +41,6 @@ def build_api_settings_ui(self, parent_layout):
     # Список пресетов
     self.custom_presets_list = QListWidget()
     self.custom_presets_list.setObjectName("PresetsList")
-    self.custom_presets_list.setStyleSheet("""
-        QListWidget#PresetsList {
-            background: #1c1c1c;
-            border: 1px solid #2a2a2a;
-            border-radius: 6px;
-            padding: 4px;
-            color: #ffffff;
-            outline: 0;
-        }
-        QListWidget#PresetsList::item {
-            padding: 4px 4px;
-            color: #ffffff;
-            outline: 0;
-        }
-        QListWidget#PresetsList::item:hover {
-            background: #23272b;
-            border-radius: 4px;
-        }
-        QListWidget#PresetsList::item:selected {
-            background: #2a2f34;
-            border-radius: 4px;
-            color: #ffffff;
-            outline: 0;
-        }
-        QListWidget#PresetsList:focus,
-        QListWidget#PresetsList::item:focus,
-        QListWidget#PresetsList::item:selected:active,
-        QListWidget#PresetsList::item:selected:!active {
-            outline: 0;
-            border: none;
-        }
-    """)
     presets_layout.addWidget(self.custom_presets_list, 1)
 
     # Панель с кнопками
@@ -100,54 +48,6 @@ def build_api_settings_ui(self, parent_layout):
     buttons_layout.setContentsMargins(0, 0, 0, 0)
     buttons_layout.setSpacing(0)
 
-    toolbar_btn_style = """
-        QPushButton#AddPresetButton, QPushButton#RemovePresetButton,
-        QPushButton#MoveUpButton, QPushButton#MoveDownButton {
-            background-color: #2a2a2a;
-            border: 1px solid #3c3c3c;
-            color: #e6e6e6;
-            padding: 0px;
-            min-width: 28px;
-            min-height: 28px;
-        }
-        QPushButton#AddPresetButton:hover, QPushButton#RemovePresetButton:hover,
-        QPushButton#MoveUpButton:hover, QPushButton#MoveDownButton:hover {
-            background-color: #333333;
-        }
-        QPushButton#AddPresetButton:pressed, QPushButton#RemovePresetButton:pressed,
-        QPushButton#MoveUpButton:pressed, QPushButton#MoveDownButton:pressed {
-            background-color: #262626;
-        }
-        QPushButton#RemovePresetButton:disabled {
-            color: #6d6d6d;
-            border-color: #333333;
-        }
-        QPushButton#AddPresetButton {
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-            border-bottom-left-radius: 0;
-            border-bottom-right-radius: 0;
-        }
-        QPushButton#RemovePresetButton {
-            border-top-left-radius: 0;
-            border-top-right-radius: 0;
-            border-bottom-left-radius: 6px;
-            border-bottom-right-radius: 6px;
-            margin-bottom: 8px;
-        }
-        QPushButton#MoveUpButton {
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-            border-bottom-left-radius: 0;
-            border-bottom-right-radius: 0;
-        }
-        QPushButton#MoveDownButton {
-            border-top-left-radius: 0;
-            border-top-right-radius: 0;
-            border-bottom-left-radius: 6px;
-            border-bottom-right-radius: 6px;
-        }
-    """
 
     self.add_preset_btn = QPushButton()
     self.add_preset_btn.setObjectName("AddPresetButton")
@@ -155,7 +55,6 @@ def build_api_settings_ui(self, parent_layout):
     self.add_preset_btn.setToolTip(_("Добавить пресет", "Add preset"))
     self.add_preset_btn.setFixedSize(28, 28)
     self.add_preset_btn.setIconSize(QSize(14, 14))
-    self.add_preset_btn.setStyleSheet(toolbar_btn_style)
 
     self.remove_preset_btn = QPushButton()
     self.remove_preset_btn.setObjectName("RemovePresetButton")
@@ -164,7 +63,6 @@ def build_api_settings_ui(self, parent_layout):
     self.remove_preset_btn.setEnabled(False)
     self.remove_preset_btn.setFixedSize(28, 28)
     self.remove_preset_btn.setIconSize(QSize(14, 14))
-    self.remove_preset_btn.setStyleSheet(toolbar_btn_style)
 
     self.move_up_btn = QPushButton()
     self.move_up_btn.setObjectName("MoveUpButton")
@@ -173,7 +71,6 @@ def build_api_settings_ui(self, parent_layout):
     self.move_up_btn.setEnabled(False)
     self.move_up_btn.setFixedSize(28, 28)
     self.move_up_btn.setIconSize(QSize(14, 14))
-    self.move_up_btn.setStyleSheet(toolbar_btn_style)
 
     self.move_down_btn = QPushButton()
     self.move_down_btn.setObjectName("MoveDownButton")
@@ -182,7 +79,6 @@ def build_api_settings_ui(self, parent_layout):
     self.move_down_btn.setEnabled(False)
     self.move_down_btn.setFixedSize(28, 28)
     self.move_down_btn.setIconSize(QSize(14, 14))
-    self.move_down_btn.setStyleSheet(toolbar_btn_style)
 
     buttons_layout.addWidget(self.add_preset_btn)
     buttons_layout.addWidget(self.remove_preset_btn)
@@ -275,15 +171,15 @@ def build_api_settings_ui(self, parent_layout):
     # Help labels
     self.url_help_label = QLabel()
     self.url_help_label.setOpenExternalLinks(True)
-    self.url_help_label.setStyleSheet("color: #3498db;")
+    self.url_help_label.setObjectName("LinkLabel")
     
     self.model_help_label = QLabel()
     self.model_help_label.setOpenExternalLinks(True)
-    self.model_help_label.setStyleSheet("color: #3498db;")
+    self.model_help_label.setObjectName("LinkLabel")
     
     self.key_help_label = QLabel()
     self.key_help_label.setOpenExternalLinks(True)
-    self.key_help_label.setStyleSheet("color: #3498db;")
+    self.model_help_label.setObjectName("LinkLabel")
     
     def _reorganize_frame_layout(frame, help_label):
         if not hasattr(frame, 'layout') or not frame.layout():
@@ -325,39 +221,15 @@ def build_api_settings_ui(self, parent_layout):
     
     # Кнопки управления
     self.cancel_button = QPushButton(_("Отменить", "Cancel"))
+    self.cancel_button.setObjectName("CancelButton")
     self.cancel_button.setIcon(qta.icon('fa5s.undo', color='#ffffff'))
     self.cancel_button.setVisible(False)
-    self.cancel_button.setStyleSheet("""
-        QPushButton {
-            background-color: #e74c3c;
-            color: white;
-            font-weight: bold;
-            border: none;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        QPushButton:hover { background-color: #c0392b; }
-        QPushButton:pressed { background-color: #a93226; }
-        QPushButton:disabled { background-color: #ec7063; color: #f5b7b1; }
-    """)
+    
 
     self.save_preset_button = QPushButton(_("Сохранить", "Save"))
+    self.save_preset_button.setObjectName("SecondaryButton")
     self.save_preset_button.setIcon(qta.icon('fa5s.save', color='#ffffff'))
     self.save_preset_button.setVisible(False)
-    self.save_preset_button.setStyleSheet("""
-        QPushButton {
-            background-color: #95a5a6;
-            color: #ecf0f1;
-            font-weight: normal;
-            border: none;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        QPushButton:disabled {
-            background-color: #7f8c8d;
-            color: #bdc3c7;
-        }
-    """)
 
     # Кнопка теста подключения
     self.test_button = QPushButton(_("Тест подключения", "Test connection"))

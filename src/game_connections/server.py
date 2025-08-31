@@ -32,14 +32,16 @@ class ChatServerNew:
         
     async def start_async(self):
         self.running = True
-        self.server = await asyncio.start_server(
-            self.handle_client, self.host, self.port)
-        
+        self.server = await asyncio.start_server(self.handle_client, self.host, self.port)
         addrs = ', '.join(str(sock.getsockname()) for sock in self.server.sockets)
         logger.info(f'Новый сервер запущен на {addrs}')
-        
-        async with self.server:
-            await self.server.serve_forever()
+        try:
+            async with self.server:
+                await self.server.serve_forever()
+        except asyncio.CancelledError:
+            logger.debug("serve_forever cancelled on shutdown (normal)")
+        finally:
+            self.running = False
     
     def start(self):
         self._loop = asyncio.new_event_loop()
@@ -424,7 +426,7 @@ class ChatServerNew:
         if hasattr(self, 'server'):
             self.server.close()
             await self.server.wait_closed()
-        
+
         # Закрываем все активные соединения
         for writer in list(self.active_connections.values()):
             try:
@@ -432,8 +434,5 @@ class ChatServerNew:
                 await writer.wait_closed()
             except Exception:
                 pass
-        
+
         self.active_connections.clear()
-        
-        # Останавливаем event loop
-        self._loop.stop()

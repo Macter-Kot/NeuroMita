@@ -7,11 +7,7 @@ from utils import _
 def setup_settings_panel(gui, main_layout):
     settings_panel = QWidget()
     settings_panel.setFixedWidth(50)
-    settings_panel.setStyleSheet("""
-        QWidget {
-            background-color: #1e1e1e;
-        }
-    """)
+    settings_panel.setObjectName("SettingsSidebar")
     
     panel_layout = QVBoxLayout(settings_panel)
     panel_layout.setContentsMargins(5, 10, 5, 10)

@@ -93,8 +93,12 @@ class ChatGUI(QMainWindow):
     asr_install_finished_signal = pyqtSignal(dict)
     asr_install_failed_signal = pyqtSignal(dict)
 
+    # api_settings.py
     test_result_received = pyqtSignal(dict)
     test_result_failed = pyqtSignal(dict)
+
+    # microphone_settings.py
+    asr_set_pill = pyqtSignal(dict)
 
     def __init__(self, settings):
         super().__init__()
@@ -161,7 +165,7 @@ class ChatGUI(QMainWindow):
         try:
             microphone_settings.load_mic_settings(self)
         except Exception as e:
-            logger.info("Не удалось удачно получить настройки микрофона", e)
+            logger.info(f"Не удалось удачно получить настройки микрофона: {e}")
 
         QTimer.singleShot(500, self.initialize_last_local_model_on_startup)
 

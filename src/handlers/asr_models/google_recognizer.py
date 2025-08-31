@@ -27,6 +27,15 @@ class GoogleRecognizer(SpeechRecognizerInterface):
         self._sr = sr
         return True
     
+    def settings_spec(self):
+        return []
+
+    def get_default_settings(self):
+        return {}
+
+    def apply_settings(self, settings: dict):
+        pass
+    
     async def init(self, **kwargs) -> bool:
         if self._sr is None:
             return False
@@ -195,7 +204,9 @@ class GoogleRecognizer(SpeechRecognizerInterface):
             except self._sr.UnknownValueError:
                 pass
             except self._sr.RequestError as e:
-                self.logger.error(f"Google API error (bg-thread): {e}")
+                self.logger.warning(f"Google API error (bg-thread): {e}")
+            except TimeoutError as e:
+                self.logger.warning(f"Google API timeout (bg-thread): {e}")
             except Exception as e:
                 self.logger.exception(f"Ошибка в bg-callback: {e}")
 

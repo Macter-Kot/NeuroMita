@@ -18,7 +18,7 @@ from controllers.api_presets_controller import ApiPresetsController
 from main_logger import logger
 from utils.ffmpeg_installer import install_ffmpeg
 from utils.pip_installer import PipInstaller
-from core.events import get_event_bus, Events, Event
+from core.events import get_event_bus, Events, Event, shutdown_event_bus
 
 
 from controllers.server_controller import ServerController
@@ -150,21 +150,46 @@ class MainController:
 
     def close_app(self):
         logger.info("Начинаем закрытие приложения...")
-        
-        self.capture_controller.stop_screen_capture_thread()
-        self.capture_controller.stop_camera_capture_thread()
-        self.audio_controller.delete_all_sound_files()
-        
+
+        # 1) Остановить ASR и дождаться
+        self.event_bus.emit(Events.Speech.STOP_SPEECH_RECOGNITION)
+        start = time.time()
+        try:
+            while True:
+                mic_status = self.event_bus.emit_and_wait(Events.Speech.GET_MIC_STATUS, timeout=0.5)
+                active = bool(mic_status and mic_status[0])
+                if not active:
+                    break
+                if time.time() - start > 1.5:  # до ~1.5 сек
+                    break
+                time.sleep(0.1)
+        except Exception:
+            pass
+
+        # 2) Остановить сервер
         try:
             self.event_bus.emit(Events.Server.STOP_SERVER)
         except Exception as e:
             logger.error(f"Ошибка при остановке сервера: {e}", exc_info=True)
-        
-        self.event_bus.emit(Events.Speech.STOP_SPEECH_RECOGNITION)
-        time.sleep(2)
-        
+
+        # 3) Остановить захваты
+        self.capture_controller.stop_screen_capture_thread()
+        self.capture_controller.stop_camera_capture_thread()
+
+        # 4) Удалить аудиофайлы
+        self.audio_controller.delete_all_sound_files()
+
+        # 5) Остановить общий event loop
         self.loop_controller.stop_loop()
-        
+
+        # 6) Остановить EventBus (ThreadPoolExecutor и обработчик очереди)
+        try:
+            shutdown_event_bus()
+        except Exception as e:
+            logger.error(f"Ошибка при остановке EventBus: {e}", exc_info=True)
+
+        logger.info("Закрываемся")
+
         logger.info("Закрываемся")
 
     def _check_and_perform_pending_update(self):

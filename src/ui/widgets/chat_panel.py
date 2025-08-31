@@ -32,24 +32,12 @@ def setup_chat_panel(gui, main_layout):
     gui.load_history_button.setMaximumHeight(30)
     
     gui.guide_button = QPushButton(qta.icon('fa5s.question-circle', color='#dcdcdc'), '')
+    gui.guide_button.setObjectName("GuideButtonSmall")
     gui.guide_button.clicked.connect(gui._show_guide)
     gui.guide_button.setMaximumHeight(30)
     gui.guide_button.setFixedWidth(30)
     gui.guide_button.setToolTip(_("Открыть руководство пользователя", "Open user guide"))
-    gui.guide_button.setStyleSheet("""
-        QPushButton {
-            background-color: #8a2be2;
-            border: none;
-            padding: 5px;
-            border-radius: 4px;
-        }
-        QPushButton:hover {
-            background-color: #9932cc;
-        }
-        QPushButton:pressed {
-            background-color: #7b1fa2;
-        }
-    """)
+    
     
     top_panel_layout.addWidget(gui.clear_chat_button)
     top_panel_layout.addWidget(gui.load_history_button)
@@ -82,16 +70,7 @@ def setup_chat_panel(gui, main_layout):
     input_layout.addWidget(gui.token_count_label)
     
     input_container = QWidget()
-    input_container.setStyleSheet("""
-        QWidget {
-            background-color: #252525;
-            border: 1px solid #4a4a4a;
-            border-radius: 3px;
-        }
-        QWidget:focus-within {
-            border: 1px solid #8a2be2;
-        }
-    """)
+    input_container.setObjectName("ChatInputContainer")
     
     container_layout = QGridLayout(input_container)
     container_layout.setContentsMargins(5, 5, 5, 5)
@@ -125,26 +104,18 @@ def setup_chat_panel(gui, main_layout):
     button_layout_inner.setSpacing(4)
     
     gui.attach_button = QPushButton(qta.icon('fa6s.paperclip', color='#b0b0b0', scale_factor=0.7), '')
+    gui.attach_button.setObjectName("ChatIconMini")
     gui.attach_button.clicked.connect(lambda: attach_images(gui))
     gui.attach_button.setFixedSize(20, 20)
     gui.attach_button.setCursor(Qt.CursorShape.PointingHandCursor)
     gui.attach_button.setToolTip(_("Прикрепить изображения", "Attach images"))
-    gui.attach_button.setStyleSheet("""
-        QPushButton { background-color: rgba(255, 255, 255, 0.1); border: 0px; border-radius: 10px; padding: 3px; }
-        QPushButton:hover { background-color: rgba(138, 43, 226, 0.3); }
-        QPushButton:pressed { background-color: rgba(138, 43, 226, 0.5); }
-    """)
     
     gui.send_screen_button = QPushButton(qta.icon('fa6s.camera', color='#b0b0b0', scale_factor=0.7), '')
+    gui.send_screen_button.setObjectName("ChatIconMini")
     gui.send_screen_button.clicked.connect(lambda: send_screen_capture(gui))
     gui.send_screen_button.setFixedSize(20, 20)
     gui.send_screen_button.setCursor(Qt.CursorShape.PointingHandCursor)
     gui.send_screen_button.setToolTip(_("Сделать скриншот экрана", "Take screenshot"))
-    gui.send_screen_button.setStyleSheet("""
-        QPushButton { background-color: rgba(255, 255, 255, 0.1); border: 0px; border-radius: 10px; padding: 3px; }
-        QPushButton:hover { background-color: rgba(138, 43, 226, 0.3); }
-        QPushButton:pressed { background-color: rgba(138, 43, 226, 0.5); }
-    """)
     
     button_layout_inner.addWidget(gui.attach_button)
     button_layout_inner.addWidget(gui.send_screen_button)
@@ -152,15 +123,11 @@ def setup_chat_panel(gui, main_layout):
     container_layout.addWidget(button_container, 1, 0)
     
     gui.send_button = QPushButton(qta.icon('fa6s.paper-plane', color='white', scale_factor=0.8), '')
+    gui.send_button.setObjectName("ChatSendButtonCircle")
     gui.send_button.clicked.connect(gui.send_message)
     gui.send_button.setFixedSize(28, 28)
     gui.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
     gui.send_button.setToolTip(_("Отправить сообщение", "Send message"))
-    gui.send_button.setStyleSheet("""
-        QPushButton { background-color: #8a2be2; border: 0px; border-radius: 14px; padding: 5px; }
-        QPushButton:hover { background-color: #9932CC; }
-        QPushButton:pressed { background-color: #9400D3; }
-    """)
     
     send_container = QWidget()
     send_container.setStyleSheet("background-color: transparent; border: none;")
@@ -186,11 +153,6 @@ def create_scroll_to_bottom_button(gui):
     btn.setObjectName("ScrollToBottomButton")
     btn.setFixedSize(34, 34)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setStyleSheet("""
-        QPushButton#ScrollToBottomButton{ border:none; border-radius:17px; background-color:#9146ff; }
-        QPushButton#ScrollToBottomButton:hover{ background-color:#a96dff; }
-        QPushButton#ScrollToBottomButton:focus{ outline:none; border:none; }
-    """)
     opacity = QGraphicsOpacityEffect(btn)
     btn.setGraphicsEffect(opacity)
     anim = QPropertyAnimation(opacity, b"opacity", btn)
@@ -265,17 +227,17 @@ def update_send_button_state(gui):
     is_enabled = has_text or has_images or has_auto_images
     gui.send_button.setEnabled(is_enabled)
     
-    if is_enabled:
-        gui.send_button.setStyleSheet("""
-            QPushButton { background-color: #8a2be2; border: 0px; border-radius: 14px; padding: 5px; }
-            QPushButton:hover { background-color: #9932CC; }
-            QPushButton:pressed { background-color: #9400D3; }
-        """)
-    else:
-        gui.send_button.setStyleSheet("""
-            QPushButton { background-color: #4a4a4a; border: 0px; border-radius: 14px; padding: 5px; }
-            QPushButton:disabled { background-color: #4a4a4a; color: #666666; }
-        """)
+    # if is_enabled:
+    #     gui.send_button.setStyleSheet("""
+    #         QPushButton { background-color: #8a2be2; border: 0px; border-radius: 14px; padding: 5px; }
+    #         QPushButton:hover { background-color: #9932CC; }
+    #         QPushButton:pressed { background-color: #9400D3; }
+    #     """)
+    # else:
+    #     gui.send_button.setStyleSheet("""
+    #         QPushButton { background-color: #4a4a4a; border: 0px; border-radius: 14px; padding: 5px; }
+    #         QPushButton:disabled { background-color: #4a4a4a; color: #666666; }
+    #     """)
 
 def init_image_preview(gui):
     gui.staged_image_data = []

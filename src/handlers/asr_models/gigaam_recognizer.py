@@ -50,6 +50,18 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             "v2_ctc", "v2_rnnt", "v2_ssl",
         ]
         
+    def settings_spec(self):
+        return [{"key": "device", "label_ru": "Устройство", "label_en": "Device",
+                 "type": "combobox", "options": ["auto", "cuda", "cpu", "dml"], "default": "auto"}]
+
+    def get_default_settings(self):
+        return {"device": "auto"}
+
+    def apply_settings(self, settings: dict):
+        dev = settings.get("device")
+        if dev:
+            self.set_options(device=dev)
+    
     def _show_install_warning(self, packages: list):
         package_str = ", ".join(packages)
         self.logger.warning("="*80)
@@ -84,77 +96,76 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             self.logger.info(f"Устройство для GigaAM установлено на: {device}")
     
     def is_installed(self) -> bool:
-        """Проверка установленности модели GigaAM"""
-
+        """Проверка установленности модели GigaAM (пакет + веса/onnx)."""
+        # обязательные зависимости
         try:
             if self._torch is None:
                 import torch
                 self._torch = torch
-            if self._sd    is None:
+            if self._sd is None:
                 import sounddevice as sd
                 self._sd = sd
-            if self._np    is None:
+            if self._np is None:
                 import numpy as np
                 self._np = np
         except ImportError as e:
-            self.logger.warning(f"GigaAM is_installed → отсутствует зависимость: {e}")
+            self.logger.warning(f"GigaAM deps missing: {e}")
+            return False
+
+        # критично: сам пакет gigaam должен импортироваться
+        try:
+            import gigaam  # noqa: F401
+        except Exception as e:
+            self.logger.debug(f"GigaAM import failed: {e}")
             return False
 
         if self._current_gpu is None:
             self._current_gpu = check_gpu_provider() or "CPU"
-        
+
         is_nvidia = self._current_gpu == "NVIDIA"
         device_choice = self.gigaam_device
-        
+
         if is_nvidia and device_choice in ["auto", "cuda"]:
             model_name = self.gigaam_model
             if model_name in ["ctc", "rnnt", "ssl"]:
                 model_name = f"v2_{model_name}"
-            model_file = os.path.join(self.gigaam_model_path, f"{model_name}.ckpt")
-            if os.path.exists(model_file):
-                self.logger.debug(f"Найден файл модели PyTorch: {model_file}")
-                return True
-            else:
-                self.logger.debug(f"Файл модели PyTorch не найден: {model_file}")
-                return False
+            pt_file = os.path.join(self.gigaam_model_path, f"{model_name}.ckpt")
+            return os.path.exists(pt_file)
         else:
             onnx_dir = self.gigaam_onnx_export_path
-            model_name = self.gigaam_model
-            if "_" in model_name:
-                version, model_type = model_name.split("_", 1)
+            name = self.gigaam_model
+            if "_" in name:
+                version, model_type = name.split("_", 1)
             else:
-                version, model_type = "v2", model_name
-                
+                version, model_type = "v2", name
+
             if model_type == "ctc":
-                onnx_file = os.path.join(onnx_dir, f"{version}_{model_type}.onnx")
-                exists = os.path.exists(onnx_file)
-                self.logger.debug(f"Проверка ONNX CTC модели {onnx_file}: {'найдена' if exists else 'не найдена'}")
-                return exists
+                return os.path.exists(os.path.join(onnx_dir, f"{version}_{model_type}.onnx"))
             else:
                 base = os.path.join(onnx_dir, f"{version}_{model_type}")
-                encoder_exists = os.path.exists(f"{base}_encoder.onnx")
-                decoder_exists = os.path.exists(f"{base}_decoder.onnx")
-                joint_exists = os.path.exists(f"{base}_joint.onnx")
-                all_exist = encoder_exists and decoder_exists and joint_exists
-                
-                self.logger.debug(
-                    f"Проверка ONNX {model_type} модели: "
-                    f"encoder={'найден' if encoder_exists else 'не найден'}, "
-                    f"decoder={'найден' if decoder_exists else 'не найден'}, "
-                    f"joint={'найден' if joint_exists else 'не найден'}"
-                )
-                
-                if not all_exist:
-                    model_name = self.gigaam_model
-                    if model_name in ["ctc", "rnnt", "ssl"]:
-                        model_name = f"v2_{model_name}"
-                    pt_file = os.path.join(self.gigaam_model_path, f"{model_name}.ckpt")
-                    if os.path.exists(pt_file):
-                        self.logger.debug(f"ONNX не найден, но есть PyTorch модель: {pt_file}")
-                        return True
-                        
-                return all_exist
-    
+                return all([
+                    os.path.exists(f"{base}_encoder.onnx"),
+                    os.path.exists(f"{base}_decoder.onnx"),
+                    os.path.exists(f"{base}_joint.onnx"),
+                ])    
+            
+    def _get_libs_abs(self):
+        import os
+        libs_abs = getattr(self.pip_installer, "libs_path_abs", None)
+        if not libs_abs:
+            libs_abs = os.path.abspath("Lib")
+        return libs_abs
+
+    def _ensure_libs_on_path(self):
+        import os, sys
+        libs_abs = self._get_libs_abs()
+        if libs_abs and libs_abs not in sys.path:
+            sys.path.insert(0, libs_abs)
+        # Подстрахуем PYTHONPATH для дочерних импортов
+        prev = os.environ.get("PYTHONPATH", "")
+        if libs_abs and libs_abs not in prev.split(os.pathsep):
+            os.environ["PYTHONPATH"] = (libs_abs + (os.pathsep + prev if prev else ""))
+
     async def install(self) -> bool:
         """Установка зависимостей и модели"""
         try:
@@ -256,6 +267,12 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
             if self._np is None:
                 import numpy as np
                 self._np = np
+
+            try:
+                self._ensure_libs_on_path()
+                import gigaam  # noqa: F401
+            except Exception as e:
+                self.logger.error(f"После установки модуль 'gigaam' не импортируется: {e}")
             
             if self._current_gpu != "NVIDIA" and self.gigaam_device != "cuda":
                 try:
@@ -449,7 +466,16 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
 
         try:
             while active_flag():
-                audio_chunk, overflowed = stream.read(chunk_size)
+                if not active_flag():
+                    break
+                try:
+                    audio_chunk, overflowed = stream.read(chunk_size)
+                except Exception as e:
+                    if not active_flag():
+                        break
+                    self.logger.warning(f"Input stream read aborted: {e}")
+                    break
+
                 if overflowed:
                     self.logger.warning("Переполнение буфера аудиопотока!")
 
@@ -489,7 +515,14 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 
                 await asyncio.sleep(0.01)
         finally:
-            stream.close()
+            try:
+                stream.stop()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception:
+                pass
 
 
     async def _save_failed_audio(self, audio_data: np.ndarray, sample_rate: int):
@@ -578,7 +611,8 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
                 self._command_queue,
                 self._result_queue,
                 self._log_queue
-            )
+            ),
+            daemon=True  # важно
         )
         self._process.start()
         
@@ -612,36 +646,42 @@ class GigaAMRecognizer(SpeechRecognizerInterface):
         return True
     
     def _stop_process(self):
-        """Остановка процесса GigaAM"""
         if not self._process:
             return
-            
+
         self.logger.info("Остановка GigaAM процесса...")
-        
         self._stop_monitor.set()
-        
+
         if self._command_queue:
             try:
                 self._command_queue.put(('shutdown',))
             except:
                 pass
-        
+
         if self._monitor_thread:
             self._monitor_thread.join(timeout=2)
-        
+
         if self._process:
             self._process.join(timeout=5)
-            
             if self._process.is_alive():
                 self.logger.warning("GigaAM процесс не завершился, принудительное завершение...")
                 self._process.terminate()
                 self._process.join(timeout=2)
-        
+
+        # корректно закрываем очереди, чтобы завершились фоновые потоки Queue
+        for q in (self._command_queue, self._result_queue, self._log_queue):
+            try:
+                if q is not None:
+                    q.close()
+                    q.join_thread()
+            except Exception:
+                pass
+
         self._process = None
         self._command_queue = None
         self._result_queue = None
         self._log_queue = None
         self._process_initialized = False
         self._monitor_thread = None
-        
+
         self.logger.info("GigaAM процесс остановлен")

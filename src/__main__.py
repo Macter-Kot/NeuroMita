@@ -254,12 +254,11 @@ if __name__ == "__main__":
 
         main_win.load_chat_history()
         
-        # НЕ передаем больше ссылки на UI элементы контроллеру!
-        # Все взаимодействие теперь через события
         
         logger.info("Показываю главное окно...")
         main_win.show()
         logger.info("Запускаю app.exec()...")
+
         
         # При завершении приложения останавливаем систему событий
         app.aboutToQuit.connect(lambda: get_event_bus().shutdown())

@@ -396,9 +396,15 @@ class Events:
         OPEN_VOICE_MODEL_SETTINGS = "open_voice_model_settings"
         OPEN_VOICE_MODEL_SETTINGS_DIALOG = "open_voice_model_settings_dialog"
         SHOW_VC_REDIST_DIALOG = "show_vc_redist_dialog"
-        SHOW_TRITON_DIALOG = "show_triton_dialog"  
+        SHOW_TRITON_DIALOG = "show_triton_dialog"
         REFRESH_TRITON_STATUS = "refresh_triton_status"
         GET_TRITON_STATUS = "get_triton_status"
+
+        # Новые (для LocalVoiceController)
+        LOCAL_SEND_VOICE_REQUEST = "local_send_voice_request"
+        LOCAL_INSTALL_MODEL = "local_install_voice_model"
+        LOCAL_UNINSTALL_MODEL = "local_uninstall_voice_model"
+        GET_ALL_LOCAL_MODEL_CONFIGS = "get_all_local_model_configs"
 
     class Speech:
         """События для распознавания речи и управления микрофоном"""

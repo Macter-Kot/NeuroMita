@@ -14,6 +14,7 @@ from controllers.chat_controller import ChatController
 from controllers.loop_controller import LoopController
 from controllers.task_controller import TaskController
 from controllers.api_presets_controller import ApiPresetsController
+from controllers.local_voice_controller import LocalVoiceController
 
 from main_logger import logger
 from utils.ffmpeg_installer import install_ffmpeg
@@ -65,6 +66,10 @@ class MainController:
             self.pip_installer = None
 
         self._check_and_perform_pending_update()
+
+        
+        self.local_voice_controller = LocalVoiceController(self)
+        logger.notify("LocalVoiceController успешно инициализирован.")
 
         
         self.task_controller = TaskController()

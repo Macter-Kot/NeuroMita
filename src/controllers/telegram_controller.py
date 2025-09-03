@@ -1,6 +1,4 @@
 import asyncio
-import threading
-from PyQt6.QtCore import QObject, pyqtSignal
 from handlers.telegram_handler import TelegramBotHandler
 from main_logger import logger
 from utils import SH

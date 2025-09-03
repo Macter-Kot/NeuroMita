@@ -12,6 +12,7 @@ import ui.gui_templates as gui_templates
 from managers.settings_manager import CollapsibleSection
 from ui.settings.voiceover_settings import LOCAL_VOICE_MODELS
 import types
+import json
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QPropertyAnimation, QBuffer, QIODevice, QEvent, QEasingCurve
 from PyQt6.QtWidgets import (
@@ -839,11 +840,14 @@ class ChatGUI(QMainWindow):
         self.check_triton_dependencies()
 
     def update_local_voice_combobox(self):
+        logger.info("АПДЕЙТ__________________")
         if not hasattr(self, 'local_voice_combobox') or self.local_voice_combobox is None:
             logger.warning("update_local_voice_combobox: виджет local_voice_combobox не найден.")
             return
 
         self.local_voice_combobox.blockSignals(True)
+        
+        logger.info("АПДЕЙТ__________________АПДЕЙТ__________________")
         try:
             # 1) Берём установленные модели напрямую из контроллера через событие
             installed_ids = set()
@@ -856,17 +860,17 @@ class ChatGUI(QMainWindow):
                 logger.info(f"GET_INSTALLED_MODELS недоступен: {e}")
 
             # 2) Фолбэк: читаем Settings/installed_models.txt (на случай, если контроллер ещё не инициализирован)
-            if not installed_ids:
-                try:
-                    installed_file = os.path.join("Settings", "installed_models.txt")
-                    if os.path.exists(installed_file):
-                        with open(installed_file, "r", encoding="utf-8") as f:
-                            for line in f:
-                                mid = line.strip()
-                                if mid:
-                                    installed_ids.add(mid)
-                except Exception as e:
-                    logger.info(f"Ошибка чтения installed_models.txt: {e}")
+            # if not installed_ids:
+            #     try:
+            #         installed_file = os.path.join("Settings", "installed_models.txt")
+            #         if os.path.exists(installed_file):
+            #             with open(installed_file, "r", encoding="utf-8") as f:
+            #                 for line in f:
+            #                     mid = line.strip()
+            #                     if mid:
+            #                         installed_ids.add(mid)
+            #     except Exception as e:
+            #         logger.info(f"Ошибка чтения installed_models.txt: {e}")
 
             id_to_name = {m["id"]: m["name"] for m in LOCAL_VOICE_MODELS}
             ordered_ids = [m["id"] for m in LOCAL_VOICE_MODELS]
@@ -1065,8 +1069,7 @@ class ChatGUI(QMainWindow):
 
     def _on_finish_model_loading(self, data: dict):
         model_id = data.get('model_id')
-        if hasattr(self, 'finish_model_loading') and hasattr(self, 'loading_dialog'):
-            self.finish_model_loading(model_id, self.loading_dialog)
+        self._on_model_initialized({'model_id': model_id})
 
     def _on_cancel_model_loading(self):
         if hasattr(self, 'cancel_model_loading') and hasattr(self, 'loading_dialog'):

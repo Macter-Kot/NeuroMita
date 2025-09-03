@@ -44,8 +44,6 @@ class AudioModelController(BaseController):
         model_id = event.data.get('model_id')
         if self.view and hasattr(self.view, 'finish_model_loading_signal') and self.view.finish_model_loading_signal:
             self.view.finish_model_loading_signal.emit({'model_id': model_id})
-        elif self.view and hasattr(self.view, 'finish_model_loading') and hasattr(self.view, 'loading_dialog'):
-            QTimer.singleShot(0, lambda: self.view.finish_model_loading(model_id, self.view.loading_dialog))
 
     def _on_cancel_model_loading(self, event: Event):
         if self.view and hasattr(self.view, 'cancel_model_loading_signal') and self.view.cancel_model_loading_signal:

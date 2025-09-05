@@ -18,7 +18,7 @@ LOCAL_VOICE_MODELS = [
 
 def setup_voiceover_controls(gui, parent_layout):
     # Создаём заголовок секции
-    create_section_header(parent_layout, _("Настройка озвучки", "Voiceover Settings"))
+    create_section_header(parent_layout, _("Настройки озвучки", "Voiceover Settings"))
     
     # Сохраняем ссылку для совместимости
     gui.voiceover_section = type('obj', (object,), {'content_frame': parent_layout.parent()})()

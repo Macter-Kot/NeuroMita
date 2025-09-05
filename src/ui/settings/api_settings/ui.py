@@ -7,6 +7,7 @@ import qtawesome as qta
 
 from utils import _
 from .widgets import ProviderDelegate
+from ui.gui_templates import create_section_header
 
 def build_api_settings_ui(self, parent_layout):
     # Главный контейнер
@@ -15,12 +16,7 @@ def build_api_settings_ui(self, parent_layout):
     main_layout.setContentsMargins(0, 0, 0, 0)
     main_layout.setSpacing(5)
     
-    # 1. Заголовок секции
-    section_header = QLabel(_("Настройки API", "API Settings"))
-    section_header.setObjectName('SectionTitle')
-    section_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-    main_layout.addWidget(section_header)
+    create_section_header(main_layout, _("Каталог промптов", "Prompt Catalogue"))
     
     # Разделитель
     separator = QFrame()

@@ -7,6 +7,7 @@ from utils import _
 def setup_settings_panel(gui, main_layout):
     settings_panel = QWidget()
     settings_panel.setFixedWidth(50)
+    gui.SETTINGS_SIDEBAR_WIDTH = 50
     settings_panel.setObjectName("SettingsSidebar")
     
     panel_layout = QVBoxLayout(settings_panel)

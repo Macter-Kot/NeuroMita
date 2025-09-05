@@ -402,12 +402,19 @@ class PipInstaller:
                 logger.info(clean)
             self.update_log(clean)
 
+        def snapshot_close():
+            try:
+                self.update_log("__SNAPSHOT_CLOSE__")
+            except Exception:
+                pass
+
         def log_error(line: str):
             clean = line.rstrip("\r\n")
             if not clean:
                 return
             logger.error(clean)
             self.update_log(clean)
+
 
         class UvProgressAggregator:
             RE_PCT   = re.compile(r'(\d{1,3})\s*%')
@@ -743,6 +750,8 @@ class PipInstaller:
                         break
                 return lines
 
+        snapshot_close()
+
         # запуск
         self.update_status(description)
         self.update_log("Выполняем: " + " ".join(cmd))
@@ -908,6 +917,7 @@ class PipInstaller:
                             time.sleep(0.5)
                             if proc.poll() is None:
                                 proc.kill()
+                            snapshot_close()
                             return False
 
                         if now - start > TIMEOUT_SEC:
@@ -917,6 +927,7 @@ class PipInstaller:
                             time.sleep(0.5)
                             if proc.poll() is None:
                                 proc.kill()
+                            snapshot_close()
                             return False
 
                         if QCoreApplication.instance() and QThread.currentThread() == QCoreApplication.instance().thread():
@@ -928,6 +939,9 @@ class PipInstaller:
 
                     ret = proc.returncode
                     self.update_progress(100)
+
+                    snapshot_close()
+
                     self.update_log(f"pip завершился с кодом {ret}")
                     elapsed = time.time() - start
                     self.update_status(f"{description} — завершено за {int(elapsed//60):02d}:{int(elapsed%60):02d}")
@@ -1046,9 +1060,13 @@ class PipInstaller:
 
                     ret = pty.exitstatus
                     self.update_progress(100)
+
+                    snapshot_close()
+
                     self.update_log(f"pip завершился с кодом {ret}")
                     elapsed = time.time() - start
                     self.update_status(f"{description} — завершено за {int(elapsed//60):02d}:{int(elapsed%60):02d}")
+
 
                     if "uninstall" in cmd and ret in (1, 2):
                         logger.info(f"UV вернул код {ret} при удалении - возможно пакет не был установлен")
@@ -1062,6 +1080,7 @@ class PipInstaller:
 
             except Exception as e:
                 logger.warning(f"PTY-режим недоступен или произошла ошибка: {e}. Переходим на стандартные пайпы.", exc_info=True)
+                snapshot_close()
                 # фоллбэк на пайпы ниже
 
         # ======== PIPES PATH ========
@@ -1156,6 +1175,7 @@ class PipInstaller:
                 time.sleep(0.5)
                 if proc.poll() is None:
                     proc.kill()
+                snapshot_close()
                 return False
 
             if now - start > TIMEOUT_SEC:
@@ -1165,6 +1185,7 @@ class PipInstaller:
                 time.sleep(0.5)
                 if proc.poll() is None:
                     proc.kill()
+                snapshot_close()
                 return False
 
             if QCoreApplication.instance() and QThread.currentThread() == QCoreApplication.instance().thread():
@@ -1184,8 +1205,12 @@ class PipInstaller:
             else:
                 log_progress(ln)
 
-        self.update_progress(100)
+        
         ret = proc.returncode
+        self.update_progress(100)
+
+        snapshot_close()
+
         self.update_log(f"pip завершился с кодом {ret}")
         elapsed = time.time() - start
         self.update_status(f"{description} — завершено за {int(elapsed//60):02d}:{int(elapsed%60):02d}")

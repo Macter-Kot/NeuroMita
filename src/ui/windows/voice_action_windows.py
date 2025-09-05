@@ -7,6 +7,7 @@ from utils import getTranslationVariant as _
 
 import re
 from html import escape as html_escape
+from main_logger import logger
 
 # Широкий регэксп: чистит и CSI-последовательности (\x1b[...),
 # и одиночные ESC-последовательности (\x1bX), и OSC/прочие escape-формы.
@@ -108,9 +109,7 @@ class VoiceInstallationWindow(QDialog):
     def _on_status_update(self, message: str):
         message = strip_ansi(message)
         self.status_label.setText(message)
-        # 1) Поддержка старого маркера
-        m = re.search(r'KATEX_INLINE_OPENETA\s+([^)]+)KATEX_INLINE_CLOSE', message, flags=re.IGNORECASE)
-        # 2) И стандартный "(ETA mm:ss)" из статуса
+        m = re.search(r'\(\s+([^)]+)\)', message, flags=re.IGNORECASE)
         if not m:
             m = re.search(r'\bETA\s+(\d{1,2}:\d{2}(?::\d{2})?)\b', message, flags=re.IGNORECASE)
         if m:
@@ -118,8 +117,19 @@ class VoiceInstallationWindow(QDialog):
         elif "завершено" in message.lower() or "complete" in message.lower():
             self.eta_label.setText("ETA 00:00")
 
+        # Новое: если статус говорит что завершено — фиксируем снимок
+        low = message.lower()
+        if "завершено" in low or "complete" in low:
+            self._close_snapshot()
+
 
     def _on_log_update(self, text: str):
+        # Закрытие текущего «живого» снапшота
+        if "__SNAPSHOT_CLOSE__" in text:
+            self._close_snapshot()
+            logger.notify("вызвано __SNAPSHOT_CLOSE__")
+            return
+
         # Блок-снимок прогресса между маркерами
         if text.startswith("__SNAPSHOT_START__"):
             in_snap = False
@@ -132,11 +142,10 @@ class VoiceInstallationWindow(QDialog):
                     in_snap = False
                     continue
                 if in_snap:
-                    # Очищаем ANSI + одиночные ESC
                     clean = strip_ansi(ln).replace("\x1b", "")
                     if clean.strip():
                         lines.append(clean)
-            self._render_snapshot(lines)  # у тебя уже есть этот метод — он заменяет блок по диапазону
+            self._render_snapshot(lines)
             return
 
         # Обычная строка — добавляем (она не будет затираться снапшотом)
@@ -144,6 +153,16 @@ class VoiceInstallationWindow(QDialog):
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
+
+    def _close_snapshot(self):
+        # фиксируем и разрываем визуально
+        if self._snap_start is not None or self._snap_end is not None:
+            cursor = self.log_text.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertBlock()  # пустая строка-разделитель
+            self.log_text.setTextCursor(cursor)
+        self._snap_start = None
+        self._snap_end = None
     
     def _render_snapshot(self, lines: list[str]):
         from html import escape as html_escape
@@ -268,15 +287,18 @@ class VoiceActionWindow(QDialog):
     def _on_status_update(self, message: str):
         message = strip_ansi(message)
         self.status_label.setText(message)
-        # 1) Поддержка старого маркера
-        m = re.search(r'KATEX_INLINE_OPENETA\s+([^)]+)KATEX_INLINE_CLOSE', message, flags=re.IGNORECASE)
-        # 2) И стандартный "(ETA mm:ss)" из статуса
+        m = re.search(r'\(\s+([^)]+)\)', message, flags=re.IGNORECASE)
         if not m:
             m = re.search(r'\bETA\s+(\d{1,2}:\d{2}(?::\d{2})?)\b', message, flags=re.IGNORECASE)
         if m:
             self.eta_label.setText(f"ETA {m.group(1)}")
         elif "завершено" in message.lower() or "complete" in message.lower():
             self.eta_label.setText("ETA 00:00")
+
+        # Новое: если статус говорит что завершено — фиксируем снимок
+        low = message.lower()
+        if "завершено" in low or "complete" in low:
+            self._close_snapshot()
 
     def _append_colored_log(self, text: str):
         text = strip_ansi(text)
@@ -290,6 +312,13 @@ class VoiceActionWindow(QDialog):
         self.log_text.append(html)
 
     def _on_log_update(self, text: str):
+        # Закрытие текущего «живого» снапшота
+        if "__SNAPSHOT_CLOSE__" in text:
+            self._close_snapshot()
+            logger.notify("вызвано __SNAPSHOT_CLOSE__")
+            return
+
+        # Блок-снимок прогресса между маркерами
         if text.startswith("__SNAPSHOT_START__"):
             in_snap = False
             lines = []
@@ -307,10 +336,21 @@ class VoiceActionWindow(QDialog):
             self._render_snapshot(lines)
             return
 
+        # Обычная строка — добавляем (она не будет затираться снапшотом)
         self._append_colored_log(text)
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
+
+    def _close_snapshot(self):
+        # фиксируем и разрываем визуально
+        if self._snap_start is not None or self._snap_end is not None:
+            cursor = self.log_text.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertBlock()  # пустая строка-разделитель
+            self.log_text.setTextCursor(cursor)
+        self._snap_start = None
+        self._snap_end = None
     
     def _render_snapshot(self, lines: list[str]):
         from html import escape as html_escape

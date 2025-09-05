@@ -1,6 +1,7 @@
 # File: src/ui/settings/microphone_settings.py
 
 import re
+
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox,
     QPushButton, QSizePolicy, QFrame, QLineEdit, QCheckBox

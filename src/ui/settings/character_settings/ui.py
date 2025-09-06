@@ -1,11 +1,12 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox,
-    QPushButton, QSizePolicy, QFrame, QCheckBox, QSpacerItem, QSizePolicy
+    QPushButton, QSizePolicy, QFrame, QCheckBox, QStyle
 )
 import qtawesome as qta
 
 from ui.gui_templates import create_section_header
+from managers.settings_manager import InnerCollapsibleSection
 from utils import getTranslationVariant as _
 
 
@@ -25,8 +26,15 @@ def _make_row(label_text: str, field_widget: QWidget, label_w: int) -> QWidget:
 
 
 def build_character_settings_ui(self, parent_layout):
-    # Контейнер с правым отступом (защита от перекрытия сайдбаром)
-    right_pad = getattr(self, "SETTINGS_SIDEBAR_WIDTH", 50) + 8
+    # Резерв под вертикальный скролл, чтобы при его появлении ширина не «прыгала»
+    try:
+        scrollbar_guard = max(12, self.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent))
+    except Exception:
+        scrollbar_guard = 14
+
+    # Контейнер с правым отступом (защита от перекрытия сайдбаром + запас под скролл)
+    base_right_pad = getattr(self, "SETTINGS_SIDEBAR_WIDTH", 50) + 8
+    right_pad = base_right_pad + scrollbar_guard
 
     container = QWidget()
     container_lay = QVBoxLayout(container)
@@ -113,33 +121,66 @@ def build_character_settings_ui(self, parent_layout):
 
     lay.addWidget(mgmt_row)
 
-    # --- Опасные действия
-    sub_title2 = QLabel(_("Аккуратно!", "Be careful!"))
-    sub_title2.setStyleSheet("font-weight: 600;")
-    lay.addWidget(sub_title2)
+    # Небольшой визуальный отступ перед внутренней секцией
+    lay.addSpacing(6)
 
-    danger_row = QWidget()
-    dn_h = QHBoxLayout(danger_row)
-    dn_h.setContentsMargins(0, 0, 0, 0)
-    dn_h.setSpacing(6)
+    # --- История и очистка (внутренняя секция)
+    self.history_section = InnerCollapsibleSection(_("История и очистка", "History & cleanup"), parent=self)
+    lay.addWidget(self.history_section)
+
+    # На старте — всегда закрыта. Сохраняем состояние только при клике.
+    try:
+        orig_toggle = self.history_section.toggle
+
+        def _toggle_and_save(_=None):
+            orig_toggle()
+            # сохраняем состояние, но не читаем его при старте — секция всегда закрыта на открытие окна
+            if hasattr(self, "settings"):
+                self.settings.set("SHOW_HISTORY_RESET_SECTION", not self.history_section.is_collapsed)
+
+        self.history_section.header.mousePressEvent = _toggle_and_save
+    except Exception:
+        pass
+
+    # Чуть меньше левый отступ, чтобы выглядело аккуратнее и не давало лишней ширины
+    try:
+        self.history_section.content_layout.setContentsMargins(16, 8, 12, 8)
+        self.history_section.content_layout.setSpacing(8)
+    except Exception:
+        pass
+
+    # Группа кнопок: очистка истории и всех историй
+    history_row = QWidget()
+    hr_h = QHBoxLayout(history_row)
+    hr_h.setContentsMargins(0, 0, 0, 0)
+    hr_h.setSpacing(6)
+
+    def _mark_danger_hover(btn: QPushButton):
+        # Серый стиль + красный hover через глобальный QSS
+        btn.setObjectName("SecondaryButton")
+        btn.setProperty("dangerHover", True)
+        btn.style().unpolish(btn)
+        btn.style().polish(btn)
+        btn.update()
 
     self.btn_clear_history = QPushButton(_("Очистить историю", "Clear history"))
-    self.btn_clear_history.setObjectName("SecondaryButton")
     self.btn_clear_history.setIcon(qta.icon('fa5s.trash', color='#ffffff'))
-    dn_h.addWidget(self.btn_clear_history, 1)
+    _mark_danger_hover(self.btn_clear_history)
+    hr_h.addWidget(self.btn_clear_history, 1)
 
     self.btn_clear_all_histories = QPushButton(_("Очистить все истории", "Clear all histories"))
-    self.btn_clear_all_histories.setObjectName("SecondaryButton")
     self.btn_clear_all_histories.setIcon(qta.icon('fa5s.trash-alt', color='#ffffff'))
-    dn_h.addWidget(self.btn_clear_all_histories, 1)
+    _mark_danger_hover(self.btn_clear_all_histories)
+    hr_h.addWidget(self.btn_clear_all_histories, 1)
 
-    lay.addWidget(danger_row)
+    self.history_section.add_widget(history_row)
 
-    # --- Перекачать промпты
+    # Отдельной строкой — перекачка промптов (тоже с danger-hover)
     self.btn_reload_prompts = QPushButton(_("Перекачать промпты", "Reload prompts"))
-    self.btn_reload_prompts.setObjectName("SecondaryButton")
     self.btn_reload_prompts.setIcon(qta.icon('fa5s.download', color='#ffffff'))
-    lay.addWidget(self.btn_reload_prompts)
+    self.btn_reload_prompts.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    _mark_danger_hover(self.btn_reload_prompts)
+    self.history_section.add_widget(self.btn_reload_prompts)
 
     container_lay.addWidget(root)
     parent_layout.addWidget(container)

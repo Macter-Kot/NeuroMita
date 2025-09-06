@@ -1,4 +1,5 @@
 # styles/main_styles.py
+from utils import render_qss
 
 THEME = {
     "bg_root": "#1b1d22",
@@ -46,19 +47,19 @@ def get_theme():
 
 style_template = """
 /* ========= Base ========= */
-QWidget {{
+QWidget {
     background-color: {bg_root};
     color: {text};
     font-family: "Segoe UI", Arial, sans-serif;
     font-size: 9pt;
     border-radius: 0px;
-}}
-QMainWindow {{ background-color: {bg_window}; }}
-QDialog {{ background-color: {bg_root}; }}
-QFrame {{ border: none; background: transparent; }}
+}
+QMainWindow { background-color: {bg_window}; }
+QDialog { background-color: {bg_root}; }
+QFrame { border: none; background: transparent; }
 
 /* ========= Inputs ========= */
-QTextEdit, QLineEdit {{
+QTextEdit, QLineEdit {
     background-color: {panel_bg};
     color: {text};
     border: 1px solid {border_soft};
@@ -67,38 +68,38 @@ QTextEdit, QLineEdit {{
     selection-background-color: {accent};
     selection-color: #ffffff;
     min-height: 22px;
-}}
-QTextEdit:focus, QLineEdit:focus {{
+}
+QTextEdit:focus, QLineEdit:focus {
     border: 1px solid {accent};
     background-color: {panel_bg};
     outline: none;
-}}
-QTextEdit#DebugWindow {{
+}
+QTextEdit#DebugWindow {
     font-family: "Consolas", "Courier New", monospace;
     font-size: 8pt;
     min-height: 80px;
     background-color: rgba(12,12,16,0.92);
     border-radius: 10px;
-}}
+}
 
 /* ========= ComboBox ========= */
-QComboBox {{
+QComboBox {
     background-color: {panel_bg};
     color: {text};
     border: 1px solid {border_soft};
     padding: 4px 10px;
     min-height: 22px;
     border-radius: 10px;
-}}
-QComboBox:focus, QComboBox:on {{ border: 1px solid {accent}; }}
-QComboBox::drop-down {{
+}
+QComboBox:focus, QComboBox:on { border: 1px solid {accent}; }
+QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
     width: 20px;
     border-left: 1px solid {border_soft};
     margin-left: 6px;
-}}
-QComboBox QAbstractItemView {{
+}
+QComboBox QAbstractItemView {
     background-color: {panel_bg};
     border: 1px solid {accent};
     selection-background-color: {accent};
@@ -106,222 +107,233 @@ QComboBox QAbstractItemView {{
     color: {text};
     padding: 6px;
     border-radius: 8px;
-}}
+}
 
 /* ========= Buttons ========= */
-QPushButton {{
+QPushButton {
     background-color: {accent};
     color: #ffffff;
     border: 1px solid {accent_border};
     padding: 7px 14px;
     font-weight: 600;
     border-radius: 10px;
-}}
-QPushButton:hover {{ background-color: {accent_hover}; }}
-QPushButton:pressed {{ background-color: {accent_pressed}; }}
-QPushButton:disabled {{
+}
+QPushButton:hover { background-color: {accent_hover}; }
+QPushButton:pressed { background-color: {accent_pressed}; }
+QPushButton:disabled {
     background-color: #3a3a3f;
     color: {muted};
     border: 1px solid {outline};
-}}
-QPushButton#CancelButton {{
+}
+QPushButton#CancelButton {
     background-color: {danger};
     border: 1px solid rgba(214,69,69,0.35);
-}}
-QPushButton#CancelButton:hover {{ background-color: {danger_hover}; }}
-QPushButton#CancelButton:pressed {{ background-color: {danger_pressed}; }}
-QPushButton#SecondaryButton {{
+}
+QPushButton#CancelButton:hover { background-color: {danger_hover}; }
+QPushButton#CancelButton:pressed { background-color: {danger_pressed}; }
+QPushButton#SecondaryButton {
     background-color: {chip_bg};
     color: {text};
     border: 1px solid {outline};
-}}
-QPushButton#SecondaryButton:hover {{ background-color: {chip_hover}; }}
-QPushButton#SecondaryButton:pressed {{ background-color: {chip_pressed}; }}
+}
+QPushButton#SecondaryButton:hover { background-color: {chip_hover}; }
+QPushButton#SecondaryButton:pressed { background-color: {chip_pressed}; }
+
+QPushButton:focus {
+    outline: none;
+    border: 1px solid {accent};
+}
+
+QPushButton:disabled {
+    background-color: #3a3a3f;
+    color: {muted};
+    border: 1px solid {outline};
+}
 
 /* ========= Labels ========= */
-QLabel {{ background-color: transparent; padding-top: 2px; padding-bottom: 2px; }}
-QLabel#TokenCountLabel {{
+QLabel { background-color: transparent; padding-top: 2px; padding-bottom: 2px; }
+QLabel#TokenCountLabel {
     font-size: 8pt;
     color: #b8b8c2;
     padding: 2px 6px;
     border-radius: 6px;
     background-color: {chip_bg};
-}}
-QLabel#SeparatorLabel {{
+}
+QLabel#SeparatorLabel {
     margin-top: 8px;
     padding: 6px 0;
     border-bottom: 1px solid {border_soft};
     font-weight: 700;
     color: #f5f5f7;
-}}
-QLabel#WarningIcon {{ color: #ffcc00; }}
-QLabel#LinkLabel {{ color: {link}; }}
+}
+QLabel#WarningIcon { color: #ffcc00; }
+QLabel#LinkLabel { color: {link}; }
 
-QFrame#SeparatorH {{
+QFrame#SeparatorH {
     background-color: {border_soft};
     max-height: 1px;
     border-radius: 1px;
     margin: 0 10px;
-}}
+}
 
-#TritonWarningLabel {{
+#TritonWarningLabel {
     background-color: {warn_bg};
     color: {warn_text};
     font-weight: 600;
     padding: 6px 8px;
     border: 1px solid {warn_border};
     border-radius: 10px;
-}}
+}
 
 /* ========= CheckBox ========= */
-QCheckBox {{ spacing: 8px; color: {text}; padding: 2px 0; }}
-QCheckBox::indicator {{
+QCheckBox { spacing: 8px; color: {text}; padding: 2px 0; }
+QCheckBox::indicator {
     width: 16px; height: 16px; border-radius: 5px;
     border: 1px solid rgba(255,255,255,0.18);
     background-color: rgba(24,24,28,1);
-}}
-QCheckBox::indicator:hover {{ border-color: {accent}; }}
-QCheckBox::indicator:checked {{
+}
+QCheckBox::indicator:hover { border-color: {accent}; }
+QCheckBox::indicator:checked {
     background-color: {accent};
     border: 1px solid #a270ff;
-}}
-QCheckBox::indicator:checked:disabled {{
+}
+QCheckBox::indicator:checked:disabled {
     background-color: {accent};
     border: 1px solid #a270ff;
-}}
-QCheckBox:disabled {{ color: {muted}; }}
-QCheckBox::indicator:disabled {{
+}
+QCheckBox:disabled { color: {muted}; }
+QCheckBox::indicator:disabled {
     border: 1px solid {outline};
     background: {chip_bg};
     image: none;
-}}
+}
 
 /* ========= Scrolls ========= */
-QScrollArea {{ background-color: transparent; border: none; }}
-QScrollBar:vertical {{
+QScrollArea { background-color: transparent; border: none; }
+QScrollBar:vertical {
     border: none; background: transparent; width: 10px; margin: 0;
-}}
-QScrollBar::handle:vertical {{
+}
+QScrollBar::handle:vertical {
     background: {scroll_handle};
     min-height: 26px; border-radius: 6px;
-}}
-QScrollBar::handle:vertical:hover {{ background: rgba(255,255,255,0.18); }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+}
+QScrollBar::handle:vertical:hover { background: rgba(255,255,255,0.18); }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 
 /* ========= Collapsible ========= */
-QWidget#CollapsibleHeader {{
+QWidget#CollapsibleHeader {
     background-color: {chip_bg};
     border-radius: 10px;
-}}
-QWidget#CollapsibleHeader:hover {{ background-color: {chip_hover}; }}
-QWidget#InnerCollapsibleHeader {{
+}
+QWidget#CollapsibleHeader:hover { background-color: {chip_hover}; }
+QWidget#InnerCollapsibleHeader {
     background: transparent;
     border-bottom: 1px solid {border_soft};
     padding-bottom: 4px;
-}}
-QLabel#CollapsibleArrow, QLabel#CollapsibleTitle {{
+}
+QLabel#CollapsibleArrow, QLabel#CollapsibleTitle {
     font-weight: 700; color: #f5f5f7; padding: 3px;
-}}
-QWidget#CollapsibleContent {{ background-color: transparent; padding-top: 6px; }}
+}
+QWidget#CollapsibleContent { background-color: transparent; padding-top: 6px; }
 
 /* ========= Settings Sidebar ========= */
-QWidget#SettingsSidebar {{
+QWidget#SettingsSidebar {
     background-color: {card_bg};
     border-right: 1px solid {card_border};
-}}
+}
 
 /* ========= API Presets ========= */
-QFrame#PresetsPanel {{
+QFrame#PresetsPanel {
     background-color: {card_bg};
     border: 1px solid {card_border};
     border-radius: 12px;
-}}
-QListWidget#PresetsList {{
+}
+QListWidget#PresetsList {
     background: {panel_bg};
     border: 1px solid {border_soft};
     border-radius: 10px;
     padding: 6px;
     color: {text};
     outline: 0;
-}}
-QListWidget#PresetsList::item {{ padding: 6px 6px; color: {text}; }}
-QListWidget#PresetsList::item:hover {{ background: {chip_bg}; border-radius: 6px; }}
-QListWidget#PresetsList::item:selected {{ background: {chip_hover}; border-radius: 6px; color: #ffffff; }}
+}
+QListWidget#PresetsList::item { padding: 6px 6px; color: {text}; }
+QListWidget#PresetsList::item:hover { background: {chip_bg}; border-radius: 6px; }
+QListWidget#PresetsList::item:selected { background: {chip_hover}; border-radius: 6px; color: #ffffff; }
 
 QPushButton#AddPresetButton,
 QPushButton#RemovePresetButton,
 QPushButton#MoveUpButton,
-QPushButton#MoveDownButton {{
+QPushButton#MoveDownButton {
     background-color: {chip_bg};
     border: 1px solid {outline};
     color: {text};
     padding: 0px;
     min-width: 28px; min-height: 28px;
     border-radius: 8px;
-}}
+}
 QPushButton#AddPresetButton:hover,
 QPushButton#RemovePresetButton:hover,
 QPushButton#MoveUpButton:hover,
-QPushButton#MoveDownButton:hover {{
+QPushButton#MoveDownButton:hover {
     background-color: {chip_hover};
-}}
+}
 QPushButton#AddPresetButton:pressed,
 QPushButton#RemovePresetButton:pressed,
 QPushButton#MoveUpButton:pressed,
-QPushButton#MoveDownButton:pressed {{
+QPushButton#MoveDownButton:pressed {
     background-color: {chip_pressed};
-}}
-QPushButton#RemovePresetButton:disabled {{ color: {muted}; border-color: {outline}; }}
+}
+QPushButton#RemovePresetButton:disabled { color: {muted}; border-color: {outline}; }
 
 /* ========= Chat widgets ========= */
-QWidget#ChatInputContainer {{
+QWidget#ChatInputContainer {
     background-color: {panel_bg};
     border: 1px solid {border_soft};
     border-radius: 12px;
-}}
+}
 
-QPushButton#GuideButtonSmall {{
+QPushButton#GuideButtonSmall {
     background-color: {accent};
     color: #ffffff;
     border: 1px solid {accent_border};
     padding: 5px;
     border-radius: 8px;
-}}
-QPushButton#GuideButtonSmall:hover {{ background-color: {accent_hover}; }}
-QPushButton#GuideButtonSmall:pressed {{ background-color: {accent_pressed}; }}
+}
+QPushButton#GuideButtonSmall:hover { background-color: {accent_hover}; }
+QPushButton#GuideButtonSmall:pressed { background-color: {accent_pressed}; }
 
-QPushButton#ChatIconMini {{
+QPushButton#ChatIconMini {
     background-color: {chip_bg};
     border: 0px; border-radius: 10px;
     padding: 3px;
-}}
-QPushButton#ChatIconMini:hover {{ background-color: rgba(138,43,226,0.3); }}
-QPushButton#ChatIconMini:pressed {{ background-color: rgba(138,43,226,0.5); }}
+}
+QPushButton#ChatIconMini:hover { background-color: rgba(138,43,226,0.3); }
+QPushButton#ChatIconMini:pressed { background-color: rgba(138,43,226,0.5); }
 
-QPushButton#ChatSendButtonCircle {{
+QPushButton#ChatSendButtonCircle {
     background-color: {accent};
     border: 0px; border-radius: 14px; padding: 5px;
-}}
-QPushButton#ChatSendButtonCircle:hover {{ background-color: {accent_hover}; }}
-QPushButton#ChatSendButtonCircle:pressed {{ background-color: {accent_pressed}; }}
-QPushButton#ChatSendButtonCircle:disabled {{
+}
+QPushButton#ChatSendButtonCircle:hover { background-color: {accent_hover}; }
+QPushButton#ChatSendButtonCircle:pressed { background-color: {accent_pressed}; }
+QPushButton#ChatSendButtonCircle:disabled {
     background-color: {btn_disabled_bg}; color: {btn_disabled_fg};
-}}
+}
 
-QPushButton#ScrollToBottomButton {{
+QPushButton#ScrollToBottomButton {
     border:none; border-radius:17px; background-color:{accent};
-}}
-QPushButton#ScrollToBottomButton:hover {{ background-color:{accent_hover}; }}
-QPushButton#ScrollToBottomButton:focus {{ outline:none; border:none; }}
+}
+QPushButton#ScrollToBottomButton:hover { background-color:{accent_hover}; }
+QPushButton#ScrollToBottomButton:focus { outline:none; border:none; }
 
 /* ========= Loading / Progress ========= */
-QDialog#LoadingDialog {{
+QDialog#LoadingDialog {
     border: 1px solid {border_soft};
     border-radius: 12px;
     background-color: {card_bg};
-}}
-QProgressBar {{
+}
+QProgressBar {
     border: 1px solid {border_soft};
     border-radius: 10px;
     text-align: center;
@@ -329,32 +341,45 @@ QProgressBar {{
     color: {text};
     height: 20px;
     padding: 2px;
-}}
-QProgressBar::chunk {{ background-color: {accent}; border-radius: 8px; }}
+}
+QProgressBar::chunk { background-color: {accent}; border-radius: 8px; }
 
 /* ========= Disabled ========= */
-QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled {{
+QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled {
     background-color: rgba(14,14,18,0.85);
     color: #8d8d96;
     border: 1px solid {outline};
-}}
-QLabel:disabled {{ color: #7d7d86; }}
+}
+QLabel:disabled { color: #7d7d86; }
 
 /* ========= Overlay internals ========= */
-QWidget#SettingsOverlay QStackedWidget > QWidget > QWidget {{ background-color: transparent; }}
+QWidget#SettingsOverlay QStackedWidget > QWidget > QWidget { background-color: transparent; }
 
 /* ========= ToolTip ========= */
-QToolTip {{
+QToolTip {
     color: #ffffff;
     background-color: {card_bg};
     border: 1px solid {card_border};
     padding: 6px 10px;
     border-radius: 8px;
-}}
+}
+
+/* ========== Danger Zone =========== */
+QPushButton#SecondaryButton[dangerHover="true"] {
+    /* базовый стиль наследуется от SecondaryButton */
+}
+QPushButton#SecondaryButton[dangerHover="true"]:hover {
+    background-color: rgba(214, 69, 69, 0.16);   /* мягкое заливание */
+    border: 1px solid rgba(214, 69, 69, 0.45);
+}
+QPushButton#SecondaryButton[dangerHover="true"]:pressed {
+    background-color: rgba(214, 69, 69, 0.26);   /* чуть сильнее при нажатии */
+}
 """
 
 def get_stylesheet(overrides: dict | None = None) -> str:
     theme = THEME.copy()
     if overrides:
         theme.update(overrides)
-    return style_template.format(**theme)
+    return render_qss(style_template, theme)
+

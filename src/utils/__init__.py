@@ -416,3 +416,26 @@ def process_text_to_voice(text_to_speak: str) -> str:
         logger.info("TTS text was empty after cleaning, using default '...'")
 
     return clean_text
+
+def render_qss(template: str, variables: dict) -> str:
+    """
+    Рендерит QSS/CSS-шаблон, заменяя плейсхолдеры вида {name} на значения из словаря variables.
+    - Не трогает обычные блочные скобки QSS ({ ... }), т.к. матчится только на {слово}.
+    - Если ключ не найден в словаре — плейсхолдер остаётся без изменений.
+
+    :param template: Строка QSS/СSS с плейсхолдерами {var}.
+    :param variables: Словарь с заменами.
+    :return: Рендеренная строка.
+    """
+    if not isinstance(template, str):
+        template = str(template)
+    if not isinstance(variables, dict):
+        raise TypeError("variables must be a dict")
+
+    pattern = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+    def _repl(m: re.Match) -> str:
+        key = m.group(1)
+        return str(variables.get(key, m.group(0)))
+
+    return pattern.sub(_repl, template)

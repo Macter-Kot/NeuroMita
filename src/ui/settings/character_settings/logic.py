@@ -56,7 +56,6 @@ def _prompts_match(char_name: str, set_name: str, gui=None) -> bool:
     Если в наборе ЕСТЬ config.json — он заменяет существующий и должен совпадать.
     Логи-уведомления (logger.notify) выводятся только если включён чекбокс SHOW_PROMPT_SYNC_LOGS.
     """
-    # Локальный флажок показа логов
     show_logs = False
     try:
         if gui and hasattr(gui, "settings"):
@@ -86,18 +85,15 @@ def _prompts_match(char_name: str, set_name: str, gui=None) -> bool:
         notify("Промпты отличаются: " + "; ".join(parts))
         return False
 
-    # Считаем хеши пофайлово
     char_hashes = _dir_file_hashes(char_dir)
     set_hashes = _dir_file_hashes(set_dir)
 
-    # Если в наборе нет config.json — игнорируем его в папке персонажа
     if "config.json" not in set_hashes:
         char_hashes.pop("config.json", None)
 
     char_keys = set(char_hashes.keys())
     set_keys = set(set_hashes.keys())
 
-    # Состав файлов (пути) должен совпадать
     if char_keys != set_keys:
         missing_in_char = sorted(set_keys - char_keys)
         extra_in_char = sorted(char_keys - set_keys)
@@ -112,7 +108,6 @@ def _prompts_match(char_name: str, set_name: str, gui=None) -> bool:
         notify("\n".join(lines))
         return False
 
-    # Содержимое совпадает?
     diffs = []
     for rel in sorted(char_keys):
         if char_hashes[rel] != set_hashes[rel]:
@@ -133,7 +128,6 @@ def _update_sync_indicator(gui):
         gui.prompt_sync_label = QLabel("●")  # маленькая точка
         gui.prompt_sync_label.setToolTip(_("Индикатор соответствия промптов", "Prompts sync indicator"))
 
-        # Вставляем рядом с combobox (если виджет сделан не через наш UI)
         if hasattr(gui, 'prompt_pack_combobox'):
             parent = gui.prompt_pack_combobox.parent()
             if parent and parent.layout():
@@ -146,7 +140,7 @@ def _update_sync_indicator(gui):
     set_name = gui.prompt_pack_combobox.currentText()
 
     ok = _prompts_match(char_name, set_name, gui=gui)
-    color = "#2ecc71" if ok else "#e74c3c"  # зелёный / красный
+    color = "#2ecc71" if ok else "#e74c3c"
     gui.prompt_sync_label.setStyleSheet(f"color: {color}; font-size: 16px;")
 
     tooltip = _("Промпты синхронизированы", "Prompts are synchronized") if ok else _(
@@ -216,7 +210,7 @@ def wire_character_settings_logic(self):
 
     # Первичный индикатор
     _update_sync_indicator(self)
-    QTimer.singleShot(300, lambda: _update_sync_indicator(self))  # на случай асинхронного наполнения
+    QTimer.singleShot(300, lambda: _update_sync_indicator(self))
 
 
 def on_prompt_set_changed(gui):
@@ -243,7 +237,6 @@ def on_prompt_set_changed(gui):
         if reply == QMessageBox.StandardButton.Yes:
             apply_prompt_set(gui)
     else:
-        # Просто сохраняем выбор в Settings, чтобы он "запомнился"
         gui.settings.set(_prompt_set_key(char), set_)
         gui.settings.save_settings()
 
@@ -320,10 +313,9 @@ def apply_prompt_set(gui, force_apply=True):
     if char_from:
         character_prompts_path = os.path.join("Prompts", char_from)
         if copy_prompt_set(set_path, character_prompts_path, clean_target=True):
-            # Сохраняем выбор ТОЛЬКО для этого персонажа
             gui.settings.set(_prompt_set_key(char_from), chat_to)
             gui.settings.save_settings()
-            _update_sync_indicator(gui)  # теперь должно стать зелёным
+            _update_sync_indicator(gui)
 
             if force_apply:
                 QMessageBox.information(gui, _("Успех", "Success"),
@@ -379,7 +371,7 @@ def open_character_history_folder(gui):
                 QMessageBox.warning(gui, _("Внимание", "Warning"),
                                     _("Папка истории персонажа не найдена: ", "Character history folder not found: ") + history_folder_path)
         else:
-            QMessageBox.inформация(gui, _("Информация", "Information"),
+            QMessageBox.information(gui, _("Информация", "Information"),
                                     _("Персонаж не выбран или его имя недоступно.", "No character selected or its name is not available."))
     else:
         QMessageBox.information(gui, _("Информация", "Information"),
@@ -388,6 +380,18 @@ def open_character_history_folder(gui):
 
 def clear_history(gui):
     event_bus = get_event_bus()
+    current_char_data = event_bus.emit_and_wait(Events.Model.GET_CURRENT_CHARACTER, timeout=1.0)
+    char_id = current_char_data[0].get('char_id') if current_char_data and current_char_data[0] else None
+    char_name_for_text = char_id or _("(не выбран)", "(not selected)")
+
+    title = _("Подтверждение удаления", "Confirm deletion")
+    text = _("Очистить историю для персонажа '{name}'? Это действие нельзя отменить.",
+             "Clear history for character '{name}'? This action cannot be undone.").format(name=char_name_for_text)
+    reply = QMessageBox.question(gui, title, text,
+                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if reply != QMessageBox.StandardButton.Yes:
+        return
+
     event_bus.emit(Events.Model.CLEAR_CHARACTER_HISTORY)
     if hasattr(gui, 'clear_chat_display'):
         gui.clear_chat_display()
@@ -396,6 +400,14 @@ def clear_history(gui):
 
 
 def clear_history_all(gui):
+    title = _("Подтвердите удаление всех историй", "Confirm deleting all histories")
+    text = _("Это удалит историю всех персонажей без возможности восстановления. Продолжить?",
+             "This will delete the history of all characters and cannot be undone. Continue?")
+    reply = QMessageBox.question(gui, title, text,
+                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if reply != QMessageBox.StandardButton.Yes:
+        return
+
     event_bus = get_event_bus()
     event_bus.emit(Events.Model.CLEAR_ALL_HISTORIES)
     if hasattr(gui, 'clear_chat_display'):
@@ -405,15 +417,19 @@ def clear_history_all(gui):
 
 
 def reload_prompts(gui):
-    reply = QMessageBox.question(gui, _("Подтверждение", "Confirmation"),
-                                 _("Это удалит текущие промпты! Продолжить?", "This will delete the current prompts! Continue?"),
-                                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
-    if reply == QMessageBox.StandardButton.Ok:
-        if hasattr(gui, '_show_loading_popup'):
-            gui._show_loading_popup(_("Загрузка промптов...", "Downloading prompts..."))
+    title = _("Подтверждение", "Confirmation")
+    text = _("Перекачать промпты из каталога? Текущие файлы промптов будут удалены и заменены.",
+             "Reload prompts from catalogue? Current prompt files will be deleted and replaced.")
+    reply = QMessageBox.question(gui, title, text,
+                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if reply != QMessageBox.StandardButton.Yes:
+        return
 
-        event_bus = get_event_bus()
-        event_bus.emit(Events.Model.RELOAD_PROMPTS_ASYNC)
+    if hasattr(gui, '_show_loading_popup'):
+        gui._show_loading_popup(_("Загрузка промптов...", "Downloading prompts..."))
+
+    event_bus = get_event_bus()
+    event_bus.emit(Events.Model.RELOAD_PROMPTS_ASYNC)
 
 
 def save_character_provider(gui, provider: str):

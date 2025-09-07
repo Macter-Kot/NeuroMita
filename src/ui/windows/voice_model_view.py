@@ -230,6 +230,7 @@ class VoiceModelSettingsView(QWidget):
         self.setWindowTitle(_("Настройки и Установка Локальных Моделей", "Settings and Installation of Local Models"))
         self.setMinimumSize(750, 500)
         self.resize(875, 800)
+        self._cached_dependencies_status = None  # +++
         
         # Apply stylesheet
         self.setStyleSheet(get_stylesheet())
@@ -284,10 +285,13 @@ class VoiceModelSettingsView(QWidget):
         # Получаем данные через события
         models_data = self._get_models_data()
         installed_models = self._get_installed_models()
-        
-        self.create_model_panels(models_data, installed_models)
-        
+
+        # 1) Берём и кэшируем статус зависимостей один раз
         dependencies_status = self._get_dependencies_status()
+        self._cached_dependencies_status = dependencies_status
+
+        # 2) Рисуем панели моделей и настройки
+        self.create_model_panels(models_data, installed_models)
         self.display_installed_models_settings(models_data, installed_models, dependencies_status)
 
     def _get_models_data(self):
@@ -493,7 +497,11 @@ class VoiceModelSettingsView(QWidget):
     def _on_refresh_settings(self):
         models_data = self._get_models_data()
         installed_models = self._get_installed_models()
+
+        # Обновляем кэш зависимостей
         dependencies_status = self._get_dependencies_status()
+        self._cached_dependencies_status = dependencies_status
+
         self.display_installed_models_settings(models_data, installed_models, dependencies_status)
 
     def create_model_panels(self, models_data, installed_models):
@@ -568,7 +576,7 @@ class VoiceModelSettingsView(QWidget):
             rtx_label = QLabel("RTX 30+")
             rtx_label.setStyleSheet(f"color: {icon_color}; font-size: 7pt; font-weight: bold;")
             rtx_tooltip_text = _("Требуется GPU NVIDIA RTX 30xx/40xx для оптимальной производительности.", 
-                               "Requires NVIDIA RTX 30xx/40xx GPU for optimal performance.") if not gpu_meets_requirement else _("Ваша GPU подходит для этой модели.", "Your GPU is suitable for this model.")
+                            "Requires NVIDIA RTX 30xx/40xx GPU for optimal performance.") if not gpu_meets_requirement else _("Ваша GPU подходит для этой модели.", "Your GPU is suitable for this model.")
             rtx_label.setToolTip(rtx_tooltip_text)
             title_layout.addWidget(rtx_label)
         
@@ -587,8 +595,13 @@ class VoiceModelSettingsView(QWidget):
         # AMD warning if needed
         allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
         
-        # Получаем информацию о GPU через событие
-        gpu_info = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)[0]
+        # Берём кэшированный статус зависимостей (если его нет — получаем один раз)
+        gpu_info = getattr(self, "_cached_dependencies_status", None)
+        if gpu_info is None:
+            results = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)
+            gpu_info = results[0] if results else {}
+            self._cached_dependencies_status = gpu_info
+        
         detected_gpu_vendor = gpu_info.get('detected_gpu_vendor') if gpu_info else None
         
         is_amd_user = detected_gpu_vendor == "AMD"
@@ -823,6 +836,15 @@ class VoiceModelSettingsView(QWidget):
         models_data = self._get_models_data()
         installed_models = self._get_installed_models()
         
+        # Берём кэш статуса; если пусто — один раз запросим и закэшируем
+        gpu_info = getattr(self, "_cached_dependencies_status", None)
+        if gpu_info is None:
+            results = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)
+            gpu_info = results[0] if results else {}
+            self._cached_dependencies_status = gpu_info
+
+        detected_gpu_vendor = gpu_info.get('detected_gpu_vendor') if gpu_info else None
+        
         for model_id, button in self.model_action_buttons.items():
             model_data = next((m for m in models_data if m["id"] == model_id), None)
             if not model_data:
@@ -841,9 +863,6 @@ class VoiceModelSettingsView(QWidget):
                 
                 supported_vendors = model_data.get('gpu_vendor', [])
                 allow_unsupported_gpu = os.environ.get("ALLOW_UNSUPPORTED_GPU", "0") == "1"
-                
-                gpu_info = self.event_bus.emit_and_wait(Events.VoiceModel.GET_DEPENDENCIES_STATUS)[0]
-                detected_gpu_vendor = gpu_info.get('detected_gpu_vendor') if gpu_info else None
                 
                 is_amd_user = detected_gpu_vendor == "AMD"
                 is_amd_supported = "AMD" in supported_vendors

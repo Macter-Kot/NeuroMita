@@ -39,6 +39,10 @@ class VoiceModelController:
         self.installed_models_file = os.path.join(self.config_dir, "installed_models.txt")
         self.on_save_callback = on_save_callback
 
+        
+        self._dependencies_status_cache = None     # +++
+        self._dependencies_status_ts = 0           # +++
+
         # local_voice больше не используется напрямую (инкапсулировано)
         self._check_installed_func = check_installed_func
 
@@ -136,12 +140,32 @@ class VoiceModelController:
         return self.installed_models.copy()
 
     def _handle_get_dependencies_status(self, event):
-        # Берём статус у LocalVoiceController + добавляем детект вендора
+        """
+        Возвращаем статус зависимостей (включая флаги для UI).
+        Чтобы не создавать шквал запросов в LocalVoiceController при отрисовке окна,
+        кэшируем результат на короткое время (TTL ~ 3 сек).
+        """
+        # Ленивая инициализация кэша
+        if not hasattr(self, "_dependencies_status_cache"):
+            self._dependencies_status_cache = None
+            self._dependencies_status_ts = 0.0
+
+        # Если кэш свежий — возвращаем его
+        import time as _time
+        if self._dependencies_status_cache and (_time.time() - self._dependencies_status_ts) < 3.0:
+            return self._dependencies_status_cache
+
+        # Иначе — запрашиваем у LocalVoice через EventBus
         res = self.event_bus.emit_and_wait(Events.Audio.GET_TRITON_STATUS, timeout=2.0)
         status = res[0] if res else {}
         status = status.copy() if isinstance(status, dict) else {}
         status['show_triton_checks'] = (platform.system() == "Windows")
         status['detected_gpu_vendor'] = self.detected_gpu_vendor
+
+        # Кэшируем
+        self._dependencies_status_cache = status
+        self._dependencies_status_ts = _time.time()
+
         return status
 
     def _handle_get_default_description(self, event):
@@ -469,7 +493,7 @@ class VoiceModelController:
                     'progress_callback': progress_cb,
                     'status_callback': status_cb,
                     'log_callback': log_cb
-                }, timeout=600.0
+                }, timeout=7200000.0
             )
             success = bool(res and res[0])
         except Exception as e:

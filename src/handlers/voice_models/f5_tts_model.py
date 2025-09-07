@@ -82,11 +82,18 @@ class F5TTSModel(IVoiceModel):
         return self.MODEL_CONFIGS
 
     def _load_module(self):
+        if self.f5_pipeline_module is not None:
+            return
+        if getattr(self, "_import_attempted", False):
+            return
+
+        self._import_attempted = True
         try:
             from handlers.voice_models.pipelines.f5_pipeline import F5TTSPipeline
             self.f5_pipeline_module = F5TTSPipeline
         except ImportError as ex:
-            logger.info(f"F5_TTS: {ex}", exc_info=True)
+            # Без exc_info, чтобы не заливать лог трейсами
+            logger.info(f"F5_TTS: {ex}")
             self.f5_pipeline_module = None
 
     def get_display_name(self) -> str:
@@ -135,29 +142,30 @@ class F5TTSModel(IVoiceModel):
         
         return True
     
+    
     def _install_f5_dependencies(self):
         """
         Установка F5-TTS.
 
-        •  Если метод вызван в GUI-потоке без внешних колбэков – создаёт своё окно.
-        •  Если вызван из воркера и у LocalVoice присутствуют
+        • Если метод вызван в GUI-потоке без внешних колбэков – создаёт своё окно.
+        • Если вызван из воркера и у LocalVoice присутствуют
         _external_progress / _external_status / _external_log –
         окно НЕ создаётся, все сообщения уводятся во внешние колбэки.
         """
         logger.info("[DEBUG] download_f5_tts_internal вошёл")
         try:
             progress_cb = getattr(self.parent, "_external_progress", lambda *_: None)
-            status_cb = getattr(self.parent, "_external_status", lambda *_: None)
-            log_cb = getattr(self.parent, "_external_log", lambda *_: None)
+            status_cb   = getattr(self.parent, "_external_status",   lambda *_: None)
+            log_cb      = getattr(self.parent, "_external_log",      lambda *_: None)
 
             installer = PipInstaller(
-                    script_path=r"libs\python\python.exe",
-                    libs_path="Lib",
-                    update_status=status_cb,
-                    update_log=log_cb,
-                    progress_window=None,
-                    update_progress=progress_cb
-                )
+                script_path=r"libs\python\python.exe",
+                libs_path="Lib",
+                update_status=status_cb,
+                update_log=log_cb,
+                progress_window=None,
+                update_progress=progress_cb
+            )
             logger.info("[DEBUG] PipInstaller создан, запускаем pip install")
 
             progress_cb(5)
@@ -177,21 +185,23 @@ class F5TTSModel(IVoiceModel):
 
             progress_cb(25)
 
+            # ВКЛЮЧИЛ cached_path, чтобы потом не падать при импорте f5_pipeline
             if not installer.install_package(
-                ["f5-tts", "google-api-core", "numpy==1.26.0", "librosa==0.9.1", "numba==0.60.0"],
+                ["f5-tts", "google-api-core", "numpy==1.26.0", "librosa==0.9.1", "numba==0.60.0", "cached_path"],
                 description=_("Установка f5-tts...", "Installing f5-tts...")
             ):
                 return False
             
+            # На всякий случай librosa отдельно (оставлено из вашего кода)
             if not installer.install_package(
-                    "librosa==0.9.1",
-                    description=_("Установка дополнительной библиотеки librosa...", "Installing additional library librosa...")
-                ):
-                    return False
+                "librosa==0.9.1",
+                description=_("Установка дополнительной библиотеки librosa...", "Installing additional library librosa...")
+            ):
+                return False
 
             progress_cb(35)
             
-            # Установка RUAccent
+            # Установка RUAccent (необяз.)
             status_cb(_("Установка RUAccent...", "Installing RUAccent..."))
             if not installer.install_package(
                 "ruaccent",
@@ -201,7 +211,7 @@ class F5TTSModel(IVoiceModel):
 
             progress_cb(50)
 
-            # Скачиваем веса
+            # Скачивание весов — без изменений...
             import requests, math, os, time
 
             model_dir = os.path.join("checkpoints", "F5-TTS")
@@ -302,7 +312,11 @@ class F5TTSModel(IVoiceModel):
 
             progress_cb(100)
             status_cb(_("Установка F5-TTS завершена.", "F5-TTS installation complete."))
+
+            # ВАЖНО: сбрасываем флаг и ещё раз пробуем импортнуть pipeline
+            setattr(self, "_import_attempted", False)
             self._load_module()
+
             return True
 
         except Exception as e:

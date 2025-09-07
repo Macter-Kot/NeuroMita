@@ -9,6 +9,7 @@ from utils import getTranslationVariant as _
 import re
 from html import escape as html_escape
 from main_logger import logger
+from collections import deque
 
 # Широкий регэксп: чистит и CSI-последовательности (\x1b[...),
 # и одиночные ESC-последовательности (\x1bX), и OSC/прочие escape-формы.
@@ -65,6 +66,14 @@ class VoiceInstallationWindow(QDialog):
             QPushButton:hover { background-color: #555555; }
         """)
 
+        # Буферы логов:
+        # - _full_log_lines: полный лог (для копирования/сохранения)
+        # - _display_lines: окно последних строк (видимое содержимое)
+        self._full_log_lines: list[str] = []
+        self._display_lines: deque[str] = deque()
+        self._max_display_blocks: int = 200  # пересчитается после компоновки
+
+        # Таймер прошедшего времени
         self._start_time = QTime.currentTime()
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(1000)
@@ -122,7 +131,8 @@ class VoiceInstallationWindow(QDialog):
         actions_layout.addWidget(save_btn)
 
         clear_btn = QPushButton(_("Очистить", "Clear"))
-        clear_btn.clicked.connect(self._clear_log)
+        clear_btn.setToolTip(_("Очищает только экран, полный лог сохраняется", "Clears screen only, full log remains"))
+        clear_btn.clicked.connect(self._clear_log_screen_only)
         actions_layout.addWidget(clear_btn)
 
         actions_layout.addStretch()
@@ -145,6 +155,9 @@ class VoiceInstallationWindow(QDialog):
                 parent_rect.center().y() - self.height() // 2
             )
 
+        # Инициализация лимита видимых строк
+        QTimer.singleShot(0, self._recalc_max_blocks_and_refresh)
+
     def _update_elapsed(self):
         secs = self._start_time.secsTo(QTime.currentTime())
         if secs < 0:
@@ -153,6 +166,21 @@ class VoiceInstallationWindow(QDialog):
         h, m = divmod(m, 60)
         text = f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
         self.elapsed_label.setText(_("Прошло ", "Elapsed ") + text)
+
+    def _recalc_max_blocks_and_refresh(self):
+        fm = self.log_text.fontMetrics()
+        line_h = max(1, fm.lineSpacing())
+        vp_h = max(1, self.log_text.viewport().height())
+        # 90% от видимой высоты в строках, минимум 20
+        new_max = max(20, int((vp_h / line_h) * 0.9))
+        changed = (new_max != self._max_display_blocks)
+        self._max_display_blocks = new_max
+        if changed:
+            self._rebuild_display_from_full()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._recalc_max_blocks_and_refresh()
 
     def _on_progress_update(self, value: int):
         value = max(0, min(100, int(value)))
@@ -169,39 +197,72 @@ class VoiceInstallationWindow(QDialog):
         elif any(k in message.lower() for k in ("завершено", "complete", "done")):
             self.eta_label.setText("ETA 00:00")
 
-    def _append_colored_log(self, text: str):
-        text = strip_ansi(text)
-        if not text.strip():
-            return
-        low = text.lower()
+    def _colorize_line(self, plain: str) -> str:
+        """Окраска строки для отображения (HTML). plain уже без ANSI."""
+        low = plain.lower()
         if any(w in low for w in ("error", "ошибка", "failed", "traceback", "exception", "critical")):
-            html = f'<span style="color:#ff5555;">{html_escape(text)}</span>'
+            return f'<span style="color:#ff5555;">{html_escape(plain)}</span>'
         elif any(w in low for w in ("warning", "предупреж", "warn")):
-            html = f'<span style="color:#ffb86c;">{html_escape(text)}</span>'
+            return f'<span style="color:#ffb86c;">{html_escape(plain)}</span>'
         else:
-            html = html_escape(text)
-        self.log_text.append(html)
+            return html_escape(plain)
+
+    def _render_display_lines(self):
+        # Формируем HTML из текущего окна строк
+        html = (
+            "<div style='white-space: pre-wrap; font-family:Consolas,monospace; font-size:9pt; margin:0;'>"
+            + "<br/>".join(self._display_lines) +
+            "</div>"
+        )
+        self.log_text.setHtml(html)
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
         self.log_text.ensureCursorVisible()
 
+    def _append_log_chunk(self, text: str):
+        if not text:
+            return
+        # Разбиваем на строки, добавляем в full, поддерживаем окно последних строк
+        for ln in text.splitlines():
+            plain = strip_ansi(ln)
+            if not plain.strip():
+                continue
+            self._full_log_lines.append(plain)
+            colored = self._colorize_line(plain)
+            self._display_lines.append(colored)
+            while len(self._display_lines) > self._max_display_blocks:
+                self._display_lines.popleft()
+        self._render_display_lines()
+
+    def _rebuild_display_from_full(self):
+        # Берём последние N строк из полного лога и пересобираем окно
+        if not self._full_log_lines:
+            self._display_lines.clear()
+            self._render_display_lines()
+            return
+        last = self._full_log_lines[-self._max_display_blocks:]
+        self._display_lines = deque((self._colorize_line(s) for s in last), maxlen=self._max_display_blocks)
+        self._render_display_lines()
+
     def _on_log_update(self, text: str):
-        # Просто дописываем лог без каких-либо снапшотов
-        self._append_colored_log(text)
+        # Окно показа — только последние строки, но полный лог сохраняем отдельно
+        self._append_log_chunk(text)
 
     def _copy_log(self):
-        QGuiApplication.clipboard().setText(self.log_text.toPlainText() or "")
+        QGuiApplication.clipboard().setText("\n".join(self._full_log_lines) or "")
 
     def _save_log(self):
         fname, _ = QFileDialog.getSaveFileName(self, _("Сохранить лог", "Save Log"), "install_log.txt", "Text Files (*.txt)")
         if fname:
             try:
                 with open(fname, "w", encoding="utf-8") as f:
-                    f.write(self.log_text.toPlainText())
+                    f.write("\n".join(self._full_log_lines))
             except Exception as ex:
                 logger.error(f"Не удалось сохранить лог: {ex}")
 
-    def _clear_log(self):
-        self.log_text.clear()
+    def _clear_log_screen_only(self):
+        # Очистка только видимой области; полный лог остаётся для копирования/сохранения
+        self._display_lines.clear()
+        self._render_display_lines()
 
     def closeEvent(self, event):
         self.window_closed.emit()
@@ -256,6 +317,12 @@ class VoiceActionWindow(QDialog):
             QPushButton:hover { background-color: #555555; }
         """)
 
+        # Буферы логов
+        self._full_log_lines: list[str] = []
+        self._display_lines: deque[str] = deque()
+        self._max_display_blocks: int = 200  # пересчитается после компоновки
+
+        # Таймер прошедшего времени
         self._start_time = QTime.currentTime()
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(1000)
@@ -301,7 +368,8 @@ class VoiceActionWindow(QDialog):
         actions_layout.addWidget(save_btn)
 
         clear_btn = QPushButton(_("Очистить", "Clear"))
-        clear_btn.clicked.connect(self._clear_log)
+        clear_btn.setToolTip(_("Очищает только экран, полный лог сохраняется", "Clears screen only, full log remains"))
+        clear_btn.clicked.connect(self._clear_log_screen_only)
         actions_layout.addWidget(clear_btn)
 
         actions_layout.addStretch()
@@ -321,6 +389,9 @@ class VoiceActionWindow(QDialog):
                 parent_rect.center().y() - self.height() // 2
             )
 
+        # Инициализация лимита видимых строк
+        QTimer.singleShot(0, self._recalc_max_blocks_and_refresh)
+
     def _update_elapsed(self):
         secs = self._start_time.secsTo(QTime.currentTime())
         if secs < 0:
@@ -329,6 +400,20 @@ class VoiceActionWindow(QDialog):
         h, m = divmod(m, 60)
         text = f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
         self.elapsed_label.setText(_("Прошло ", "Elapsed ") + text)
+
+    def _recalc_max_blocks_and_refresh(self):
+        fm = self.log_text.fontMetrics()
+        line_h = max(1, fm.lineSpacing())
+        vp_h = max(1, self.log_text.viewport().height())
+        new_max = max(20, int((vp_h / line_h) * 0.9))
+        changed = (new_max != self._max_display_blocks)
+        self._max_display_blocks = new_max
+        if changed:
+            self._rebuild_display_from_full()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._recalc_max_blocks_and_refresh()
 
     def _on_status_update(self, message: str):
         message = strip_ansi(message)
@@ -339,39 +424,67 @@ class VoiceActionWindow(QDialog):
         elif any(k in message.lower() for k in ("завершено", "complete", "done")):
             self.eta_label.setText("ETA 00:00")
 
-    def _append_colored_log(self, text: str):
-        text = strip_ansi(text)
-        if not text.strip():
-            return
-        low = text.lower()
+    def _colorize_line(self, plain: str) -> str:
+        low = plain.lower()
         if any(w in low for w in ("error", "ошибка", "failed", "traceback", "exception", "critical")):
-            html = f'<span style="color:#ff5555;">{html_escape(text)}</span>'
+            return f'<span style="color:#ff5555;">{html_escape(plain)}</span>'
         elif any(w in low for w in ("warning", "предупреж", "warn")):
-            html = f'<span style="color:#ffb86c;">{html_escape(text)}</span>'
+            return f'<span style="color:#ffb86c;">{html_escape(plain)}</span>'
         else:
-            html = html_escape(text)
-        self.log_text.append(html)
+            return html_escape(plain)
+
+    def _render_display_lines(self):
+        html = (
+            "<div style='white-space: pre-wrap; font-family:Consolas,monospace; font-size:9pt; margin:0;'>"
+            + "<br/>".join(self._display_lines) +
+            "</div>"
+        )
+        self.log_text.setHtml(html)
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
         self.log_text.ensureCursorVisible()
 
+    def _append_log_chunk(self, text: str):
+        if not text:
+            return
+        for ln in text.splitlines():
+            plain = strip_ansi(ln)
+            if not plain.strip():
+                continue
+            self._full_log_lines.append(plain)
+            colored = self._colorize_line(plain)
+            self._display_lines.append(colored)
+            while len(self._display_lines) > self._max_display_blocks:
+                self._display_lines.popleft()
+        self._render_display_lines()
+
+    def _rebuild_display_from_full(self):
+        if not self._full_log_lines:
+            self._display_lines.clear()
+            self._render_display_lines()
+            return
+        last = self._full_log_lines[-self._max_display_blocks:]
+        self._display_lines = deque((self._colorize_line(s) for s in last), maxlen=self._max_display_blocks)
+        self._render_display_lines()
+
     def _on_log_update(self, text: str):
-        # Просто дописываем лог без каких-либо снапшотов
-        self._append_colored_log(text)
+        self._append_log_chunk(text)
 
     def _copy_log(self):
-        QGuiApplication.clipboard().setText(self.log_text.toPlainText() or "")
+        QGuiApplication.clipboard().setText("\n".join(self._full_log_lines) or "")
 
     def _save_log(self):
         fname, _ = QFileDialog.getSaveFileName(self, _("Сохранить лог", "Save Log"), "action_log.txt", "Text Files (*.txt)")
         if fname:
             try:
                 with open(fname, "w", encoding="utf-8") as f:
-                    f.write(self.log_text.toPlainText())
+                    f.write("\n".join(self._full_log_lines))
             except Exception as ex:
                 logger.error(f"Не удалось сохранить лог: {ex}")
 
-    def _clear_log(self):
-        self.log_text.clear()
+    def _clear_log_screen_only(self):
+        self._display_lines.clear
+        self._display_lines = deque()
+        self._render_display_lines()
 
     def closeEvent(self, event):
         self.window_closed.emit()

@@ -840,14 +840,12 @@ class ChatGUI(QMainWindow):
         self.check_triton_dependencies()
 
     def update_local_voice_combobox(self):
-        logger.info("АПДЕЙТ__________________")
         if not hasattr(self, 'local_voice_combobox') or self.local_voice_combobox is None:
             logger.warning("update_local_voice_combobox: виджет local_voice_combobox не найден.")
             return
 
         self.local_voice_combobox.blockSignals(True)
         
-        logger.info("АПДЕЙТ__________________АПДЕЙТ__________________")
         try:
             # 1) Берём установленные модели напрямую из контроллера через событие
             installed_ids = set()

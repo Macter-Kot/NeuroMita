@@ -80,7 +80,19 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         return self.MODEL_CONFIGS
 
     def _load_module(self):
+        if self.tts_rvc_module is not None:
+            return
+
+        if getattr(self, "_import_attempted", False):
+            return
+
+        self._import_attempted = True
+
         try:
+            libs_path_abs = os.path.abspath("Lib")
+            if libs_path_abs not in sys.path:
+                sys.path.insert(0, libs_path_abs)
+
             from tts_with_rvc import TTS_RVC
             self.tts_rvc_module = TTS_RVC
         except ImportError:
@@ -90,7 +102,8 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         return "EdgeTTS+RVC / Silero+RVC"
 
     def is_installed(self, model_id) -> bool:
-        self._load_module()
+        if self.tts_rvc_module is None:
+            self._load_module()
         return self.tts_rvc_module is not None
 
     def install(self, model_id) -> bool:
@@ -137,20 +150,20 @@ class EdgeTTS_RVC_Model(IVoiceModel):
 
             progress_cb(70)
 
-            package_url = None
+            package_spec = None
             desc = ""
             if self.parent.provider in ["NVIDIA"]:
-                package_url = "tts_with_rvc"
+                package_spec = "tts_with_rvc"
                 desc = _("Установка основной библиотеки tts-with-rvc (NVIDIA)...", "Installing main library tts-with-rvc (NVIDIA)...")
             elif self.parent.provider in ["AMD"]:
-                package_url = "tts_with_rvc_onnx[dml]"
+                # ONNX + DirectML для AMD
+                package_spec = "tts_with_rvc_onnx[dml]"
                 desc = _("Установка основной библиотеки tts-with-rvc (AMD)...", "Installing main library tts-with-rvc (AMD)...")
             else:
                 log_cb(_(f"Ошибка: не найдена подходящая видеокарта: {self.parent.provider}", f"Error: suitable graphics card not found: {self.parent.provider}"))
                 return False
 
-            success = installer.install_package(package_url, description=desc)
-
+            success = installer.install_package(package_spec, description=desc)
             if not success:
                 status_cb(_("Ошибка при установке tts-with-rvc", "Error installing tts-with-rvc"))
                 return False
@@ -171,7 +184,9 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                     log_cb(_(f"Ошибка при патче configs.py: {e}", f"Error patching configs.py: {e}"))
             
             progress_cb(100)
-            
+
+            # Сбрасываем флаг одноразового импорта и пробуем загрузить модуль заново
+            setattr(self, "_import_attempted", False)
             self._load_module()
             
             return True
@@ -190,8 +205,10 @@ class EdgeTTS_RVC_Model(IVoiceModel):
         self.current_tts_rvc = None
         self.current_silero_model = None
         self.tts_rvc_module = None
+        self._import_attempted = True
         logger.info(f"Состояние для обработчика EdgeTTS/Silero+RVC сброшено.")
-
+    
+    
     def initialize(self, init: bool = False) -> bool:
         # Эта функция теперь вызывается с конкретным model_id, который определяет режим работы
         current_mode = self.parent.current_model_id

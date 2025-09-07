@@ -94,12 +94,21 @@ class FishSpeechModel(IVoiceModel):
         return self.MODEL_CONFIGS
 
     def _load_module(self):
+        if self.fish_speech_module is not None:
+            return
+        if getattr(self, "_import_attempted", False):
+            return
+
+        # Отмечаем, что попытка импорта уже была
+        self._import_attempted = True
+
         try:
             from fish_speech_lib.inference import FishSpeech
             self.fish_speech_module = FishSpeech
         except ImportError as ex:
-            self.fish_speech_module = None
+            # Лог без traceback; важно — один раз за сессию
             logger.info(ex)
+            self.fish_speech_module = None
 
     def get_display_name(self) -> str:
         mode = self._mode()
@@ -207,7 +216,9 @@ class FishSpeechModel(IVoiceModel):
 
             progress_cb(100)
             status_cb(_("Установка успешно завершена!", "Installation successful!"))
-            
+
+            # ВАЖНО: сбросить флаг «попытка импорта была», затем сразу повторить загрузку модуля
+            setattr(self, "_import_attempted", False)
             self._load_module()
             
             return True

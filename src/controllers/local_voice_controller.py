@@ -25,6 +25,10 @@ class LocalVoiceController:
 
         self.local_voice = LocalVoice(main_controller)
 
+        self._triton_status_cache: Optional[Dict[str, Any]] = None  # +++
+        self._triton_check_error_logged: bool = False               # +++
+        self._triton_check_in_progress: bool = False                # +++
+
         self._subscribe_to_events()
         logger.notify("LocalVoiceController успешно инициализирован.")
 
@@ -73,14 +77,43 @@ class LocalVoiceController:
             return None
 
     def _on_get_triton_status(self, event: Event):
+        """
+        Возвращает статус Triton. Выполняет проверку зависимостей один раз за сессию и кэширует результат,
+        чтобы избежать множества повторных предупреждений типа "No module named 'triton'".
+        Кэш сбрасывается при Events.Audio.REFRESH_VOICE_MODULES.
+        """
+        # Ленивая инициализация служебных полей (если их ещё нет)
+        if not hasattr(self, "_triton_status_cache"):
+            self._triton_status_cache = None
+        if not hasattr(self, "_triton_check_error_logged"):
+            self._triton_check_error_logged = False
+
+        # Если уже есть кэш — возвращаем его (не трогаем систему)
+        if self._triton_status_cache is not None:
+            return self._triton_status_cache
+
+        status = {}
         if self.local_voice:
-            if hasattr(self.local_voice, '_check_system_dependencies'):
+            # Попытаться выполнить проверку системных зависимостей (может выбрасывать исключение при отсутствии triton)
+            if hasattr(self.local_voice, "_check_system_dependencies"):
                 try:
                     self.local_voice._check_system_dependencies()
                 except Exception as e:
-                    logger.warning(f"Ошибка при проверке зависимостей: {e}")
-            return self.local_voice.get_triton_status()
-        return {}
+                    # Пишем предупреждение о проблеме с зависимостями только один раз за сессию
+                    if not self._triton_check_error_logged:
+                        logger.warning(f"Ошибка при проверке зависимостей: {e}")
+                        self._triton_check_error_logged = True
+
+            # Забираем статус из LocalVoice
+            try:
+                status = self.local_voice.get_triton_status() or {}
+            except Exception as e:
+                logger.error(f"Ошибка получения статуса Triton: {e}")
+                status = {}
+
+        # Кэшируем результат
+        self._triton_status_cache = status
+        return status
 
     def _on_refresh_voice_modules(self, event: Event):
         logger.info("Обновление модулей локальной озвучки...")
@@ -122,7 +155,14 @@ class LocalVoiceController:
             except Exception as e:
                 logger.error(f"Ошибка при обработке модуля {module_name}: {e}", exc_info=True)
 
+        # Инвалидация кэшей
+        self._triton_status_cache = None
+        self._triton_check_error_logged = False
+        self._installed_models_cache = None
+        self._installed_models_cache_ts = 0.0
+
         self.event_bus.emit(Events.GUI.CHECK_TRITON_DEPENDENCIES)
+
 
     def _on_get_all_local_model_configs(self, event: Event):
         try:
@@ -134,16 +174,34 @@ class LocalVoiceController:
     # ---- VoiceModel.*: только INSTALLED для главного окна ----
 
     def _on_vm_get_installed_models(self, event: Event):
+        import time as _time
+
+        # Ленивая инициализация полей кэша
+        if not hasattr(self, "_installed_models_cache"):
+            self._installed_models_cache = None
+            self._installed_models_cache_ts = 0.0
+
+        # Отдаём кэш, если он свежий (сильно снижает дергание is_installed())
+        if self._installed_models_cache is not None and (_time.time() - self._installed_models_cache_ts) < 2.0:
+            return set(self._installed_models_cache)
+
         installed = set()
         try:
             for m in self.local_voice.get_all_model_configs():
                 mid = m.get("id")
                 if not mid:
                     continue
-                if self.local_voice.is_model_installed(mid):
-                    installed.add(mid)
+                try:
+                    if self.local_voice.is_model_installed(mid):
+                        installed.add(mid)
+                except Exception as e:
+                    logger.error(f"_on_vm_get_installed_models: {e}", exc_info=False)
         except Exception as e:
             logger.error(f"_on_vm_get_installed_models: {e}", exc_info=True)
+
+        # Кэшируем результат
+        self._installed_models_cache = installed.copy()
+        self._installed_models_cache_ts = _time.time()
         return installed
 
     # ---- Прочие хендлеры ----
@@ -239,6 +297,10 @@ class LocalVoiceController:
         status_cb = data.get('status_callback')
         log_cb = data.get('log_callback')
 
+        # Инвалидируем кэш установленных перед установкой (будет пересчитан)
+        self._installed_models_cache = None
+        self._installed_models_cache_ts = 0.0
+
         try:
             ok = self.local_voice.download_model(
                 model_id, progress_cb, status_cb, log_cb
@@ -255,6 +317,10 @@ class LocalVoiceController:
         model_id = data.get('model_id')
         status_cb = data.get('status_callback')
         log_cb = data.get('log_callback')
+
+        # Инвалидируем кэш установленных перед удалением
+        self._installed_models_cache = None
+        self._installed_models_cache_ts = 0.0
 
         try:
             ok = self.local_voice.uninstall_model(model_id, status_cb, log_cb)

@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QProgressBar, QApplication, QWidget, QPushButton
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QProgressBar,
+    QApplication, QWidget, QPushButton, QFileDialog
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QTime
+from PyQt6.QtGui import QFont, QTextCursor, QGuiApplication
 from utils import getTranslationVariant as _
 
 import re
@@ -11,7 +12,7 @@ from main_logger import logger
 
 # Широкий регэксп: чистит и CSI-последовательности (\x1b[...),
 # и одиночные ESC-последовательности (\x1bX), и OSC/прочие escape-формы.
-ANSI_RE = re.compile(r'\x1B(?:\[[0-?]*[ -/]*[@-~]|][^ \x07\x1B]*[^ \x07\x1B\\](?:\x1B\\|\x07))')
+ANSI_RE = re.compile(r'\x1b(?:\[.*?[@-~]|\].*?(?:\x1b\\|\x07))')
 
 
 def strip_ansi(s: str) -> str:
@@ -19,7 +20,6 @@ def strip_ansi(s: str) -> str:
     if not s:
         return ""
     return ANSI_RE.sub('', s)
-
 
 
 class VoiceInstallationWindow(QDialog):
@@ -31,8 +31,11 @@ class VoiceInstallationWindow(QDialog):
     def __init__(self, parent, title, initial_status=None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setFixedSize(700, 400)
+        # Разрешаем ресайз и добавляем size grip
+        self.setMinimumSize(720, 420)
+        self.resize(820, 520)
         self.setModal(True)
+        self.setSizeGripEnabled(True)
 
         self.setStyleSheet("""
             QDialog { background-color: #1e1e1e; }
@@ -52,7 +55,21 @@ class VoiceInstallationWindow(QDialog):
                 background-color: #4CAF50;
                 border-radius: 5px;
             }
+            QPushButton {
+                background-color: #333333;
+                color: #ffffff;
+                border: none;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #555555; }
         """)
+
+        self._start_time = QTime.currentTime()
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed)
+        self._elapsed_timer.start()
 
         layout = QVBoxLayout(self)
 
@@ -61,19 +78,26 @@ class VoiceInstallationWindow(QDialog):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
+        # Верхняя информационная строка
         info_layout = QHBoxLayout()
         self.status_label = QLabel(initial_status or _("Подготовка...", "Preparing..."))
         self.status_label.setFont(QFont("Segoe UI", 9))
-        info_layout.addWidget(self.status_label, 1)
+        self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        info_layout.addWidget(self.status_label, 2)
 
         self.progress_value_label = QLabel("0%")
         self.progress_value_label.setFont(QFont("Segoe UI", 9))
-        info_layout.addWidget(self.progress_value_label)
+        info_layout.addWidget(self.progress_value_label, 0)
 
         self.eta_label = QLabel("ETA --:--")
         self.eta_label.setFont(QFont("Segoe UI", 9))
         self.eta_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        info_layout.addWidget(self.eta_label)
+        info_layout.addWidget(self.eta_label, 0)
+
+        self.elapsed_label = QLabel(_("Прошло 00:00", "Elapsed 00:00"))
+        self.elapsed_label.setFont(QFont("Segoe UI", 9))
+        self.elapsed_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        info_layout.addWidget(self.elapsed_label, 0)
 
         layout.addLayout(info_layout)
 
@@ -87,10 +111,33 @@ class VoiceInstallationWindow(QDialog):
         self.log_text.setFont(QFont("Consolas", 9))
         layout.addWidget(self.log_text, 1)
 
+        # Панель действий
+        actions_layout = QHBoxLayout()
+        copy_btn = QPushButton(_("Копировать лог", "Copy Log"))
+        copy_btn.clicked.connect(self._copy_log)
+        actions_layout.addWidget(copy_btn)
+
+        save_btn = QPushButton(_("Сохранить лог...", "Save Log..."))
+        save_btn.clicked.connect(self._save_log)
+        actions_layout.addWidget(save_btn)
+
+        clear_btn = QPushButton(_("Очистить", "Clear"))
+        clear_btn.clicked.connect(self._clear_log)
+        actions_layout.addWidget(clear_btn)
+
+        actions_layout.addStretch()
+
+        close_btn = QPushButton(_("Закрыть", "Close"))
+        close_btn.clicked.connect(self.close)
+        actions_layout.addWidget(close_btn)
+        layout.addLayout(actions_layout)
+
+        # Сигналы
         self.progress_updated.connect(self._on_progress_update)
         self.status_updated.connect(self._on_status_update)
         self.log_updated.connect(self._on_log_update)
 
+        # Центровка
         if parent and hasattr(parent, 'geometry'):
             parent_rect = parent.geometry()
             self.move(
@@ -98,107 +145,34 @@ class VoiceInstallationWindow(QDialog):
                 parent_rect.center().y() - self.height() // 2
             )
 
-        # Диапазон «живого» блока снапшота (начало и конец)
-        self._snap_start: int | None = None
-        self._snap_end: int | None = None
-        
+    def _update_elapsed(self):
+        secs = self._start_time.secsTo(QTime.currentTime())
+        if secs < 0:
+            secs = 0
+        m, s = divmod(secs, 60)
+        h, m = divmod(m, 60)
+        text = f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+        self.elapsed_label.setText(_("Прошло ", "Elapsed ") + text)
+
     def _on_progress_update(self, value: int):
-        self.progress_bar.setValue(int(value))
-        self.progress_value_label.setText(f"{int(value)}%")
+        value = max(0, min(100, int(value)))
+        self.progress_bar.setValue(value)
+        self.progress_value_label.setText(f"{value}%")
 
     def _on_status_update(self, message: str):
         message = strip_ansi(message)
         self.status_label.setText(message)
-        m = re.search(r'\(\s+([^)]+)\)', message, flags=re.IGNORECASE)
-        if not m:
-            m = re.search(r'\bETA\s+(\d{1,2}:\d{2}(?::\d{2})?)\b', message, flags=re.IGNORECASE)
+        # Вынимаем ETA из сообщения, если есть
+        m = re.search(r'KATEX_INLINE_OPEN\s*ETA\s+([^)]+)KATEX_INLINE_CLOSE', message, flags=re.IGNORECASE)
         if m:
             self.eta_label.setText(f"ETA {m.group(1)}")
-        elif "завершено" in message.lower() or "complete" in message.lower():
+        elif any(k in message.lower() for k in ("завершено", "complete", "done")):
             self.eta_label.setText("ETA 00:00")
-
-        # Новое: если статус говорит что завершено — фиксируем снимок
-        low = message.lower()
-        if "завершено" in low or "complete" in low:
-            self._close_snapshot()
-
-
-    def _on_log_update(self, text: str):
-        # Закрытие текущего «живого» снапшота
-        if "__SNAPSHOT_CLOSE__" in text:
-            self._close_snapshot()
-            logger.notify("вызвано __SNAPSHOT_CLOSE__")
-            return
-
-        # Блок-снимок прогресса между маркерами
-        if text.startswith("__SNAPSHOT_START__"):
-            in_snap = False
-            lines = []
-            for ln in text.splitlines():
-                if ln == "__SNAPSHOT_START__":
-                    in_snap = True
-                    continue
-                if ln == "__SNAPSHOT_END__":
-                    in_snap = False
-                    continue
-                if in_snap:
-                    clean = strip_ansi(ln).replace("\x1b", "")
-                    if clean.strip():
-                        lines.append(clean)
-            self._render_snapshot(lines)
-            return
-
-        # Обычная строка — добавляем (она не будет затираться снапшотом)
-        self._append_colored_log(text)
-        cursor = self.log_text.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self.log_text.setTextCursor(cursor)
-
-    def _close_snapshot(self):
-        # фиксируем и разрываем визуально
-        if self._snap_start is not None or self._snap_end is not None:
-            cursor = self.log_text.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertBlock()  # пустая строка-разделитель
-            self.log_text.setTextCursor(cursor)
-        self._snap_start = None
-        self._snap_end = None
-    
-    def _render_snapshot(self, lines: list[str]):
-        from html import escape as html_escape
-
-        html = (
-            "<div style='margin:6px 0; padding:6px; background:#14161a; border:1px solid #30343a; "
-            "border-radius:6px;'>"
-            "<pre style='font-family:Consolas,monospace; font-size:9pt; margin:0; color:#cfe4ff;'>"
-            + html_escape("\n".join(lines)) +
-            "</pre></div>"
-        )
-
-        doc = self.log_text.document()
-        cursor = self.log_text.textCursor()
-
-        if self._snap_start is None or self._snap_end is None:
-            # гарантируем разрыв со строкой выше
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertBlock()  # ВАЖНО: новый блок до снимка
-            self._snap_start = cursor.position()
-            cursor.insertHtml(html)
-            cursor.insertBlock()
-            self._snap_end = cursor.position()
-        else:
-            cursor.setPosition(self._snap_start)
-            cursor.setPosition(self._snap_end, QTextCursor.MoveMode.KeepAnchor)
-            cursor.removeSelectedText()
-            cursor.insertHtml(html)
-            cursor.insertBlock()
-            self._snap_end = cursor.position()
-
-        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
-        self.log_text.ensureCursorVisible()
 
     def _append_colored_log(self, text: str):
         text = strip_ansi(text)
+        if not text.strip():
+            return
         low = text.lower()
         if any(w in low for w in ("error", "ошибка", "failed", "traceback", "exception", "critical")):
             html = f'<span style="color:#ff5555;">{html_escape(text)}</span>'
@@ -207,6 +181,27 @@ class VoiceInstallationWindow(QDialog):
         else:
             html = html_escape(text)
         self.log_text.append(html)
+        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+        self.log_text.ensureCursorVisible()
+
+    def _on_log_update(self, text: str):
+        # Просто дописываем лог без каких-либо снапшотов
+        self._append_colored_log(text)
+
+    def _copy_log(self):
+        QGuiApplication.clipboard().setText(self.log_text.toPlainText() or "")
+
+    def _save_log(self):
+        fname, _ = QFileDialog.getSaveFileName(self, _("Сохранить лог", "Save Log"), "install_log.txt", "Text Files (*.txt)")
+        if fname:
+            try:
+                with open(fname, "w", encoding="utf-8") as f:
+                    f.write(self.log_text.toPlainText())
+            except Exception as ex:
+                logger.error(f"Не удалось сохранить лог: {ex}")
+
+    def _clear_log(self):
+        self.log_text.clear()
 
     def closeEvent(self, event):
         self.window_closed.emit()
@@ -237,8 +232,11 @@ class VoiceActionWindow(QDialog):
     def __init__(self, parent, title, initial_status=None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setFixedSize(700, 400)
+        # Разрешаем ресайз
+        self.setMinimumSize(700, 380)
+        self.resize(780, 460)
         self.setModal(True)
+        self.setSizeGripEnabled(True)
 
         self.setStyleSheet("""
             QDialog { background-color: #1e1e1e; }
@@ -248,7 +246,21 @@ class VoiceActionWindow(QDialog):
                 color: #cccccc;
                 border: 1px solid #333;
             }
+            QPushButton {
+                background-color: #333333;
+                color: #ffffff;
+                border: none;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #555555; }
         """)
+
+        self._start_time = QTime.currentTime()
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed)
+        self._elapsed_timer.start()
 
         layout = QVBoxLayout(self)
 
@@ -257,18 +269,47 @@ class VoiceActionWindow(QDialog):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
+        info_layout = QHBoxLayout()
         self.status_label = QLabel(initial_status or _("Подготовка...", "Preparing..."))
         self.status_label.setFont(QFont("Segoe UI", 9))
-        layout.addWidget(self.status_label)
+        self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        info_layout.addWidget(self.status_label, 2)
 
         self.eta_label = QLabel("ETA --:--")
         self.eta_label.setFont(QFont("Segoe UI", 9))
-        layout.addWidget(self.eta_label)
+        info_layout.addWidget(self.eta_label, 0)
+
+        self.elapsed_label = QLabel(_("Прошло 00:00", "Elapsed 00:00"))
+        self.elapsed_label.setFont(QFont("Segoe UI", 9))
+        info_layout.addWidget(self.elapsed_label, 0)
+
+        layout.addLayout(info_layout)
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
         layout.addWidget(self.log_text, 1)
+
+        # Панель действий
+        actions_layout = QHBoxLayout()
+        copy_btn = QPushButton(_("Копировать лог", "Copy Log"))
+        copy_btn.clicked.connect(self._copy_log)
+        actions_layout.addWidget(copy_btn)
+
+        save_btn = QPushButton(_("Сохранить лог...", "Save Log..."))
+        save_btn.clicked.connect(self._save_log)
+        actions_layout.addWidget(save_btn)
+
+        clear_btn = QPushButton(_("Очистить", "Clear"))
+        clear_btn.clicked.connect(self._clear_log)
+        actions_layout.addWidget(clear_btn)
+
+        actions_layout.addStretch()
+
+        close_btn = QPushButton(_("Закрыть", "Close"))
+        close_btn.clicked.connect(self.close)
+        actions_layout.addWidget(close_btn)
+        layout.addLayout(actions_layout)
 
         self.status_updated.connect(self._on_status_update)
         self.log_updated.connect(self._on_log_update)
@@ -280,28 +321,28 @@ class VoiceActionWindow(QDialog):
                 parent_rect.center().y() - self.height() // 2
             )
 
-        # Диапазон «живого» блока снапшота (начало и конец)
-        self._snap_start: int | None = None
-        self._snap_end: int | None = None
+    def _update_elapsed(self):
+        secs = self._start_time.secsTo(QTime.currentTime())
+        if secs < 0:
+            secs = 0
+        m, s = divmod(secs, 60)
+        h, m = divmod(m, 60)
+        text = f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+        self.elapsed_label.setText(_("Прошло ", "Elapsed ") + text)
 
     def _on_status_update(self, message: str):
         message = strip_ansi(message)
         self.status_label.setText(message)
-        m = re.search(r'\(\s+([^)]+)\)', message, flags=re.IGNORECASE)
-        if not m:
-            m = re.search(r'\bETA\s+(\d{1,2}:\d{2}(?::\d{2})?)\b', message, flags=re.IGNORECASE)
+        m = re.search(r'KATEX_INLINE_OPEN\s*ETA\s+([^)]+)KATEX_INLINE_CLOSE', message, flags=re.IGNORECASE)
         if m:
             self.eta_label.setText(f"ETA {m.group(1)}")
-        elif "завершено" in message.lower() or "complete" in message.lower():
+        elif any(k in message.lower() for k in ("завершено", "complete", "done")):
             self.eta_label.setText("ETA 00:00")
-
-        # Новое: если статус говорит что завершено — фиксируем снимок
-        low = message.lower()
-        if "завершено" in low or "complete" in low:
-            self._close_snapshot()
 
     def _append_colored_log(self, text: str):
         text = strip_ansi(text)
+        if not text.strip():
+            return
         low = text.lower()
         if any(w in low for w in ("error", "ошибка", "failed", "traceback", "exception", "critical")):
             html = f'<span style="color:#ff5555;">{html_escape(text)}</span>'
@@ -310,80 +351,27 @@ class VoiceActionWindow(QDialog):
         else:
             html = html_escape(text)
         self.log_text.append(html)
-
-    def _on_log_update(self, text: str):
-        # Закрытие текущего «живого» снапшота
-        if "__SNAPSHOT_CLOSE__" in text:
-            self._close_snapshot()
-            logger.notify("вызвано __SNAPSHOT_CLOSE__")
-            return
-
-        # Блок-снимок прогресса между маркерами
-        if text.startswith("__SNAPSHOT_START__"):
-            in_snap = False
-            lines = []
-            for ln in text.splitlines():
-                if ln == "__SNAPSHOT_START__":
-                    in_snap = True
-                    continue
-                if ln == "__SNAPSHOT_END__":
-                    in_snap = False
-                    continue
-                if in_snap:
-                    clean = strip_ansi(ln).replace("\x1b", "")
-                    if clean.strip():
-                        lines.append(clean)
-            self._render_snapshot(lines)
-            return
-
-        # Обычная строка — добавляем (она не будет затираться снапшотом)
-        self._append_colored_log(text)
-        cursor = self.log_text.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self.log_text.setTextCursor(cursor)
-
-    def _close_snapshot(self):
-        # фиксируем и разрываем визуально
-        if self._snap_start is not None or self._snap_end is not None:
-            cursor = self.log_text.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertBlock()  # пустая строка-разделитель
-            self.log_text.setTextCursor(cursor)
-        self._snap_start = None
-        self._snap_end = None
-    
-    def _render_snapshot(self, lines: list[str]):
-        from html import escape as html_escape
-
-        html = (
-            "<div style='margin:6px 0; padding:6px; background:#14161a; border:1px solid #30343a; "
-            "border-radius:6px;'>"
-            "<pre style='font-family:Consolas,monospace; font-size:9pt; margin:0; color:#cfe4ff;'>"
-            + html_escape("\n".join(lines)) +
-            "</pre></div>"
-        )
-
-        doc = self.log_text.document()
-        cursor = self.log_text.textCursor()
-
-        if self._snap_start is None or self._snap_end is None:
-            # гарантируем разрыв со строкой выше
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertBlock()  # ВАЖНО: новый блок до снимка
-            self._snap_start = cursor.position()
-            cursor.insertHtml(html)
-            cursor.insertBlock()
-            self._snap_end = cursor.position()
-        else:
-            cursor.setPosition(self._snap_start)
-            cursor.setPosition(self._snap_end, QTextCursor.MoveMode.KeepAnchor)
-            cursor.removeSelectedText()
-            cursor.insertHtml(html)
-            cursor.insertBlock()
-            self._snap_end = cursor.position()
-
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
         self.log_text.ensureCursorVisible()
+
+    def _on_log_update(self, text: str):
+        # Просто дописываем лог без каких-либо снапшотов
+        self._append_colored_log(text)
+
+    def _copy_log(self):
+        QGuiApplication.clipboard().setText(self.log_text.toPlainText() or "")
+
+    def _save_log(self):
+        fname, _ = QFileDialog.getSaveFileName(self, _("Сохранить лог", "Save Log"), "action_log.txt", "Text Files (*.txt)")
+        if fname:
+            try:
+                with open(fname, "w", encoding="utf-8") as f:
+                    f.write(self.log_text.toPlainText())
+            except Exception as ex:
+                logger.error(f"Не удалось сохранить лог: {ex}")
+
+    def _clear_log(self):
+        self.log_text.clear()
 
     def closeEvent(self, event):
         self.window_closed.emit()
@@ -401,7 +389,7 @@ class VCRedistWarningDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(_("⚠️ Ошибка загрузки Triton", "⚠️ Triton Load Error"))
         self.setModal(True)
-        self.setFixedSize(500, 250)
+        self.setMinimumSize(500, 250)
         
         self.setStyleSheet("""
             QDialog { background-color: #1e1e1e; }
@@ -477,7 +465,7 @@ class TritonDependenciesDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(_("⚠️ Зависимости Triton", "⚠️ Triton Dependencies"))
         self.setModal(True)
-        self.setFixedSize(700, 350)
+        self.setMinimumSize(700, 350)
         
         self.setStyleSheet("""
             QDialog { background-color: #1e1e1e; }

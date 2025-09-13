@@ -1,4 +1,4 @@
-API_PRESETS_DATA = [
+API_TEMPLATES_DATA = [
     {
         "id": 1,
         "name": "Gpt4Free",

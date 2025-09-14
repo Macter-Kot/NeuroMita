@@ -66,7 +66,7 @@ import importlib.util, ctypes, pathlib, os
 # capi_dir = pathlib.Path(ort_spec.origin).parent / "capi"
 # ctypes.WinDLL(str(capi_dir / "libiomp5md.dll"))
 
-import onnxruntime
+#import onnxruntime
 
 from PyQt6.QtWidgets import QApplication
 

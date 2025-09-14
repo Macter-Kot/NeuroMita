@@ -151,7 +151,7 @@ QPushButton:disabled {
 }
 
 /* ========= Labels ========= */
-QLabel { background-color: transparent; padding-top: 2px; padding-bottom: 2px; }
+QLabel { background-color: transparent; padding: 0px; }
 QLabel#TokenCountLabel {
     font-size: 8pt;
     color: #b8b8c2;

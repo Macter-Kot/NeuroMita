@@ -28,7 +28,7 @@ QFrame#ModelPanel {
 
 /* Компактные настройки */
 QFrame#SettingRow {
-    margin: 1px 0px;
+    margin: 0px;
 }
 
 QFrame#SettingLabel {
@@ -36,8 +36,8 @@ QFrame#SettingLabel {
     border: 1px solid {border_soft};
     border-radius: 4px;  /* Маленькое скругление */
     padding: 0px 10px;   /* Убран вертикальный padding */
-    min-height: 28px;    /* Единая высота */
-    max-height: 28px;
+    min-height: 26px;    /* Единая высота */
+    max-height: 26px;
 }
 
 QFrame#SettingWidget {
@@ -50,8 +50,8 @@ QFrame#SettingWidget {
 /* Инпуты - компактные */
 QFrame#SettingWidget QLineEdit,
 QFrame#SettingWidget QComboBox {
-    min-height: 28px;
-    max-height: 28px;
+    min-height: 26px;
+    max-height: 26px;
     padding: 0px 8px;
     margin: 0px;
     border-radius: 4px;
@@ -99,6 +99,42 @@ QLabel#Tag {
     color: {text};
     border: 1px solid {outline};
     border-radius: 4px;  /* Маленькое скругление */
+    padding: 2px 6px;
+    font-size: 8pt;
+}
+
+
+/* Compact section title */
+QLabel#SectionLabel {
+    color: #f5f5f7;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+/* Chips with states */
+QLabel#ChipOk {
+    background-color: rgba(61,166,110,0.16);
+    border: 1px solid rgba(61,166,110,0.45);
+    color: #9be2bc;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 8pt;
+    font-weight: 600;
+}
+QLabel#ChipWarn {
+    background-color: {warn_bg};
+    border: 1px solid {warn_border};
+    color: {warn_text};
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 8pt;
+    font-weight: 600;
+}
+QLabel#ChipInfo {
+    background-color: {chip_bg};
+    border: 1px solid {outline};
+    color: {text};
+    border-radius: 4px;
     padding: 2px 6px;
     font-size: 8pt;
 }

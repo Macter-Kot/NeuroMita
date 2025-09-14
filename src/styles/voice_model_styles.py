@@ -16,36 +16,60 @@ QSplitter::handle {
 QFrame#DescriptionFrame {
     background-color: {card_bg};
     border: 1px solid {card_border};
-    border-radius: 12px;
+    border-radius: 6px;  /* Уменьшено с 12px */
 }
 
 /* Model profile card (right) */
 QFrame#ModelPanel {
     background-color: {card_bg};
     border: 1px solid {card_border};
-    border-radius: 12px;
+    border-radius: 6px;  /* Уменьшено с 12px */
 }
 
-/* Collapsible section header/content */
-QWidget#CollapsibleHeader, QFrame#CollapsibleHeader {
-    background-color: {chip_bg};
-    border-radius: 10px;
-}
-QWidget#CollapsibleHeader:hover, QFrame#CollapsibleHeader:hover {
-    background-color: {chip_hover};
-}
-QWidget#CollapsibleContent, QFrame#CollapsibleContent {
-    background-color: transparent;
+/* Компактные настройки */
+QFrame#SettingRow {
+    margin: 1px 0px;
 }
 
-/* Settings two-column rows */
 QFrame#SettingLabel {
     background-color: {chip_bg};
     border: 1px solid {border_soft};
-    border-radius: 8px;
+    border-radius: 4px;  /* Маленькое скругление */
+    padding: 0px 10px;   /* Убран вертикальный padding */
+    min-height: 28px;    /* Единая высота */
+    max-height: 28px;
 }
+
 QFrame#SettingWidget {
     background-color: transparent;
+    padding: 0px;
+    min-height: 28px;    /* Та же высота */
+    max-height: 28px;
+}
+
+/* Инпуты - компактные */
+QFrame#SettingWidget QLineEdit,
+QFrame#SettingWidget QComboBox {
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px 8px;
+    margin: 0px;
+    border-radius: 4px;
+    font-size: 9pt;
+}
+
+QFrame#SettingWidget QComboBox::drop-down {
+    width: 20px;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+}
+
+/* Чекбоксы */
+QFrame#SettingWidget QCheckBox { 
+    min-height: 28px;
+    max-height: 28px;
+    padding-left: 6px;
 }
 
 /* Role labels */
@@ -74,52 +98,30 @@ QLabel#Tag {
     background-color: {chip_bg};
     color: {text};
     border: 1px solid {outline};
-    border-radius: 10px;
-    padding: 2px 8px;
+    border-radius: 4px;  /* Маленькое скругление */
+    padding: 2px 6px;
     font-size: 8pt;
 }
 
-/* Buttons mapping for this window */
-QPushButton#PrimaryButton {
-    background-color: {accent};
-    color: #ffffff;
-    border: 1px solid {accent_border};
+/* Buttons - НЕ ТРОГАЕМ стили главных кнопок, только для этого окна */
+QFrame#ModelPanel QPushButton#PrimaryButton,
+QFrame#ModelPanel QPushButton#SecondaryButton,
+QFrame#ModelPanel QPushButton#DangerButton {
+    border-radius: 4px;  /* Только для кнопок внутри панели модели */
+    min-height: 26px;
 }
-QPushButton#PrimaryButton:hover { background-color: {accent_hover}; }
-QPushButton#PrimaryButton:pressed { background-color: {accent_pressed}; }
-
-QPushButton#SecondaryButton {
-    background-color: {chip_bg};
-    color: {text};
-    border: 1px solid {outline};
-}
-QPushButton#SecondaryButton:hover { background-color: {chip_hover}; }
-QPushButton#SecondaryButton:pressed { background-color: {chip_pressed}; }
-QPushButton#SecondaryButton:disabled {
-    background-color: {btn_disabled_bg};
-    color: {btn_disabled_fg};
-    border: 1px solid {outline};
-}
-
-QPushButton#DangerButton {
-    background-color: {danger};
-    color: #ffffff;
-    border: 1px solid rgba(214,69,69,0.35);
-}
-QPushButton#DangerButton:hover { background-color: {danger_hover}; }
-QPushButton#DangerButton:pressed { background-color: {danger_pressed}; }
 
 /* Models list (left) */
 QListWidget {
     background: {panel_bg};
     border: 1px solid {border_soft};
-    border-radius: 10px;
+    border-radius: 6px;  /* Умеренное скругление */
     padding: 4px;
-    outline: 0; /* убираем контур при фокусе */
+    outline: 0;
 }
 QListWidget::item {
     padding: 6px 8px;
-    border-radius: 6px;
+    border-radius: 3px;  /* Маленькое скругление */
 }
 QListWidget::item:hover { background: {chip_bg}; }
 QListWidget::item:selected {
@@ -138,7 +140,7 @@ QScrollArea:focus { outline: none; }
 QTabBar::tab:focus { outline: none; }
 QComboBox:focus { outline: none; }
 QLineEdit:focus { outline: none; }
-QPushButton:focus { outline: none; }  /* рамка остаётся за счёт border из base theme при необходимости */
+QPushButton:focus { outline: none; }
 """
 
 def get_stylesheet(overrides: dict | None = None) -> str:
@@ -146,7 +148,7 @@ def get_stylesheet(overrides: dict | None = None) -> str:
     if overrides:
         theme.update(overrides)
 
-    base_qss = get_main_stylesheet(overrides)  # базовая тема приложения
-    voice_qss = render_qss(VOICE_TEMPLATE, theme)  # окно-специфичные правки
+    base_qss = get_main_stylesheet(overrides)
+    voice_qss = render_qss(VOICE_TEMPLATE, theme)
 
     return base_qss + "\n\n" + voice_qss

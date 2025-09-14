@@ -15,144 +15,8 @@ from utils import getTranslationVariant as _
 from core.events import get_event_bus, Events
 from ui.windows.voice_action_windows import VoiceInstallationWindow
 
-# ---------- Collapsible Section (как в фейке) ----------
-class CollapsibleSection(QFrame):
-    def __init__(self, title: str, parent=None, collapsed: bool = False, on_hover_key=None, on_leave=None):
-        super().__init__(parent)
-        self.setContentsMargins(0, 0, 0, 0)
 
-        self.on_hover_key = on_hover_key
-        self.on_leave = on_leave
-        self.is_collapsed = collapsed
-        self.widgets = {}
-
-        main = QVBoxLayout(self)
-        main.setContentsMargins(0, 0, 0, 0)
-        main.setSpacing(0)
-
-        self.header = QFrame()
-        self.header.setObjectName("CollapsibleHeader")
-        h = QHBoxLayout(self.header)
-        h.setContentsMargins(8, 6, 8, 6)
-        h.setSpacing(6)
-        self.arrow = QLabel("▼" if not collapsed else "▶")
-        self.arrow.setFixedWidth(16)
-        self.title = QLabel(title)
-        self.title.setStyleSheet("font-weight: bold; font-size: 9pt;")
-        h.addWidget(self.arrow)
-        h.addWidget(self.title)
-        h.addStretch()
-
-        self.header.mousePressEvent = self.toggle
-        self.arrow.mousePressEvent = self.toggle
-        self.title.mousePressEvent = self.toggle
-
-        self.content = QFrame()
-        self.content.setObjectName("CollapsibleContent")
-        self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(6, 6, 6, 4)
-        self.content_layout.setSpacing(4)
-
-        main.addWidget(self.header)
-        main.addWidget(self.content)
-
-        if self.is_collapsed:
-            self.content.setVisible(False)
-
-    def toggle(self, event=None):
-        self.is_collapsed = not self.is_collapsed
-        self.arrow.setText("▼" if not self.is_collapsed else "▶")
-        self.content.setVisible(not self.is_collapsed)
-
-    def add_row(self, key: str, label_text: str, widget_type: str, options: dict, locked: bool = False):
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
-
-        label_frame = QFrame()
-        label_frame.setObjectName("SettingLabel")
-        label_layout = QHBoxLayout(label_frame)
-        label_layout.setContentsMargins(10, 4, 10, 4)
-        lab = QLabel(label_text)
-        lab.setStyleSheet(f"color: {'#888888' if locked else 'white'}; font-size: 8pt;")
-        label_layout.addWidget(lab)
-
-        widget_frame = QFrame()
-        widget_frame.setObjectName("SettingWidget")
-        widget_layout = QHBoxLayout(widget_frame)
-        widget_layout.setContentsMargins(5, 2, 5, 2)
-
-        w = None
-        current = options.get("default")
-
-        if widget_type == "entry":
-            w = QLineEdit()
-            w.setEnabled(not locked)
-            if current is not None:
-                w.setText(str(current))
-            widget_layout.addWidget(w)
-
-        elif widget_type == "combobox":
-            w = QComboBox()
-            values = options.get("values", [])
-            if not isinstance(values, (list, tuple)):
-                values = []
-            w.addItems([str(v) for v in values])
-            w.setEnabled(not locked)
-            if current is not None and values:
-                try:
-                    idx = [str(v) for v in values].index(str(current))
-                    w.setCurrentIndex(idx)
-                except ValueError:
-                    w.setCurrentIndex(0 if values else -1)
-            widget_layout.addWidget(w)
-
-        elif widget_type == "checkbutton":
-            w = QCheckBox()
-            w.setEnabled(not locked)
-            val = False
-            if isinstance(current, str):
-                val = current.lower() == "true"
-            elif current is not None:
-                val = bool(current)
-            w.setChecked(val)
-            widget_layout.addWidget(w)
-            widget_layout.addStretch()
-
-        # Hover description for label and widget
-        if self.on_hover_key is not None:
-            def enter_event(_e, k=key):
-                self.on_hover_key(k)
-            def leave_event(_e):
-                if self.on_leave:
-                    self.on_leave()
-
-            for hover_w in [label_frame, lab, widget_frame]:
-                hover_w.enterEvent = enter_event
-                hover_w.leaveEvent = leave_event
-            if w is not None:
-                w.enterEvent = enter_event
-                w.leaveEvent = leave_event
-
-        row.addWidget(label_frame, 4)
-        row.addWidget(widget_frame, 6)
-        self.content_layout.addLayout(row)
-        self.widgets[key] = {"widget": w, "type": widget_type}
-
-    def get_values(self) -> dict:
-        values = {}
-        for key, d in self.widgets.items():
-            w = d["widget"]
-            if isinstance(w, QComboBox):
-                values[key] = w.currentText()
-            elif isinstance(w, QLineEdit):
-                values[key] = w.text()
-            elif isinstance(w, QCheckBox):
-                values[key] = w.isChecked()
-        return values
-
-
-# ---------- Панель деталей модели (как в фейке) ----------
+# ---------- Панель деталей модели ----------
 class ModelDetailView(QWidget):
     install_clicked = pyqtSignal(str)
     uninstall_clicked = pyqtSignal(str)
@@ -170,6 +34,9 @@ class ModelDetailView(QWidget):
         self.gpu_name = None
         self.cuda_devices = []
         self.rtx_check_func = None  # функция, возвращающая bool
+
+        # Хранилище виджетов настроек (key -> {widget, type})
+        self.setting_widgets = {}
 
         main = QVBoxLayout(self)
         main.setContentsMargins(10, 10, 10, 10)
@@ -250,7 +117,7 @@ class ModelDetailView(QWidget):
         self.settings_holder = QWidget()
         self.settings_layout = QVBoxLayout(self.settings_holder)
         self.settings_layout.setContentsMargins(4, 4, 4, 4)
-        self.settings_layout.setSpacing(8)
+        self.settings_layout.setSpacing(6)
         self.settings_scroll.setWidget(self.settings_holder)
         main.addWidget(self.settings_scroll, 1)
 
@@ -342,7 +209,6 @@ class ModelDetailView(QWidget):
 
     # external compatibility (controller expects these sometimes)
     def set_button_text(self, text: str):
-        # apply to visible action button
         btn = self.btn_install if self.btn_install.isVisible() else self.btn_uninstall
         btn.setText(text)
 
@@ -350,13 +216,109 @@ class ModelDetailView(QWidget):
         self.btn_install.setEnabled(enabled and self.btn_install.isVisible())
         self.btn_uninstall.setEnabled(enabled and self.btn_uninstall.isVisible())
 
-    # ---- settings ----
+    # ---- settings (плоский список без секций) ----
+    def _attach_hover_handlers(self, widgets, key):
+        if self.desc_cb is None and self.clear_desc_cb is None:
+            return
+
+        def enter_event(_e, k=key):
+            if self.desc_cb:
+                self.desc_cb(k)
+
+        def leave_event(_e):
+            if self.clear_desc_cb:
+                self.clear_desc_cb()
+
+        for w in widgets:
+            try:
+                w.enterEvent = enter_event
+                w.leaveEvent = leave_event
+            except Exception:
+                pass
+
+    def _add_setting_row(self, key: str, label_text: str, widget_type: str, options: dict, locked: bool = False):
+        # строка-обертка, чтобы проще управлять отступами
+        row_frame = QFrame()
+        row_frame.setObjectName("SettingRow")
+        row = QHBoxLayout(row_frame)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        # Левая «пилюля» с названием
+        label_frame = QFrame()
+        label_frame.setObjectName("SettingLabel")
+        label_frame.setFixedHeight(28)  # Фиксированная высота
+        label_layout = QHBoxLayout(label_frame)
+        label_layout.setContentsMargins(10, 0, 10, 0)  # без вертикального padding
+        lab = QLabel(label_text)
+        if locked:
+            lab.setStyleSheet("color: #888888;")
+        label_layout.addWidget(lab, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # Правая часть с контролом
+        widget_frame = QFrame()
+        widget_frame.setObjectName("SettingWidget")
+        widget_frame.setFixedHeight(28)  # Фиксированная высота, такая же как у лейбла
+        widget_layout = QHBoxLayout(widget_frame)
+        widget_layout.setContentsMargins(0, 0, 0, 0)  # минимальные отступы для центрирования
+        widget_layout.setSpacing(0)
+        widget_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        w = None
+        current = options.get("default")
+
+        if widget_type == "entry":
+            w = QLineEdit()
+            w.setEnabled(not locked)
+            if current is not None:
+                w.setText(str(current))
+            widget_layout.addWidget(w, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        elif widget_type == "combobox":
+            w = QComboBox()
+            values = options.get("values", [])
+            if not isinstance(values, (list, tuple)):
+                values = []
+            w.addItems([str(v) for v in values])
+            w.setEnabled(not locked)
+            if current is not None and values:
+                try:
+                    idx = [str(v) for v in values].index(str(current))
+                    w.setCurrentIndex(idx)
+                except ValueError:
+                    w.setCurrentIndex(0 if values else -1)
+            widget_layout.addWidget(w, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        elif widget_type == "checkbutton":
+            w = QCheckBox()
+            w.setEnabled(not locked)
+            val = False
+            if isinstance(current, str):
+                val = current.lower() == "true"
+            elif current is not None:
+                val = bool(current)
+            w.setChecked(val)
+            widget_layout.addWidget(w, 0, Qt.AlignmentFlag.AlignVCenter)
+            widget_layout.addStretch()
+
+        # Hover-описания
+        self._attach_hover_handlers(
+            [label_frame, lab, widget_frame] + ([w] if w is not None else []),
+            key
+        )
+
+        row.addWidget(label_frame, 4)
+        row.addWidget(widget_frame, 6)
+
+        self.settings_layout.addWidget(row_frame)
+        self.setting_widgets[key] = {"widget": w, "type": widget_type}
     def build_settings_for(self, model_id: str):
-        # Clear settings area
+        # Очистка области настроек и хранилища виджетов
         while self.settings_layout.count():
             itm = self.settings_layout.takeAt(0)
             if itm.widget():
                 itm.widget().deleteLater()
+        self.setting_widgets.clear()
 
         installed = model_id in self.installed_models
         if not installed:
@@ -373,12 +335,7 @@ class ModelDetailView(QWidget):
         model = self._find_model(model_id)
         adapted_settings = model.get("settings", [])
 
-        section = CollapsibleSection(
-            _("Настройки модели", "Model settings"),
-            collapsed=False,
-            on_hover_key=self._on_setting_hover,
-            on_leave=self._on_setting_leave
-        )
+        # Плоский список строк
         for s in adapted_settings:
             key = s.get("key")
             label = s.get("label", key)
@@ -386,26 +343,21 @@ class ModelDetailView(QWidget):
             opts = s.get("options", {})
             locked = bool(s.get("locked", False))
             if key and typ:
-                section.add_row(key, label, typ, opts, locked)
-        self.settings_layout.addWidget(section)
+                self._add_setting_row(key, label, typ, opts, locked)
+
         self.settings_layout.addStretch()
 
-    def _on_setting_hover(self, key: str):
-        if self.desc_cb:
-            self.desc_cb(key)
-
-    def _on_setting_leave(self, *args):
-        if self.clear_desc_cb:
-            self.clear_desc_cb()
-
     def get_current_settings_values(self) -> dict:
-        result = {}
-        for i in range(self.settings_layout.count()):
-            item = self.settings_layout.itemAt(i)
-            w = item.widget()
-            if isinstance(w, CollapsibleSection):
-                result.update(w.get_values())
-        return result
+        values = {}
+        for key, d in self.setting_widgets.items():
+            w = d["widget"]
+            if isinstance(w, QComboBox):
+                values[key] = w.currentText()
+            elif isinstance(w, QLineEdit):
+                values[key] = w.text()
+            elif isinstance(w, QCheckBox):
+                values[key] = w.isChecked()
+        return values
 
     # ---- public API for view ----
     def update_for_model(self, model_id: str, models: list, model_desc_text: str):
@@ -484,7 +436,7 @@ class ModelDetailView(QWidget):
         self.build_settings_for(model_id)
 
 
-# ---------- Главное окно настроек (полный лэйаут как в фейке) ----------
+# ---------- Главное окно настроек ----------
 class VoiceModelSettingsView(QWidget):
 
     update_description_signal = pyqtSignal(str)
@@ -833,15 +785,12 @@ class VoiceModelSettingsView(QWidget):
 
     # ---------- Install/Uninstall UI state ----------
     def _on_install_started(self, model_id):
-        # Disable current action buttons
         self.detail.set_button_text(_("Загрузка...", "Downloading..."))
         self.detail.set_button_enabled(False)
 
     def _on_install_finished(self, data):
-        # Refresh data & visuals
         self.installed_models = self._get_installed_models()
         self._refresh_list_visuals()
-        # Rebuild current detail
         self._on_selection_changed()
 
     def _on_uninstall_started(self, model_id):
@@ -881,7 +830,7 @@ class VoiceModelSettingsView(QWidget):
         return {}
 
     def get_all_section_values(self):
-        # Сохраняем настройки текущей выбранной модели (как в фейке)
+        # сохраняем настройки только текущей выбранной модели
         values = {}
         cur = self.list.currentItem()
         if cur:

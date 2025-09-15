@@ -88,7 +88,7 @@ API_TEMPLATES_DATA = [
         "url": "https://api.openai.com/v1/chat/completions",
         "default_model": "gpt-4o-mini",
         "known_models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o1-mini", "o1-preview"],
-        "use_request": True,
+        "use_request": False,
         "add_key": False,
         "documentation_url": "https://platform.openai.com/api-keys"
     },

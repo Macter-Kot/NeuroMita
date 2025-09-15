@@ -10,9 +10,9 @@ class CommonProvider(BaseProvider):
     priority = 30
 
     def is_applicable(self, req: LLMRequest) -> bool:
-        if not req.make_request:
+        if req.g4f_flag:
             return False
-        if req.gemini_case:
+        if not req.make_request:
             return False
         return True
 

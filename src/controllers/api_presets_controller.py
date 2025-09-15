@@ -246,7 +246,7 @@ class ApiPresetsController:
             'default_model': p.default_model or (tpl.default_model if tpl else ""),
             'known_models': (tpl.known_models if tpl else []),
             'gemini_case': (tpl.gemini_case if tpl else None),
-            'use_request': tpl.use_request if tpl else False,
+            'use_request': tpl.use_request if tpl is not None else True,
             'is_g4f': tpl.is_g4f if tpl else False,
             'test_url': tpl.test_url if tpl else "",
             'filter_fn': tpl.filter_fn if tpl else "",

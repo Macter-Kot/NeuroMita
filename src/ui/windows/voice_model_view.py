@@ -429,6 +429,16 @@ class ModelDetailView(QWidget):
                 )
             )
 
+        # NEW: интенты (макс. 2 штуки, чтобы не раздувать карточку)
+        for it in (model.get("intents") or [])[:2]:
+            meta_chips.append(
+                self._make_chip(
+                    it, "info",
+                    icon_names=["fa5s.bullseye", "mdi.target-variant"],
+                    icon_color="#cfa8ff"
+                )
+            )
+
         self._set_chips(self.meta_row, meta_chips)
 
         # Languages (прячем, если пусто)
@@ -453,7 +463,7 @@ class ModelDetailView(QWidget):
         else:
             self.warning_label.setText("")
 
-        # Описание модели — обычный абзац (как просил)
+        # Описание модели — обычный абзац
         self.profile_desc_label.setText(model_desc_text)
 
         # Кнопки
@@ -461,7 +471,6 @@ class ModelDetailView(QWidget):
 
         # Настройки
         self.build_settings_for(model_id)
-
 
     def _qta_pixmap(self, names, color="#cccccc", size=12):
         """Возвращает QPixmap первой доступной иконки из списка имен qtawesome."""

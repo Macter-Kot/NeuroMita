@@ -13,6 +13,7 @@ import time
 import ffmpeg
 from utils.gpu_utils import check_gpu_provider
 
+from copy import deepcopy
 import hashlib
 from datetime import datetime
 import traceback
@@ -170,19 +171,28 @@ class LocalVoice:
                     delattr(self, attr)
 
     def get_all_model_configs(self) -> List[Dict[str, Any]]:
-        """Собирает все конфигурации моделей от всех обработчиков"""
-        all_configs = []
-        seen_ids = set()
-        
-        for model_id, model_handler in self.models.items():
-            if model_handler and hasattr(model_handler, 'get_model_configs'):
-                for config in model_handler.get_model_configs():
-                    if config['id'] not in seen_ids:
-                        all_configs.append(config)
-                        seen_ids.add(config['id'])
-        
-        return all_configs
+        """
+        Возвращает ПОЛНЫЕ конфиги из handlers.voice_models.* без каких-либо правок.
+        Делает deepcopy, чтобы дальнейшая адаптация в контроллере не мутировала исходные структуры.
+        """
+        all_configs: List[Dict[str, Any]] = []
+        seen_ids: set[str] = set()
 
+        for _mid, handler in self.models.items():
+            if not handler or not hasattr(handler, "get_model_configs"):
+                continue
+            try:
+                for cfg in (handler.get_model_configs() or []):
+                    mid = cfg.get("id")
+                    if not mid or mid in seen_ids:
+                        continue
+                    all_configs.append(cfg)
+                    seen_ids.add(mid)
+            except Exception as e:
+                logger.warning(f"get_model_configs() у {handler} завершился ошибкой: {e}")
+
+        return deepcopy(all_configs)
+    
     def initialize_model(self, model_id: str, init: bool = False) -> bool:
         model_to_init = self.models.get(model_id)
         if not model_to_init:

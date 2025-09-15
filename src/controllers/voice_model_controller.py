@@ -23,9 +23,6 @@ except ImportError:
     def check_gpu_provider(): return None
     def get_cuda_devices(): return []
 
-from core.constants import (model_descriptions, model_descriptions_en, 
-                            setting_descriptions, setting_descriptions_en,
-                            default_description_text, default_description_text_en)
 
 class VoiceModelController:
     """
@@ -45,9 +42,12 @@ class VoiceModelController:
         self._check_installed_func = check_installed_func
 
         self.language = SettingsManager.get("LANGUAGE", "RU")
-        self.model_descriptions = model_descriptions_en if self.language == "EN" else model_descriptions
-        self.setting_descriptions = setting_descriptions_en if self.language == "EN" else setting_descriptions
-        self.default_description_text = default_description_text_en if self.language == "EN" else default_description_text
+
+        # Новые локальные словари описаний (собираем из моделей)
+        self.model_descriptions: dict[str, str] = {}
+        self.setting_descriptions: dict[str, str] = {}
+        self.default_description_text = _("Наведите курсор на элемент интерфейса для получения описания.",
+                                          "Hover over an interface element to get a description.")
 
         self.detected_gpu_vendor = check_gpu_provider()
         self.detected_cuda_devices = get_cuda_devices()
@@ -131,6 +131,36 @@ class VoiceModelController:
         except Exception:
             pass
 
+    # ---------- Сбор описаний из конфигов моделей ----------
+
+    def _collect_descriptions_from_models(self, models: list[dict]):
+        """
+        Берём описания ТОЛЬКО из исходных конфигов:
+        - описание модели: поле 'description' (или 'desc');
+        - описание настройки: поле 'help' (или 'description'/'desc') под её точным key.
+        Никакой нормализации ключей, никаких фолбэков.
+        """
+        self.model_descriptions.clear()
+        self.setting_descriptions.clear()
+
+        for m in models or []:
+            mid = m.get("id")
+            if mid:
+                # описание модели
+                desc = m.get("description") or m.get("desc")
+                if isinstance(desc, str) and desc.strip():
+                    self.model_descriptions[mid] = desc.strip()
+
+            # описания настроек — только из того, что есть в конфиге
+            for s in (m.get("settings") or []):
+                if not isinstance(s, dict):
+                    continue
+                key = s.get("key")
+                if not key:
+                    continue
+                help_text = s.get("help") or s.get("description") or s.get("desc")
+                if isinstance(help_text, str) and help_text.strip():
+                    self.setting_descriptions[key] = help_text.strip()
     # ---------- VoiceModel event handlers ----------
 
     def _handle_get_model_data(self, event):
@@ -251,12 +281,16 @@ class VoiceModelController:
 
             # безопасные дефолты (для UI)
             model_data.setdefault("languages", [])
+            model_data.setdefault("intents", [])     # NEW: для отображения «интентов»
             model_data.setdefault("min_ram", None)
             model_data.setdefault("rec_ram", None)
             model_data.setdefault("cpu", None)
             model_data.setdefault("os", [])
             if not isinstance(model_data.get("gpu_vendor"), (list, tuple)):
                 model_data["gpu_vendor"] = [v for v in [model_data.get("gpu_vendor")] if v]
+
+        # Собираем словари описаний из моделей (вместо core/constants.py)
+        self._collect_descriptions_from_models(merged_model_structure)
 
         self.local_voice_models = merged_model_structure
         logger.info(_("Загрузка и адаптация настроек завершена.", "Loading and adaptation of settings completed."))

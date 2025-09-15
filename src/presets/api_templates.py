@@ -29,7 +29,7 @@ API_TEMPLATES_DATA = [
         "id": 3,
         "name": "Ai.iO",
         "pricing": "mixed",
-        "url": "https://api.intelligence.io.solutions/api/v1/",
+        "url": "https://api.intelligence.io.solutions/api/v1/chat/completions",
         "default_model": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         "known_models": [],
         "use_request": True,

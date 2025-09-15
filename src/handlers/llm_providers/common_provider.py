@@ -40,25 +40,33 @@ class CommonProvider(BaseProvider):
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {req.api_key}"}
         response = requests.post(req.api_url, headers=headers, json=data, stream=req.stream)
         if response.status_code != 200:
+            try:
+                err = response.json()
+            except Exception:
+                err = response.text
+            logger.error(f"Ошибка генерации при Common запросе: {err}")
             return None
         if req.stream:
             return self._handle_common_stream(response, req.stream_cb)
 
         resp_json = response.json()
-        message = resp_json.get("choices", [{}])[0].get("message", {})
-        if "tool_calls" in message:
-            tm = req.tool_manager
-            if tm:
-                from tools.manager import mk_tool_call_msg, mk_tool_resp_msg
-                for call in message["tool_calls"]:
-                    name = call["function"]["name"]
-                    args = json.loads(call["function"]["arguments"])
-                    tool_result = tm.run(name, args)
-                    req.messages.append(mk_tool_call_msg(name, args))
-                    req.messages.append(mk_tool_resp_msg(name, tool_result))
-                req.depth += 1
-                return self.generate_request_common(req)
-        return resp_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+        message = resp_json.get("choices", [{}])[0].get("message", {}) or {}
+        tool_calls = message.get("tool_calls") or []
+
+        # Только если реально есть вызовы инструментов и есть tool_manager
+        if tool_calls and req.tool_manager:
+            from tools.manager import mk_tool_call_msg, mk_tool_resp_msg
+            for call in tool_calls:
+                name = call["function"]["name"]
+                args = json.loads(call["function"]["arguments"])
+                tool_result = req.tool_manager.run(name, args)
+                req.messages.append(mk_tool_call_msg(name, args))
+                req.messages.append(mk_tool_resp_msg(name, tool_result))
+            req.depth += 1
+            return self.generate_request_common(req)
+
+        # Иначе просто возвращаем текст
+        return (message.get("content") or "").strip()
 
     def _handle_common_stream(self, response, stream_callback: callable = None) -> str:
         full_response_parts = []

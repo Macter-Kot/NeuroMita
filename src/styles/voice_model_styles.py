@@ -76,7 +76,11 @@ QFrame#SettingWidget QCheckBox {
 QLabel#TitleLabel {
     color: {text};
     font-weight: 700;
-    font-size: 12pt;
+    font-size: 12pt;     /* Базовый размер заголовков */
+}
+/* Увеличиваем заголовок модели только внутри правой панели */
+QFrame#ModelPanel QLabel#TitleLabel {
+    font-size: 14pt;     /* +2pt относительно базового */
 }
 QLabel#Subtle { color: {muted}; }
 QLabel#Warn {
@@ -98,11 +102,27 @@ QLabel#Tag {
     background-color: {chip_bg};
     color: {text};
     border: 1px solid {outline};
-    border-radius: 4px;  /* Маленькое скругление */
-    padding: 2px 6px;
+    border-radius: 4px;          /* Маленькое скругление */
+    padding: 1px 6px;            /* Чуть компактнее по вертикали */
     font-size: 8pt;
+    min-height: 20px;            /* Единая компактная высота */
+    max-height: 20px;
 }
 
+/* Свёрнутый “+N” для длинных списков языков */
+QLabel#TagMore {
+    background-color: transparent;
+    color: {muted};
+    border: 1px dashed {outline};
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 8pt;
+    font-weight: 600;            /* Чуть активнее визуально */
+}
+QLabel#TagMore:hover {
+    color: {text};
+    border-color: {border_soft};
+}
 
 /* Compact section title */
 QLabel#SectionLabel {
@@ -145,6 +165,16 @@ QFrame#ModelPanel QPushButton#SecondaryButton,
 QFrame#ModelPanel QPushButton#DangerButton {
     border-radius: 4px;  /* Только для кнопок внутри панели модели */
     min-height: 26px;
+}
+/* Установка — компактнее по высоте */
+QFrame#ModelPanel QPushButton#SecondaryButton {
+    min-height: 22px;
+    padding: 2px 10px;
+}
+/* Удаление — тоже компактнее по высоте */
+QFrame#ModelPanel QPushButton#DangerButton {
+    min-height: 22px;
+    padding: 2px 10px;
 }
 
 /* Models list (left) */

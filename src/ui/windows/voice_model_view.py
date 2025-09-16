@@ -441,13 +441,28 @@ class ModelDetailView(QWidget):
 
         self._set_chips(self.meta_row, meta_chips)
 
-        # Languages (прячем, если пусто)
+        # Languages (компактный режим: показываем первые N, остальные — в +N с тултипом)
         self._clear_layout(self.langs_container)
         langs = model.get("languages", []) or []
         if langs:
             self.langs_title.setVisible(True)
-            for lg in langs:
+
+            # Сколько бейджей показывать максимально на панели (чтобы не растягивать её)
+            max_lang_chips = 8  # можно изменить на 6, если хочется ещё компактнее
+
+            visible = langs[:max_lang_chips]
+            hidden = langs[max_lang_chips:]
+
+            for lg in visible:
                 self.langs_container.addWidget(self._make_tag(lg))
+
+            if hidden:
+                more_tag = self._make_tag(f"+{len(hidden)}")
+                # отдельный стиль для “+N”, чтобы визуально отличался
+                more_tag.setObjectName("TagMore")
+                # полный список в тултипе (по строкам)
+                more_tag.setToolTip("\n".join(hidden))
+                self.langs_container.addWidget(more_tag)
         else:
             self.langs_title.setVisible(False)
 

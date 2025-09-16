@@ -117,6 +117,7 @@ class F5TTSModel(IVoiceModel):
             ]
         }
     ]
+    
     def get_model_configs(self) -> List[Dict[str, Any]]:
         return self.MODEL_CONFIGS
 

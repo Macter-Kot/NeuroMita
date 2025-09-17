@@ -14,7 +14,7 @@ from ui.windows.voice_model_view import VoiceModelSettingsView
 
 from PyQt6.QtCore import QTimer, QEventLoop
 
-from core.events import get_event_bus, Events
+from core.events import get_event_bus, Events, Event
 
 try:
     from utils.gpu_utils import check_gpu_provider, get_cuda_devices, get_gpu_name_by_id
@@ -105,6 +105,8 @@ class VoiceModelController:
         eb.subscribe(Events.VoiceModel.OPEN_DOC, self._handle_open_doc, weak=False)
         eb.subscribe(Events.VoiceModel.UPDATE_DESCRIPTION, self._handle_update_description, weak=False)
         eb.subscribe(Events.VoiceModel.CLEAR_DESCRIPTION, self._handle_clear_description, weak=False)
+        eb.subscribe(Events.Audio.SHOW_VC_REDIST_DIALOG, self._on_show_vc_redist_dialog, weak=False)
+        eb.subscribe(Events.Audio.SHOW_TRITON_DIALOG, self._on_show_triton_dialog, weak=False)
 
     def _create_view(self):
         if self.view:
@@ -736,3 +738,18 @@ class VoiceModelController:
 
     def open_doc(self, doc_name):
         self.docs_manager.open_doc(doc_name)
+
+    def _on_show_vc_redist_dialog(self, event: Event):
+        if not self.view:
+            return 'close'
+        holder = {}
+        self.view.open_vc_redist_dialog.emit(holder)
+        return holder.get('choice', 'close')
+
+    def _on_show_triton_dialog(self, event: Event):
+        if not self.view:
+            return 'skip'
+        deps = event.data or {}
+        holder = {}
+        self.view.open_triton_dialog.emit(deps, holder)
+        return holder.get('choice', 'skip')

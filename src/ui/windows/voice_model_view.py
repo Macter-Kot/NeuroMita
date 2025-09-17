@@ -14,6 +14,9 @@ from styles.voice_model_styles import get_stylesheet
 from utils import getTranslationVariant as _
 from core.events import get_event_bus, Events
 from ui.windows.voice_action_windows import VoiceInstallationWindow
+from ui.windows.voice_action_windows import VCRedistWarningDialog, TritonDependenciesDialog  # NEW
+
+from main_logger import logger
 
 try:
     import qtawesome as qta
@@ -597,6 +600,9 @@ class VoiceModelSettingsView(QWidget):
     ask_question_signal = pyqtSignal(str, str, object, object)
     create_voice_action_window_signal = pyqtSignal(str, str, object, object)
 
+    open_vc_redist_dialog = pyqtSignal(object)            # result_holder
+    open_triton_dialog = pyqtSignal(dict, object)         # deps, result_holder
+
     def __init__(self):
         super().__init__()
 
@@ -635,6 +641,14 @@ class VoiceModelSettingsView(QWidget):
         self.refresh_settings_signal.connect(self._on_refresh_settings)
         self.ask_question_signal.connect(self._on_ask_question)
         self.create_voice_action_window_signal.connect(self._on_create_voice_action_window)
+        self.open_vc_redist_dialog.connect(
+            self._slot_open_vc_redist_dialog,
+            type=Qt.ConnectionType.BlockingQueuedConnection
+        )
+        self.open_triton_dialog.connect(
+            self._slot_open_triton_dialog,
+            type=Qt.ConnectionType.BlockingQueuedConnection
+        )
 
         # Data
         self._initialize_data()
@@ -1016,3 +1030,17 @@ class VoiceModelSettingsView(QWidget):
             QMessageBox.StandardButton.No
         )
         return reply == QMessageBox.StandardButton.Yes
+    
+    # ---------- Deps Windows ----------
+    @pyqtSlot(object)
+    def _slot_open_vc_redist_dialog(self, result_holder: dict):
+        dlg = VCRedistWarningDialog(parent=self.window() or self)
+        dlg.exec()
+        result_holder["choice"] = dlg.get_choice()  # 'retry' | 'close'
+
+    @pyqtSlot(dict, object)
+    def _slot_open_triton_dialog(self, deps: dict, result_holder: dict):
+        dlg = TritonDependenciesDialog(parent=self.window() or self, dependencies_status=deps)
+        dlg.exec()
+        result_holder["choice"] = dlg.get_choice()  # 'continue' | 'skip'
+        

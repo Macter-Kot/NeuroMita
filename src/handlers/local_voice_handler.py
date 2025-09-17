@@ -529,11 +529,16 @@ class LocalVoice:
             try:
                 msvc_result = find_msvc(False)
                 logger.info(f"MSVC find_msvc() result: {msvc_result}")
-                if isinstance(msvc_result, (tuple, list)) and len(msvc_result) >= 1:
-                    msvc_paths = msvc_result[0]
-                    self.msvc_found = isinstance(msvc_paths, list) and bool(msvc_paths)
-                else: 
-                    self.msvc_found = False
+                cl_path = None
+                inc_paths, lib_paths = [], []
+                if isinstance(msvc_result, (tuple, list)):
+                    if len(msvc_result) >= 1:
+                        cl_path = msvc_result[0]
+                    if len(msvc_result) >= 2:
+                        inc_paths = msvc_result[1] or []
+                    if len(msvc_result) >= 3:
+                        lib_paths = msvc_result[2] or []
+                self.msvc_found = bool((cl_path and os.path.exists(str(cl_path))) or inc_paths or lib_paths)
             except Exception as e_msvc:
                 logger.warning(f"Ошибка при проверке MSVC: {e_msvc}")
                 self.msvc_found = False

@@ -309,7 +309,6 @@ class EdgeTTS_RVC_Model(IVoiceModel):
     
     
     def initialize(self, init: bool = False) -> bool:
-        # Эта функция теперь вызывается с конкретным model_id, который определяет режим работы
         current_mode = self.parent.current_model_id
         logger.info(f"Запрос на инициализацию обработчика в режиме: '{current_mode}'")
 
@@ -322,7 +321,6 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             
             settings = self.parent.load_model_settings(current_mode)
             
-            # Для режима low+ используем специальные параметры
             if current_mode == "low+":
                 device = settings.get("silero_rvc_device", "cuda:0" if self.parent.provider == "NVIDIA" else "dml")
                 f0_method = settings.get("silero_rvc_f0method", "rmvpe" if self.parent.provider == "NVIDIA" else "pm")
@@ -343,13 +341,13 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             self._adjust_sampling_rate_for_amd()
             logger.info(f"Базовый компонент RVC инициализирован с device={device}, f0_method={f0_method}")
         
-        # Обновляем голос EdgeTTS в RVC в любом случае
+        # Обновляем голос EdgeTTS в RVC
         if self.parent.voice_language == "ru":
             self.current_tts_rvc.set_voice("ru-RU-SvetlanaNeural")
         else:
             self.current_tts_rvc.set_voice("en-US-MichelleNeural")
 
-        # Шаг 2: Управление компонентом Silero в зависимости от режима
+        # Шаг 2: Silero для режима low+
         if current_mode == "low+":
             if self.current_silero_model is None:
                 logger.info("Требуется режим 'low+', инициализация компонента Silero...")
@@ -369,15 +367,14 @@ class EdgeTTS_RVC_Model(IVoiceModel):
                 except Exception as e:
                     logger.error(f"Ошибка инициализации компонента Silero: {e}", exc_info=True)
                     return False
-        else: # Для режима "low" или любого другого, убедимся, что Silero выгружен
+        else:
             if self.current_silero_model is not None:
                 logger.info("Переключение в режим без Silero. Выгрузка компонента Silero...")
                 self.current_silero_model = None
                 import gc
                 gc.collect()
 
-        # Шаг 3: Установка флага и тестовый прогон
-        # Проверяем, что все необходимые компоненты на месте
+        # Готовность компонентов
         is_ready = self.current_tts_rvc is not None
         if current_mode == "low+":
             is_ready = is_ready and self.current_silero_model is not None
@@ -387,28 +384,33 @@ class EdgeTTS_RVC_Model(IVoiceModel):
             self.initialized = False
             return False
 
-        # Если мы дошли сюда, значит все нужные компоненты загружены.
-        # Запускаем тестовый прогон только если модель еще не была помечена как инициализированная.
-        if not self.initialized and init:
-            self.initialized = True # Ставим флаг до прогона
+        # Тестовый прогон
+        if init:
             init_text = f"Инициализация модели {current_mode}" if self.parent.voice_language == "ru" else f"{current_mode} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {current_mode}...")
             try:
-                main_loop = self.events.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
+                results = self.events.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)
+                main_loop = results[0] if results else None
                 if not main_loop or not main_loop.is_running():
                     raise RuntimeError("Главный цикл событий asyncio недоступен.")
                 
                 future = asyncio.run_coroutine_threadsafe(self.voiceover(init_text), main_loop)
-                result = future.result(timeout=3600)
+                result_path = future.result(timeout=3600)
+
+                # Успех только если файл создан и непустой
+                if not result_path or not os.path.exists(result_path) or os.path.getsize(result_path) == 0:
+                    logger.error("Тестовый прогон не создал аудиофайл — инициализация неуспешна.")
+                    self.initialized = False
+                    return False
+
                 logger.info(f"Тестовый прогон для {current_mode} успешно завершен.")
             except Exception as e:
                 logger.error(f"Ошибка во время тестового прогона модели {current_mode}: {e}", exc_info=True)
-                self.initialized = False # Сбрасываем флаг в случае ошибки
+                self.initialized = False
                 return False
-        
+
         self.initialized = True
         return True
-
 
     def _update_parent_paths(self, character=None):
         """Обновляет пути в parent на основе персонажа"""

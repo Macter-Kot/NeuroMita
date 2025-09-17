@@ -482,7 +482,7 @@ class VoiceActionWindow(QDialog):
                 logger.error(f"Не удалось сохранить лог: {ex}")
 
     def _clear_log_screen_only(self):
-        self._display_lines.clear
+        self._display_lines.clear()
         self._display_lines = deque()
         self._render_display_lines()
 

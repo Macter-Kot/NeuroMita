@@ -427,27 +427,33 @@ class F5TTSModel(IVoiceModel):
                     logger.error("Не удалось инициализировать RVC компонент для 'high+low'.")
                     return False
 
-        self.initialized = True
-
+        # Тестовый прогон — считаем успех только при наличии итогового файла
         if init:
             init_text = f"Инициализация модели {self.model_id}" if self.parent.voice_language == "ru" else f"{self.model_id} Model Initialization"
             logger.info(f"Выполнение тестового прогона для {self.model_id}...")
             try:
-                main_loop = self.events.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)[0]
+                results = self.events.emit_and_wait(Events.Core.GET_EVENT_LOOP, timeout=1.0)
+                main_loop = results[0] if results else None
                 if not main_loop or not main_loop.is_running():
                     raise RuntimeError("Главный цикл событий asyncio недоступен.")
                 
                 future = asyncio.run_coroutine_threadsafe(self.voiceover(init_text), main_loop)
-                result = future.result(timeout=3600)
-                
+                result_path = future.result(timeout=3600)
+
+                if not result_path or not os.path.exists(result_path) or os.path.getsize(result_path) == 0:
+                    logger.error("Тестовый прогон не создал аудиофайл — инициализация неуспешна.")
+                    self.initialized = False
+                    return False
+
                 logger.info(f"Тестовый прогон для {self.model_id} успешно завершен.")
             except Exception as e:
                 logger.error(f"Ошибка во время тестового прогона модели {self.model_id}: {e}", exc_info=True)
                 self.initialized = False
                 return False
 
+        self.initialized = True
         return True
-
+    
     def _load_ruaccent_if_needed(self, settings: dict):
         """Загружает RUAccent если включен в настройках и еще не загружен"""
         mode = self._mode()

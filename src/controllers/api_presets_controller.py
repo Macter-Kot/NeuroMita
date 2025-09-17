@@ -97,69 +97,92 @@ class ApiPresetsController:
     # ---------- Загрузка/сохранение ----------
 
     def _load_data(self):
-        if self.templates_path.exists() or self.presets_path.exists():
-            self._load_from_new_files()
-            return
-
-        # Миграция со старого формата (Settings/presets.json)
-        if self.legacy_path.exists():
-            self._migrate_from_legacy()
-            return
-
-        # Чистая установка — берём дефолты из кода
-        self._create_default_data()
-
-    def _load_from_new_files(self):
+        """
+        Стратегия загрузки:
+        1) Всегда пересобираем шаблоны из кода (src/presets/api_templates.py) и пересохраняем.
+           Дополнительно мержим known_models только из текущего Settings/api_templates.json (если он есть).
+           НИКАКОЙ миграции шаблонов из legacy (Settings/presets.json) — оттуда ничего не берём.
+        2) Пользовательские пресеты:
+           - если есть Settings/api_presets.json — загрузить;
+           - иначе, если есть legacy (Settings/presets.json) — мигрировать ТОЛЬКО custom;
+           - иначе создать дефолтные пресеты (пусто).
+        """
         try:
-            if self.templates_path.exists():
-                with open(self.templates_path, 'r', encoding='utf-8') as f:
-                    tdata = json.load(f)
-                self.templates = {int(k): ApiTemplate(**v) for k, v in tdata.get('templates', {}).items()}
-            else:
-                self.templates = {}
+            self._refresh_templates_from_code()
+
             if self.presets_path.exists():
-                with open(self.presets_path, 'r', encoding='utf-8') as f:
-                    pdata = json.load(f)
-                self.presets = {int(k): UserPreset(**v) for k, v in pdata.get('presets', {}).items()}
-                self.presets_order = pdata.get('order', list(self.presets.keys()))
-            else:
-                self.presets = {}
-                self.presets_order = []
-            logger.info(f"Loaded {len(self.templates)} templates and {len(self.presets)} user presets")
+                self._load_presets_only()
+                logger.info(f"Loaded {len(self.templates)} templates (refreshed from code) and {len(self.presets)} user presets")
+                return
+
+            if self.legacy_path.exists():
+                self._migrate_presets_from_legacy()
+                logger.info(f"Migrated legacy user presets. Templates: {len(self.templates)}, Presets: {len(self.presets)}")
+                return
+
+            self._create_default_presets()
+            logger.info(f"Created default user presets. Templates: {len(self.templates)}, Presets: {len(self.presets)}")
         except Exception as e:
-            logger.error(f"Failed to load new preset data: {e}", exc_info=True)
+            logger.error(f"Failed to load preset data, fallback to full defaults: {e}", exc_info=True)
             self._create_default_data()
 
-    def _migrate_from_legacy(self):
+    def _refresh_templates_from_code(self):
+        """
+        Загружаем шаблоны из src/presets/api_templates.py как единственный источник правды.
+        Мержим только known_models из уже существующего Settings/api_templates.json (если есть).
+        Никаких данных из legacy не используем.
+        """
+        from presets.api_templates import API_TEMPLATES_DATA
+
+        # 1) Шаблоны из кода
+        code_templates: Dict[int, ApiTemplate] = {p['id']: ApiTemplate(**p) for p in API_TEMPLATES_DATA}
+
+        # 2) Достаём known_models из текущего файла Settings/api_templates.json, если он существует
+        file_templates_raw: Dict[int, Dict[str, Any]] = {}
+        if self.templates_path.exists():
+            try:
+                with open(self.templates_path, 'r', encoding='utf-8') as f:
+                    tdata = json.load(f)
+                file_templates_raw = {int(k): v for k, v in tdata.get('templates', {}).items()}
+            except Exception as e:
+                logger.warning(f"Failed to read existing api_templates.json for merge: {e}")
+
+        # 3) Мержим known_models по каждому id шаблона (только из текущего файла)
+        for tid, tpl in code_templates.items():
+            merged_models = set(tpl.known_models or [])
+            existing_tpl = file_templates_raw.get(tid)
+            if isinstance(existing_tpl, dict):
+                km = existing_tpl.get('known_models', []) or []
+                if km:
+                    merged_models.update(km)
+            tpl.known_models = sorted(list(merged_models), reverse=True)
+
+        # 4) Применяем и сохраняем
+        self.templates = code_templates
+        self._save_templates()
+        logger.info(f"Refreshed templates from code and saved. Total templates: {len(self.templates)}")
+
+    def _load_presets_only(self):
+        try:
+            with open(self.presets_path, 'r', encoding='utf-8') as f:
+                pdata = json.load(f)
+            self.presets = {int(k): UserPreset(**v) for k, v in pdata.get('presets', {}).items()}
+            self.presets_order = pdata.get('order', list(self.presets.keys()))
+        except Exception as e:
+            logger.error(f"Failed to load presets file: {e}", exc_info=True)
+            self.presets = {}
+            self.presets_order = []
+
+    def _migrate_presets_from_legacy(self):
+        """
+        Мигрируем ТОЛЬКО пользовательские пресеты из legacy Settings/presets.json.
+        Никаких шаблонов, known_models и прочих данных из legacy не переносим.
+        """
         try:
             with open(self.legacy_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            # builtin -> templates
-            self.templates = {}
-            for _, preset_data in data.get('builtin', {}).items():
-                # переносим только поля шаблона
-                tpl = ApiTemplate(
-                    id=preset_data['id'],
-                    name=preset_data['name'],
-                    pricing=preset_data.get('pricing', 'mixed'),
-                    url=preset_data.get('url', ""),
-                    url_tpl=preset_data.get('url_tpl', ""),
-                    default_model=preset_data.get('default_model', ""),
-                    known_models=preset_data.get('known_models', []) or [],
-                    gemini_case=preset_data.get('gemini_case'),
-                    use_request=preset_data.get('use_request', False),
-                    is_g4f=preset_data.get('is_g4f', False),
-                    test_url=preset_data.get('test_url', ""),
-                    filter_fn=preset_data.get('filter_fn', ""),
-                    add_key=preset_data.get('add_key', False),
-                    documentation_url=preset_data.get('documentation_url', ""),
-                    models_url=preset_data.get('models_url', ""),
-                    key_url=preset_data.get('key_url', "")
-                )
-                self.templates[tpl.id] = tpl
-
-            # custom -> presets (минимальная модель пользователя)
+            # custom -> presets
             self.presets = {}
             for _, preset_data in data.get('custom', {}).items():
                 base = preset_data.get('base')
@@ -173,24 +196,25 @@ class ApiPresetsController:
                     key=preset_data.get('key', ""),
                     reserve_keys=preset_data.get('reserve_keys', []) or []
                 )
-                # переносим кастомные модели в шаблон (если были)
-                km = preset_data.get('known_models', [])
-                if km and base and base in self.templates:
-                    t = self.templates[base]
-                    merged = sorted(list(set((t.known_models or []) + km)), reverse=True)
-                    t.known_models = merged
                 self.presets[up.id] = up
 
             self.presets_order = data.get('custom_order', list(self.presets.keys()))
-            self._save_templates()
+            # Сохраняем после миграции
+            self._save_templates()  # шаблоны уже из кода, просто фиксируем файл
             self._save_presets()
-            logger.info(f"Migrated legacy presets to separate templates/presets files. "
-                        f"Templates: {len(self.templates)}, Presets: {len(self.presets)}")
+            logger.info(f"Migrated legacy custom presets only. Presets: {len(self.presets)}")
         except Exception as e:
             logger.error(f"Failed to migrate legacy presets: {e}", exc_info=True)
-            self._create_default_data()
+            self._create_default_presets()
+
+    def _create_default_presets(self):
+        from presets.api_presets import DEFAULT_USER_PRESETS
+        self.presets = {p['id']: UserPreset(**p) for p in DEFAULT_USER_PRESETS}
+        self.presets_order = list(self.presets.keys())
+        self._save_presets()
 
     def _create_default_data(self):
+        # Фоллбэк: и шаблоны, и пресеты берем из кода
         from presets.api_templates import API_TEMPLATES_DATA
         from presets.api_presets import DEFAULT_USER_PRESETS
 
@@ -200,7 +224,7 @@ class ApiPresetsController:
 
         self._save_templates()
         self._save_presets()
-        logger.info("Created default templates and presets")
+        logger.info("Created default templates and presets (fallback)")
 
     def _save_templates(self):
         os.makedirs("Settings", exist_ok=True)
@@ -246,7 +270,7 @@ class ApiPresetsController:
             'default_model': p.default_model or (tpl.default_model if tpl else ""),
             'known_models': (tpl.known_models if tpl else []),
             'gemini_case': (tpl.gemini_case if tpl else None),
-            'use_request': tpl.use_request if tpl else False,
+            'use_request': tpl.use_request if tpl is not None else True,
             'is_g4f': tpl.is_g4f if tpl else False,
             'test_url': tpl.test_url if tpl else "",
             'filter_fn': tpl.filter_fn if tpl else "",

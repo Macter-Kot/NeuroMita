@@ -798,8 +798,10 @@ class ChatGUI(QMainWindow):
         if selected_method is not None:
             self._save_setting("VOICEOVER_METHOD", selected_method)
 
-        use_voice = bool(self._get_setting("USE_VOICEOVER",  True))
-        current_method = self._get_setting("VOICEOVER_METHOD", "TG")
+        use_voice = bool(self._get_setting("USE_VOICEOVER", False))
+
+        if hasattr(self, 'use_voice_checkbox') and self.use_voice_checkbox:
+            self.use_voice_checkbox.setVisible(True)
 
         if not hasattr(self, "voiceover_section"):
             logger.error("Отсутствует voiceover_section – переключать нечего.")
@@ -817,28 +819,22 @@ class ChatGUI(QMainWindow):
             if parent is not None and parent != self.voiceover_section.content_frame:
                 parent.setVisible(visible)
 
-        set_row_visible(method_row_widget,  False)
-        if tg_group_widget:
-            tg_group_widget.setVisible(False)
-        if local_group_widget:
-            local_group_widget.setVisible(False)
-
-        if not use_voice:
-            return
+        current_method = self._get_setting("VOICEOVER_METHOD", "TG")
 
         set_row_visible(method_row_widget, True)
 
-        if current_method == "TG":
-            if tg_group_widget:
-                tg_group_widget.setVisible(True)
-        elif current_method == "Local":
-            if local_group_widget:
-                local_group_widget.setVisible(True)
-                self.update_local_voice_combobox()
-                self.update_local_model_status_indicator()
+        if tg_group_widget:
+            tg_group_widget.setVisible(current_method == "TG")
+        if local_group_widget:
+            local_group_widget.setVisible(current_method == "Local")
+            self.update_local_voice_combobox()
+            self.update_local_model_status_indicator()
+
+        if hasattr(self, 'method_combobox'):
+            self.method_combobox.setEnabled(use_voice)
 
         self.check_triton_dependencies()
-
+        
     def update_local_voice_combobox(self):
         if not hasattr(self, 'local_voice_combobox') or self.local_voice_combobox is None:
             logger.warning("update_local_voice_combobox: виджет local_voice_combobox не найден.")

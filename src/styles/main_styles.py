@@ -139,6 +139,14 @@ QPushButton#SecondaryButton {
 QPushButton#SecondaryButton:hover { background-color: {chip_hover}; }
 QPushButton#SecondaryButton:pressed { background-color: {chip_pressed}; }
 
+QPushButton#DangerButton {
+    background-color: {danger};
+    color: #ffffff;
+    border: 1px solid rgba(214,69,69,0.35);
+}
+QPushButton#DangerButton:hover { background-color: {danger_hover}; }
+QPushButton#DangerButton:pressed { background-color: {danger_pressed}; }
+
 QPushButton:focus {
     outline: none;
     border: 1px solid {accent};
@@ -151,7 +159,7 @@ QPushButton:disabled {
 }
 
 /* ========= Labels ========= */
-QLabel { background-color: transparent; padding-top: 2px; padding-bottom: 2px; }
+QLabel { background-color: transparent; padding: 0px; }
 QLabel#TokenCountLabel {
     font-size: 8pt;
     color: #b8b8c2;

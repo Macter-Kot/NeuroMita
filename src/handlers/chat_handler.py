@@ -679,7 +679,6 @@ class ChatModel:
                 if preset_settings['make_request'] and preset_settings['gemini_case']:
                     formatted_messages = self._format_messages_for_gemini(combined_messages)
                 
-                # api_key_res больше не передаем, так как резервные ключи теперь в пресете
                 req = LLMRequest(
                     model=effective_model,
                     messages=formatted_messages,
@@ -697,6 +696,9 @@ class ChatModel:
                     extra=params,
                     tool_manager=self.tool_manager
                 )
+
+                
+                logger.notify(f"req: {json.dumps(preset_settings)}")
                 
                 req.extra['tool_manager'] = self.tool_manager
                 

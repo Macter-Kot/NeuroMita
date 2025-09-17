@@ -30,6 +30,14 @@ class LocalVoiceController:
         self._triton_check_in_progress: bool = False                # +++
 
         self._subscribe_to_events()
+        
+        logger.info("LocalVoiceController начинает импорт модулей для озвучки...")
+        try:
+            # event не используется внутри _on_refresh_voice_modules
+            self._on_refresh_voice_modules(event=None)
+        except Exception as e:
+            logger.warning(f"Первичный прогрев модулей локальной озвучки завершился с ошибкой: {e}")
+
         logger.notify("LocalVoiceController успешно инициализирован.")
 
     def _subscribe_to_events(self):
@@ -60,6 +68,8 @@ class LocalVoiceController:
         # Собственно озвучка
         eb.subscribe(Events.Audio.LOCAL_SEND_VOICE_REQUEST, self._on_local_send_voice_request, weak=False)
 
+        eb.subscribe(Events.Audio.REFRESH_TRITON_STATUS, self._on_refresh_triton_status, weak=False)
+
     # ---------- Обработчики событий ----------
 
     def _on_open_voice_model_settings(self, event: Event):
@@ -76,45 +86,64 @@ class LocalVoiceController:
             logger.error(f"_on_open_voice_model_settings: {e}", exc_info=True)
             return None
 
-    def _on_get_triton_status(self, event: Event):
-        """
-        Возвращает статус Triton. Выполняет проверку зависимостей один раз за сессию и кэширует результат,
-        чтобы избежать множества повторных предупреждений типа "No module named 'triton'".
-        Кэш сбрасывается при Events.Audio.REFRESH_VOICE_MODULES.
-        """
-        # Ленивая инициализация служебных полей (если их ещё нет)
-        if not hasattr(self, "_triton_status_cache"):
-            self._triton_status_cache = None
-        if not hasattr(self, "_triton_check_error_logged"):
-            self._triton_check_error_logged = False
+    def _ensure_libs_on_path(self):
+        lib_path = os.path.abspath("Lib")
+        if lib_path not in sys.path:
+            sys.path.insert(0, lib_path)
 
-        # Если уже есть кэш — возвращаем его (не трогаем систему)
-        if self._triton_status_cache is not None:
-            return self._triton_status_cache
+    def _compute_triton_status(self) -> dict:
+        self._ensure_libs_on_path()
+
+        # сбрасываем кэш и пересчитываем флаги в модели
+        self._triton_status_cache = None
+
+        # гарантируем «чистое» исходное состояние
+        try:
+            self.local_voice.cuda_found = False
+            self.local_voice.winsdk_found = False
+            self.local_voice.msvc_found = False
+            self.local_voice.triton_installed = False
+            self.local_voice.triton_checks_performed = False
+        except Exception:
+            pass
+
+        # пробуем импортировать triton и выполнить штатные проверки модели
+        try:
+            import importlib
+            importlib.invalidate_caches()
+            import triton  # noqa: F401
+            # импорт успешен
+            try:
+                self.local_voice._check_system_dependencies()
+            except Exception as e:
+                if not self._triton_check_error_logged:
+                    logger.warning(f"_check_system_dependencies error: {e}")
+                    self._triton_check_error_logged = True
+        except Exception:
+            # triton не установлен — статус из модели (все False)
+            pass
 
         status = {}
-        if self.local_voice:
-            # Попытаться выполнить проверку системных зависимостей (может выбрасывать исключение при отсутствии triton)
-            if hasattr(self.local_voice, "_check_system_dependencies"):
-                try:
-                    self.local_voice._check_system_dependencies()
-                except Exception as e:
-                    # Пишем предупреждение о проблеме с зависимостями только один раз за сессию
-                    if not self._triton_check_error_logged:
-                        logger.warning(f"Ошибка при проверке зависимостей: {e}")
-                        self._triton_check_error_logged = True
+        try:
+            status = self.local_voice.get_triton_status() or {}
+        except Exception as e:
+            logger.error(f"get_triton_status error: {e}")
+            status = {}
 
-            # Забираем статус из LocalVoice
-            try:
-                status = self.local_voice.get_triton_status() or {}
-            except Exception as e:
-                logger.error(f"Ошибка получения статуса Triton: {e}")
-                status = {}
-
-        # Кэшируем результат
+        # кэшируем и отдаем
         self._triton_status_cache = status
         return status
 
+    def _on_get_triton_status(self, event: Event):
+        # отдаем кэш, если есть; иначе считаем
+        if self._triton_status_cache is not None:
+            return self._triton_status_cache
+        return self._compute_triton_status()
+
+    def _on_refresh_triton_status(self, event: Event):
+        # принудительный пересчет, игнорируем кэш
+        return self._compute_triton_status()
+    
     def _on_refresh_voice_modules(self, event: Event):
         logger.info("Обновление модулей локальной озвучки...")
         modules_to_check = {
@@ -124,8 +153,7 @@ class LocalVoiceController:
             "triton": None
         }
 
-        lib_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Lib")
-        lib_path = os.path.abspath(lib_path)
+        lib_path = os.path.abspath("Lib")
         if lib_path not in sys.path:
             sys.path.insert(0, lib_path)
 

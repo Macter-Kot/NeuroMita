@@ -1,4 +1,4 @@
-API_PRESETS_DATA = [
+API_TEMPLATES_DATA = [
     {
         "id": 1,
         "name": "Gpt4Free",
@@ -21,7 +21,7 @@ API_PRESETS_DATA = [
             "meta-llama/llama-3.2-3b-instruct:free"
         ],
         "gemini_case": None,
-        "use_request": False,
+        "use_request": True,
         "add_key": False,
         "documentation_url": "https://openrouter.ai/keys"
     },
@@ -29,10 +29,10 @@ API_PRESETS_DATA = [
         "id": 3,
         "name": "Ai.iO",
         "pricing": "mixed",
-        "url": "https://api.intelligence.io.solutions/api/v1/",
+        "url": "https://api.intelligence.io.solutions/api/v1/chat/completions",
         "default_model": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         "known_models": [],
-        "use_request": False,
+        "use_request": True,
         "add_key": False,
         "documentation_url": "https://intelligence.io.solutions"
     },
@@ -77,7 +77,7 @@ API_PRESETS_DATA = [
         "url": "https://api.proxyapi.ru/deepseek",
         "default_model": "deepseek-chat",
         "known_models": ["deepseek-chat", "deepseek-reasoner"],
-        "use_request": False,
+        "use_request": True,
         "add_key": False,
         "documentation_url": "https://proxyapi.ru"
     },
@@ -99,7 +99,7 @@ API_PRESETS_DATA = [
         "url": "https://api.anthropic.com/v1/messages",
         "default_model": "claude-3-5-sonnet-20241022",
         "known_models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
-        "use_request": False,
+        "use_request": True,
         "add_key": False,
         "documentation_url": "https://console.anthropic.com/settings/keys"
     },
@@ -110,7 +110,7 @@ API_PRESETS_DATA = [
         "url": "https://api.deepseek.com/chat/completions",
         "default_model": "deepseek-chat",
         "known_models": ["deepseek-chat", "deepseek-reasoner"],
-        "use_request": False,
+        "use_request": True,
         "add_key": False,
         "documentation_url": "https://platform.deepseek.com/api_keys"
     },

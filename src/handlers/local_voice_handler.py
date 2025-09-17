@@ -13,6 +13,7 @@ import time
 import ffmpeg
 from utils.gpu_utils import check_gpu_provider
 
+from copy import deepcopy
 import hashlib
 from datetime import datetime
 import traceback
@@ -170,19 +171,28 @@ class LocalVoice:
                     delattr(self, attr)
 
     def get_all_model_configs(self) -> List[Dict[str, Any]]:
-        """Собирает все конфигурации моделей от всех обработчиков"""
-        all_configs = []
-        seen_ids = set()
-        
-        for model_id, model_handler in self.models.items():
-            if model_handler and hasattr(model_handler, 'get_model_configs'):
-                for config in model_handler.get_model_configs():
-                    if config['id'] not in seen_ids:
-                        all_configs.append(config)
-                        seen_ids.add(config['id'])
-        
-        return all_configs
+        """
+        Возвращает ПОЛНЫЕ конфиги из handlers.voice_models.* без каких-либо правок.
+        Делает deepcopy, чтобы дальнейшая адаптация в контроллере не мутировала исходные структуры.
+        """
+        all_configs: List[Dict[str, Any]] = []
+        seen_ids: set[str] = set()
 
+        for _mid, handler in self.models.items():
+            if not handler or not hasattr(handler, "get_model_configs"):
+                continue
+            try:
+                for cfg in (handler.get_model_configs() or []):
+                    mid = cfg.get("id")
+                    if not mid or mid in seen_ids:
+                        continue
+                    all_configs.append(cfg)
+                    seen_ids.add(mid)
+            except Exception as e:
+                logger.warning(f"get_model_configs() у {handler} завершился ошибкой: {e}")
+
+        return deepcopy(all_configs)
+    
     def initialize_model(self, model_id: str, init: bool = False) -> bool:
         model_to_init = self.models.get(model_id)
         if not model_to_init:
@@ -519,11 +529,16 @@ class LocalVoice:
             try:
                 msvc_result = find_msvc(False)
                 logger.info(f"MSVC find_msvc() result: {msvc_result}")
-                if isinstance(msvc_result, (tuple, list)) and len(msvc_result) >= 1:
-                    msvc_paths = msvc_result[0]
-                    self.msvc_found = isinstance(msvc_paths, list) and bool(msvc_paths)
-                else: 
-                    self.msvc_found = False
+                cl_path = None
+                inc_paths, lib_paths = [], []
+                if isinstance(msvc_result, (tuple, list)):
+                    if len(msvc_result) >= 1:
+                        cl_path = msvc_result[0]
+                    if len(msvc_result) >= 2:
+                        inc_paths = msvc_result[1] or []
+                    if len(msvc_result) >= 3:
+                        lib_paths = msvc_result[2] or []
+                self.msvc_found = bool((cl_path and os.path.exists(str(cl_path))) or inc_paths or lib_paths)
             except Exception as e_msvc:
                 logger.warning(f"Ошибка при проверке MSVC: {e_msvc}")
                 self.msvc_found = False

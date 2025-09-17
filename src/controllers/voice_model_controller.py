@@ -14,7 +14,7 @@ from ui.windows.voice_model_view import VoiceModelSettingsView
 
 from PyQt6.QtCore import QTimer, QEventLoop
 
-from core.events import get_event_bus, Events
+from core.events import get_event_bus, Events, Event
 
 try:
     from utils.gpu_utils import check_gpu_provider, get_cuda_devices, get_gpu_name_by_id
@@ -23,9 +23,6 @@ except ImportError:
     def check_gpu_provider(): return None
     def get_cuda_devices(): return []
 
-from core.constants import (model_descriptions, model_descriptions_en, 
-                            setting_descriptions, setting_descriptions_en,
-                            default_description_text, default_description_text_en)
 
 class VoiceModelController:
     """
@@ -39,17 +36,18 @@ class VoiceModelController:
         self.installed_models_file = os.path.join(self.config_dir, "installed_models.txt")
         self.on_save_callback = on_save_callback
 
-        
-        self._dependencies_status_cache = None     # +++
-        self._dependencies_status_ts = 0           # +++
+        self._dependencies_status_cache = None
+        self._dependencies_status_ts = 0.0
 
-        # local_voice больше не используется напрямую (инкапсулировано)
         self._check_installed_func = check_installed_func
 
         self.language = SettingsManager.get("LANGUAGE", "RU")
-        self.model_descriptions = model_descriptions_en if self.language == "EN" else model_descriptions
-        self.setting_descriptions = setting_descriptions_en if self.language == "EN" else setting_descriptions
-        self.default_description_text = default_description_text_en if self.language == "EN" else default_description_text
+
+        # Новые локальные словари описаний (собираем из моделей)
+        self.model_descriptions: dict[str, str] = {}
+        self.setting_descriptions: dict[str, str] = {}
+        self.default_description_text = _("Наведите курсор на элемент интерфейса для получения описания.",
+                                          "Hover over an interface element to get a description.")
 
         self.detected_gpu_vendor = check_gpu_provider()
         self.detected_cuda_devices = get_cuda_devices()
@@ -107,6 +105,8 @@ class VoiceModelController:
         eb.subscribe(Events.VoiceModel.OPEN_DOC, self._handle_open_doc, weak=False)
         eb.subscribe(Events.VoiceModel.UPDATE_DESCRIPTION, self._handle_update_description, weak=False)
         eb.subscribe(Events.VoiceModel.CLEAR_DESCRIPTION, self._handle_clear_description, weak=False)
+        eb.subscribe(Events.Audio.SHOW_VC_REDIST_DIALOG, self._on_show_vc_redist_dialog, weak=False)
+        eb.subscribe(Events.Audio.SHOW_TRITON_DIALOG, self._on_show_triton_dialog, weak=False)
 
     def _create_view(self):
         if self.view:
@@ -128,44 +128,61 @@ class VoiceModelController:
                     child.widget().deleteLater()
             layout.addWidget(self.view)
 
-        # View сам запросит данные через события VoiceModel.*
+        try:
+            QTimer.singleShot(0, self.view._initialize_data)
+        except Exception:
+            pass
 
+    # ---------- Сбор описаний из конфигов моделей ----------
+
+    def _collect_descriptions_from_models(self, models: list[dict]):
+        """
+        Берём описания ТОЛЬКО из исходных конфигов:
+        - описание модели: поле 'description' (или 'desc');
+        - описание настройки: поле 'help' (или 'description'/'desc') под её точным key.
+        Никакой нормализации ключей, никаких фолбэков.
+        """
+        self.model_descriptions.clear()
+        self.setting_descriptions.clear()
+
+        for m in models or []:
+            mid = m.get("id")
+            if mid:
+                # описание модели
+                desc = m.get("description") or m.get("desc")
+                if isinstance(desc, str) and desc.strip():
+                    self.model_descriptions[mid] = desc.strip()
+
+            # описания настроек — только из того, что есть в конфиге
+            for s in (m.get("settings") or []):
+                if not isinstance(s, dict):
+                    continue
+                key = s.get("key")
+                if not key:
+                    continue
+                help_text = s.get("help") or s.get("description") or s.get("desc")
+                if isinstance(help_text, str) and help_text.strip():
+                    self.setting_descriptions[key] = help_text.strip()
     # ---------- VoiceModel event handlers ----------
 
     def _handle_get_model_data(self, event):
         return self.local_voice_models
 
     def _handle_get_installed_models(self, event):
-        # Возвращаем кэшированное, оно обновляется при install/uninstall; вне окна даёт LocalVoiceController
         return self.installed_models.copy()
 
     def _handle_get_dependencies_status(self, event):
-        """
-        Возвращаем статус зависимостей (включая флаги для UI).
-        Чтобы не создавать шквал запросов в LocalVoiceController при отрисовке окна,
-        кэшируем результат на короткое время (TTL ~ 3 сек).
-        """
-        # Ленивая инициализация кэша
-        if not hasattr(self, "_dependencies_status_cache"):
-            self._dependencies_status_cache = None
-            self._dependencies_status_ts = 0.0
-
-        # Если кэш свежий — возвращаем его
-        import time as _time
-        if self._dependencies_status_cache and (_time.time() - self._dependencies_status_ts) < 3.0:
+        if self._dependencies_status_cache and (time.time() - self._dependencies_status_ts) < 3.0:
             return self._dependencies_status_cache
 
-        # Иначе — запрашиваем у LocalVoice через EventBus
         res = self.event_bus.emit_and_wait(Events.Audio.GET_TRITON_STATUS, timeout=2.0)
         status = res[0] if res else {}
         status = status.copy() if isinstance(status, dict) else {}
         status['show_triton_checks'] = (platform.system() == "Windows")
         status['detected_gpu_vendor'] = self.detected_gpu_vendor
 
-        # Кэшируем
         self._dependencies_status_cache = status
-        self._dependencies_status_ts = _time.time()
-
+        self._dependencies_status_ts = time.time()
         return status
 
     def _handle_get_default_description(self, event):
@@ -254,6 +271,8 @@ class VoiceModelController:
         merged_model_structure = copy.deepcopy(adapted_default_structure)
         for model_data in merged_model_structure:
             model_id = model_data.get("id")
+
+            # подмешиваем сохранённые значения
             if model_id in saved_values:
                 model_saved_values = saved_values[model_id]
                 if isinstance(model_saved_values, dict):
@@ -261,6 +280,20 @@ class VoiceModelController:
                         setting_key = setting.get("key")
                         if setting_key in model_saved_values:
                             setting.setdefault("options", {})["default"] = model_saved_values[setting_key]
+
+            # безопасные дефолты (для UI)
+            model_data.setdefault("languages", [])
+            model_data.setdefault("intents", [])     # NEW: для отображения «интентов»
+            model_data.setdefault("min_ram", None)
+            model_data.setdefault("rec_ram", None)
+            model_data.setdefault("cpu", None)
+            model_data.setdefault("os", [])
+            if not isinstance(model_data.get("gpu_vendor"), (list, tuple)):
+                model_data["gpu_vendor"] = [v for v in [model_data.get("gpu_vendor")] if v]
+
+        # Собираем словари описаний из моделей (вместо core/constants.py)
+        self._collect_descriptions_from_models(merged_model_structure)
+
         self.local_voice_models = merged_model_structure
         logger.info(_("Загрузка и адаптация настроек завершена.", "Loading and adaptation of settings completed."))
 
@@ -305,8 +338,8 @@ class VoiceModelController:
     # ---------- Логика адаптации под GPU (UI нужды) ----------
 
     def finalize_model_settings(self, models_list, detected_vendor, cuda_devices):
-        import copy
-        final_models = copy.deepcopy(models_list)
+        import copy as _copy
+        final_models = _copy.deepcopy(models_list)
 
         gpu_name_upper = self.gpu_name.upper() if self.gpu_name else ""
         force_fp32 = False
@@ -364,15 +397,23 @@ class VoiceModelController:
                 if default_key in options:
                     options["default"] = options[default_key]
 
-                if vendor_to_adapt_for == "NVIDIA" and is_device_setting:
-                    base_nvidia_values = options.get("values_nvidia", [])
-                    base_other_values = options.get("values_other", ["cpu"])
-                    base_non_cuda_provider = base_nvidia_values if base_nvidia_values else base_other_values
-                    non_cuda_options = [v for v in base_non_cuda_provider if not str(v).startswith("cuda")]
-                    if cuda_devices:
-                        final_values_list = list(cuda_devices) + non_cuda_options
+                if is_device_setting:
+                    if vendor_to_adapt_for == "NVIDIA":
+                        base_nvidia_values = options.get("values_nvidia", [])
+                        base_other_values = options.get("values_other", ["cpu"])
+                        base_non_cuda_provider = base_nvidia_values if base_nvidia_values else base_other_values
+                        non_cuda_options = [v for v in base_non_cuda_provider if not str(v).startswith("cuda")]
+                        if cuda_devices:
+                            final_values_list = list(cuda_devices) + non_cuda_options
+                        else:
+                            final_values_list = [v for v in base_other_values if v in ["cpu", "mps"]] or ["cpu"]
                     else:
-                        final_values_list = [v for v in base_other_values if v in ["cpu", "mps"]] or ["cpu"]
+                        # macOS: добавим mps если его нет
+                        if platform.system() == "Darwin":
+                            base_values = final_values_list or options.get("values_other", options.get("values", [])) or ["cpu"]
+                            if "mps" not in base_values:
+                                base_values = list(base_values) + ["mps"]
+                            final_values_list = base_values
 
                 if final_values_list is not None and widget_type == "combobox":
                     options["values"] = final_values_list
@@ -400,6 +441,7 @@ class VoiceModelController:
                         options["default"] = ""
 
         return final_models
+
     def is_gpu_rtx30_or_40(self):
         force_unsupported_str = os.environ.get("RTX_FORCE_UNSUPPORTED", "0")
         force_unsupported = force_unsupported_str.lower() in ['true', '1', 't', 'y', 'yes']
@@ -422,7 +464,6 @@ class VoiceModelController:
     # ---------- Действия из окна (установка/удаление, сохранение) ----------
 
     def handle_install_request(self, model_id, progress_cb=None, status_cb=None, log_cb=None, window=None):
-        """Вызов установки модели через LocalVoiceController."""
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
         if not model_data:
             self.event_bus.emit(
@@ -469,22 +510,17 @@ class VoiceModelController:
         if self.view:
             self.view.install_started_signal.emit(model_id)
 
-        # 1) Определяем, какие модели нужно пометить как установленные вместе с выбранной
-        #    (логика «родственных» моделей: если установили общий компонент, то обе модели считаются готовыми).
-        #    Например: поставили low+ (tts_with_rvc) → одновременно «готов» и low.
-        installed_components = set()  # можно было бы вычислять, но для нашей логики не требуется
+        installed_components = set()
         model_new_components = set(self.model_components.get(model_id, []))
         models_to_mark_installed = self._get_installable_models(
             model_id, installed_components, model_new_components
         )
 
-        # 2) В UI показываем «Ожидание...» для связанных моделей (кроме текущей)
         for mid in models_to_mark_installed:
             if self.view and mid != model_id:
                 QTimer.singleShot(0, lambda m=mid: self.view.set_button_text(m, _("Ожидание...", "Waiting...")))
                 QTimer.singleShot(0, lambda m=mid: self.view.set_button_enabled(m, False))
 
-        # 3) Запускаем установку базового пакета через LocalVoiceController
         success = False
         try:
             res = self.event_bus.emit_and_wait(
@@ -501,16 +537,13 @@ class VoiceModelController:
             if log_cb:
                 log_cb(f"Ошибка: {str(e)}")
 
-        # 4) Обрабатываем результат и помечаем «родственные» модели установленными
         self.handle_download_result(success, model_id, models_to_mark_installed)
 
         self.installation_in_progress = False
 
-        # 5) Сообщаем view, чтобы она обновила панели/настройки
         if self.view:
             self.view.install_finished_signal.emit({"model_id": model_id, "success": success})
 
-        # 6) Закрываем окно прогресса
         if window and success:
             if status_cb:
                 status_cb(_("Установка успешно завершена!", "Installation successful!"))
@@ -519,11 +552,6 @@ class VoiceModelController:
             QTimer.singleShot(5000, window.close)
 
     def _get_installable_models(self, model_id, installed_components, new_components):
-        """
-        Возвращает список «родственных» моделей, которые можно считать установленными,
-        если после установки выбранной модели доступны все требуемые компоненты.
-        Пример: установили 'low+' (компоненты: ['tts_with_rvc']) → 'low' тоже доступен.
-        """
         all_components = set(installed_components) | set(new_components)
         installable_models = [model_id]
 
@@ -536,17 +564,14 @@ class VoiceModelController:
 
     def handle_download_result(self, success, model_id, models_to_mark_installed):
         if success:
-            # Помечаем как установленные не только выбранную, но и родственные модели
             for mid in models_to_mark_installed:
                 if mid not in self.installed_models:
                     self.installed_models.add(mid)
                     logger.info(f"Добавлена модель {mid} в installed_models.")
 
-            # Перезагружаем настройки (чтобы в правой панели появились свежие секции)
             self.load_settings()
             self.save_installed_models_list()
 
-            # Сообщаем наружу (главное окно обновит комбо/модули)
             if self.on_save_callback:
                 callback_data = {
                     "installed_models": list(self.installed_models),
@@ -554,8 +579,6 @@ class VoiceModelController:
                 }
                 self.on_save_callback(callback_data)
 
-            # На всякий случай попросим view обновить панели/настройки,
-            # чтобы сразу отобразились все новые секции без переоткрытия окна.
             if self.view:
                 QTimer.singleShot(0, self.view.refresh_panels_signal.emit)
                 QTimer.singleShot(0, self.view.refresh_settings_signal.emit)
@@ -568,7 +591,6 @@ class VoiceModelController:
         model_data = next((m for m in self.local_voice_models if m["id"] == model_id), None)
         model_name = model_data.get("name", model_id) if model_data else model_id
 
-        # Проверка: активна ли модель (через LocalVoiceController)
         res = self.event_bus.emit_and_wait(Events.Audio.CHECK_MODEL_INITIALIZED, {'model_id': model_id}, timeout=1.0)
         is_initialized = bool(res and res[0])
         if is_initialized and self.view:
@@ -654,16 +676,14 @@ class VoiceModelController:
         model_name = model_data.get("name", model_id) if model_data else model_id
 
         if success:
-            # Полный пересчёт установленного состояния
             prev = self.installed_models.copy()
-            self.load_installed_models_state()  # дергает Events.Audio.CHECK_MODEL_INSTALLED для всех
+            self.load_installed_models_state()
             removed = prev - self.installed_models
             if removed:
                 logger.info(f"После удаления {model_id} сняты флаги установленных для: {removed}")
 
             self.save_installed_models_list()
 
-            # Сигнализируем наружу и обновляем UI
             if self.on_save_callback:
                 callback_data = {
                     "installed_models": list(self.installed_models),
@@ -718,3 +738,18 @@ class VoiceModelController:
 
     def open_doc(self, doc_name):
         self.docs_manager.open_doc(doc_name)
+
+    def _on_show_vc_redist_dialog(self, event: Event):
+        if not self.view:
+            return 'close'
+        holder = {}
+        self.view.open_vc_redist_dialog.emit(holder)
+        return holder.get('choice', 'close')
+
+    def _on_show_triton_dialog(self, event: Event):
+        if not self.view:
+            return 'skip'
+        deps = event.data or {}
+        holder = {}
+        self.view.open_triton_dialog.emit(deps, holder)
+        return holder.get('choice', 'skip')

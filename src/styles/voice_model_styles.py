@@ -207,6 +207,32 @@ QTabBar::tab:focus { outline: none; }
 QComboBox:focus { outline: none; }
 QLineEdit:focus { outline: none; }
 QPushButton:focus { outline: none; }
+
+/* Minimal Models list */
+QListWidget {
+    background: {panel_bg};
+    border: 1px solid {border_soft};
+    border-radius: 6px;
+    padding: 4px;
+    outline: 0;
+}
+
+QListWidget::item {
+    border: none;
+    padding: 0px;
+    margin: 1px 0px;
+    border-radius: 4px;
+    background: transparent;
+}
+
+QListWidget::item:hover {
+    background: rgba(138, 43, 226, 0.08);
+}
+
+QListWidget::item:selected {
+    background: rgba(138, 43, 226, 0.15);
+}
+
 """
 
 def get_stylesheet(overrides: dict | None = None) -> str:

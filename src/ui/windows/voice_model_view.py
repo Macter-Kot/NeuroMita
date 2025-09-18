@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QFrame, QScrollArea, QLineEdit, QComboBox, QCheckBox,
     QMessageBox, QListWidget, QListWidgetItem, QSplitter, QTabWidget
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QSize
 from PyQt6.QtGui import QCursor
 
 from styles.voice_model_styles import get_stylesheet
@@ -369,6 +369,18 @@ class ModelDetailView(QWidget):
         # Meta chips (в одну строку, компактно)
         meta_chips = []
 
+        # RTX 30+/40+ ПЕРВЫМ (если требуется)
+        if model.get("rtx30plus", False):
+            meets = self.rtx_check_func() if callable(self.rtx_check_func) else False
+            meta_chips.append(
+                self._make_chip(
+                    "RTX 30+",
+                    "ok" if meets else "warn",
+                    icon_names=["fa5s.bolt", "mdi.flash"],
+                    icon_color="#f2da6b"
+                )
+            )
+
         # VRAM
         min_vram = model.get("min_vram")
         rec_vram = model.get("rec_vram")
@@ -393,7 +405,7 @@ class ModelDetailView(QWidget):
                 self._make_chip(
                     f"GPU: {', '.join(vendors)}",
                     "info",
-                    icon_names=["mdi.graphics-card", "mdi.gpu", "fa5s.microchip"],
+                    icon_names=["mdi.graphics-card", "mdi.expansion-card", "fa5s.microchip"],
                     icon_color="#8bb6ff"
                 )
             )
@@ -420,28 +432,6 @@ class ModelDetailView(QWidget):
                 )
             )
 
-        # RTX 30+/40+ (если требуется)
-        if model.get("rtx30plus", False):
-            meets = self.rtx_check_func() if callable(self.rtx_check_func) else False
-            meta_chips.append(
-                self._make_chip(
-                    "RTX 30+",
-                    "ok" if meets else "warn",
-                    icon_names=["fa5s.bolt", "mdi.flash"],
-                    icon_color="#f2da6b"
-                )
-            )
-
-        # NEW: интенты (макс. 2 штуки, чтобы не раздувать карточку)
-        for it in (model.get("intents") or [])[:2]:
-            meta_chips.append(
-                self._make_chip(
-                    it, "info",
-                    icon_names=["fa5s.bullseye", "mdi.target-variant"],
-                    icon_color="#cfa8ff"
-                )
-            )
-
         self._set_chips(self.meta_row, meta_chips)
 
         # Languages (компактный режим: показываем первые N, остальные — в +N с тултипом)
@@ -461,7 +451,7 @@ class ModelDetailView(QWidget):
 
             if hidden:
                 more_tag = self._make_tag(f"+{len(hidden)}")
-                # отдельный стиль для “+N”, чтобы визуально отличался
+                # отдельный стиль для "+N", чтобы визуально отличался
                 more_tag.setObjectName("TagMore")
                 # полный список в тултипе (по строкам)
                 more_tag.setToolTip("\n".join(hidden))
@@ -489,6 +479,7 @@ class ModelDetailView(QWidget):
 
         # Настройки
         self.build_settings_for(model_id)
+
 
     def _qta_pixmap(self, names, color="#cccccc", size=12):
         """Возвращает QPixmap первой доступной иконки из списка имен qtawesome."""
@@ -584,6 +575,61 @@ class ModelDetailView(QWidget):
             return f"<ul style='margin: 6px 0 0 18px;'>{items}</ul>"
         return text
 
+
+
+class ModelListItemWidget(QWidget):
+    """Минималистичный виджет для элемента списка моделей"""
+    
+    def __init__(self, model_data: dict, is_installed: bool = False, parent=None):
+        super().__init__(parent)
+        self.model_data = model_data
+        self.is_installed = is_installed
+        self._build_ui()
+        
+    def _build_ui(self):
+        # Минималистичный layout
+        main = QHBoxLayout(self)
+        main.setContentsMargins(8, 4, 8, 4)
+        main.setSpacing(6)
+        
+        # Иконка статуса
+        self.status_icon = QLabel()
+        self.status_icon.setFixedSize(16, 16)
+        if qta:
+            icon_name = 'fa5s.check-circle' if self.is_installed else 'fa5s.circle'
+            color = '#4caf50' if self.is_installed else '#555555'
+            icon = qta.icon(icon_name, color=color)
+            self.status_icon.setPixmap(icon.pixmap(16, 16))
+        else:
+            self.status_icon.setText("●" if self.is_installed else "○")
+            self.status_icon.setStyleSheet(f"color: {'#4caf50' if self.is_installed else '#555555'};")
+        main.addWidget(self.status_icon)
+        
+        # Название модели
+        self.name_label = QLabel(self.model_data.get("name", self.model_data.get("id", "Unknown")))
+        self.name_label.setStyleSheet("color: #e6e6eb; font-size: 9pt;")
+        main.addWidget(self.name_label)
+        
+        # RTX 30+ значок (только если есть)
+        if self.model_data.get("rtx30plus") and qta:
+            rtx_icon = QLabel()
+            icon = qta.icon('fa5s.bolt', color='#ffa726')
+            rtx_icon.setPixmap(icon.pixmap(14, 14))
+            rtx_icon.setToolTip("RTX 30+ Required")
+            main.addWidget(rtx_icon)
+        
+        main.addStretch()
+        
+    def set_installed(self, installed: bool):
+        self.is_installed = installed
+        if qta:
+            icon_name = 'fa5s.check-circle' if installed else 'fa5s.circle'
+            color = '#4caf50' if installed else '#555555'
+            icon = qta.icon(icon_name, color=color)
+            self.status_icon.setPixmap(icon.pixmap(16, 16))
+        else:
+            self.status_icon.setText("●" if installed else "○")
+            self.status_icon.setStyleSheet(f"color: {'#4caf50' if installed else '#555555'};")
 
 # ---------- Главное окно настроек ----------
 class VoiceModelSettingsView(QWidget):
@@ -861,9 +907,15 @@ class VoiceModelSettingsView(QWidget):
 
     # ---------- List / Filter ----------
     def _populate_list(self):
+        """Заполняет список моделей с кастомными виджетами"""
         self.list.clear()
+        
+        # Устанавливаем более крупный размер элементов для наших виджетов
+        self.list.setSpacing(2)
+        
         for m in self.models_data:
             self._add_model_item(m)
+        
         self._refresh_list_visuals()
 
     def _base_label_for(self, model_id: str) -> str:
@@ -873,28 +925,55 @@ class VoiceModelSettingsView(QWidget):
         return model_id
 
     def _add_model_item(self, model: dict):
-        name = model.get("name", model["id"])
-        item = QListWidgetItem(name)
-        item.setData(Qt.ItemDataRole.UserRole, model["id"])
-        item.setToolTip(self._get_model_description(model["id"]))
+        """Добавляет элемент с минималистичным виджетом"""
+        model_id = model.get("id")
+        is_installed = model_id in self.installed_models
+        
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, model_id)
+        
+        widget = ModelListItemWidget(model, is_installed)
+        
+        # Устанавливаем фиксированную компактную высоту
+        item.setSizeHint(QSize(0, 26))  # Фиксированная высота 26px
+        
         self.list.addItem(item)
+        self.list.setItemWidget(item, widget)
+        
+        # Простой тултип
+        item.setToolTip(self._get_model_description(model_id))
 
     def _refresh_list_visuals(self):
+        """Обновляет визуальное состояние элементов списка"""
         for i in range(self.list.count()):
             item = self.list.item(i)
-            mid = item.data(Qt.ItemDataRole.UserRole)
-            base = self._base_label_for(mid)
-            if mid in self.installed_models:
-                item.setText(f"🟢 {base}")
-            else:
-                item.setText(f"⚪ {base}")
+            widget = self.list.itemWidget(item)
+            if widget and isinstance(widget, ModelListItemWidget):
+                model_id = item.data(Qt.ItemDataRole.UserRole)
+                widget.set_installed(model_id in self.installed_models)
 
     def _apply_filter(self, text: str):
+        """Применяет фильтр к списку"""
         t = (text or "").strip().lower()
+        
         for i in range(self.list.count()):
             item = self.list.item(i)
-            base = self._base_label_for(item.data(Qt.ItemDataRole.UserRole)).lower()
-            item.setHidden(t not in base)
+            widget = self.list.itemWidget(item)
+            
+            if widget and isinstance(widget, ModelListItemWidget):
+                model_name = widget.model_data.get("name", "").lower()
+                model_id = widget.model_data.get("id", "").lower()
+                
+                # Ищем в названии, ID и языках
+                langs = " ".join(widget.model_data.get("languages", [])).lower()
+                intents = " ".join(widget.model_data.get("intents", [])).lower()
+                
+                visible = (t in model_name or 
+                        t in model_id or 
+                        t in langs or
+                        t in intents)
+                
+                item.setHidden(not visible)
 
     def _on_selection_changed(self):
         item = self.list.currentItem()

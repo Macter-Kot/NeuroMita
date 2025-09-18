@@ -11,11 +11,10 @@ import json
 from DSL.dsl_engine import DslInterpreter # PROMPTS_ROOT is managed by DslInterpreter
 from DSL.path_resolver import LocalPathResolver
 from DSL.post_dsl_engine import PostDslInterpreter
-from controllers.settings_controller import SettingsController
 from managers.memory_manager import MemoryManager
 from managers.history_manager import HistoryManager
 from utils import clamp, SH # SH for masking keys if needed elsewhere
-
+from core.events import get_event_bus, Events
 import os
 
 from managers.game_manager import GameManager
@@ -54,6 +53,7 @@ class Character:
          initial_vars_override: Dict[str, Any] | None = None,
          is_cartridge = False
          ):
+        self.event_bus = get_event_bus()
     
         self.char_id = char_id
         self.name = name
@@ -240,7 +240,16 @@ class Character:
         Возвращает массив строк; системная инфа из ADD_SYSTEM_INFO складывается в self.system_messages (как строки).
         """
         self.set_variable("SYSTEM_DATETIME", datetime.datetime.now().strftime("%Y %B %d (%A) %H:%M"))
-        self.update_app_vars(SettingsController.get_app_vars())
+        try:
+            results = self.event_bus.emit_and_wait(Events.Settings.GET_APP_VARS, timeout=1.0)
+            app_vars: Dict[str, Any] = {}
+            for r in results or []:
+                if isinstance(r, dict):
+                    app_vars.update(r)
+            self.update_app_vars(app_vars)
+        except Exception as e:
+            logger.warning(f"[{self.char_id}] Не удалось получить app_vars через события: {e}")
+            self.update_app_vars({})
 
         try:
             blocks, system_infos = self.dsl_interpreter.process_main_template(self.main_template_path_relative)
@@ -292,8 +301,16 @@ class Character:
             logger.error(f"[{self.char_id}] Error during Post-DSL processing: {e}", exc_info=True)
 
         self.set_variable("LongMemoryRememberCount", self.get_variable("LongMemoryRememberCount", 0) + 1)
-        self.update_app_vars(SettingsController.get_app_vars())
-
+        try:
+            results = self.event_bus.emit_and_wait(Events.Settings.GET_APP_VARS, timeout=1.0)
+            app_vars: Dict[str, Any] = {}
+            for r in results or []:
+                if isinstance(r, dict):
+                    app_vars.update(r)
+            self.update_app_vars(app_vars)
+        except Exception as e:
+            logger.warning(f"[{self.char_id}] Не удалось получить app_vars через события: {e}")
+            self.update_app_vars({})
         response = self.extract_and_process_memory_data(response,save_as_missed)
         try:
             response = self._process_behavior_changes_from_llm(response)

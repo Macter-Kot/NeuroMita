@@ -23,6 +23,7 @@ class SettingsController:
         self.event_bus.subscribe(Events.Settings.GET_SETTINGS, self._on_get_settings, weak=False)
         self.event_bus.subscribe(Events.Settings.GET_SETTING, self._on_get_setting, weak=False)
         self.event_bus.subscribe(Events.Settings.SAVE_SETTING, self._on_save_setting, weak=False)
+        self.event_bus.subscribe(Events.Settings.GET_APP_VARS, self._on_get_app_vars, weak=False)
         
     def load_api_settings(self, update_model):
         logger.info("Начинаю загрузку настроек API")
@@ -91,8 +92,7 @@ class SettingsController:
         
         logger.debug(f"Настройка '{key}' успешно применена со значением: {value}")
 
-    @staticmethod
-    def get_app_vars() -> Dict[str, Any]:
+    def _on_get_app_vars(self, event: Event):
         bool_keys = [
             "ENABLE_CAMERA_CAPTURE",
             "ENABLE_SCREEN_ANALYSIS",
@@ -109,3 +109,4 @@ class SettingsController:
         }
 
         return {**flag_vars, **custom_vars}
+        

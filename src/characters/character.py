@@ -386,7 +386,7 @@ class Character:
         Extracts memory operation tags (<+memory>, <#memory>, <-memory>)
         from the LLM response, processes them, and removes them from the response string.
         """
-        memory_pattern = r"<([+#-])memory(?:_([a-zA-Z]+))?>(.*?)</memory>" # Added optional priority in tag itself
+        memory_pattern = r"<([+#-])memory(?:_([a-zA-Z]+))?>(.*?)</\1?memory>"
         
         def memory_processor(match_obj):
             operation, tag_priority, content = match_obj.groups()

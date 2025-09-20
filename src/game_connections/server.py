@@ -20,9 +20,10 @@ class ChatServerNew:
         self.running = False
         self._loop = None
         self._server_task = None
-        self.client_tasks: Dict[str, Set[str]] = {}  # client_id -> set of task_uids
+        self.client_tasks: Dict[str, Set[str]] = {}
         self.last_idle_tasks: Dict[str, str] = {}
-        self.pending_sysinfo: Dict[str, list[str]] = {}  # ★ NEW: буферы для system_info
+        self.pending_sysinfo: Dict[str, list[str]] = {}
+        self.stub_tasks: Dict[str, Dict[str, Any]] = {}
         
         self._subscribe_to_events()
 
@@ -67,30 +68,25 @@ class ChatServerNew:
         try:
             while self.running:
                 chunk = await reader.read(4096)
-                if not chunk:                       # клиент закрыл соединение
+                if not chunk:
                     break
 
                 buffer.extend(chunk)
 
                 while buffer:
                     try:
-                        # пробуем распарсить то, что накопили
                         buf_str = buffer.decode('utf-8')
                         obj, idx = decoder.raw_decode(buf_str)
 
                         await self.process_request(obj, client_id)
 
-                        # удаляем из bytearray уже обработанную часть
                         del buffer[:len(buf_str[:idx].encode('utf-8'))]
-                        # пропускаем возможные пробельные символы после JSON
                         while buffer and chr(buffer[0]).isspace():
                             buffer.pop(0)
 
                     except json.JSONDecodeError:
-                        # данных пока недостаточно – ждём следующий chunk
                         break
                     except UnicodeDecodeError:
-                        # попался неполный UTF-8 – ждём пополнение
                         break
         except asyncio.CancelledError:
             pass
@@ -116,6 +112,57 @@ class ChatServerNew:
         else:
             await self.send_error(self.active_connections[client_id], f"Unknown action: {action}")
     
+    def _get_settings(self) -> Dict[str, Any]:
+        try:
+            res = self.event_bus.emit_and_wait(Events.Settings.GET_SETTINGS, timeout=1.0)
+            return res[0] if res else {}
+        except Exception:
+            return {}
+
+    def _should_block_event(self, event_type: str) -> bool:
+        settings = self._get_settings()
+        if not settings.get('IGNORE_GAME_REQUESTS', False):
+            return False
+        block_level = settings.get('GAME_BLOCK_LEVEL', 'Idle events')
+        if event_type == 'idle_timeout' and block_level in ('Idle events', 'All events'):
+            return True
+        return False
+
+    async def _send_blocked_stub(self, client_id: str, event_type: str, character: str, reason: str = 'Blocked by settings'):
+        if client_id not in self.active_connections:
+            return
+
+        writer = self.active_connections[client_id]
+        stub_uid = f"blk_{uuid.uuid4().hex}"
+
+        self.stub_tasks[stub_uid] = {
+            "uid": stub_uid,
+            "status": TaskStatus.SUCCESS.value,
+            "type": "idle",
+            "result": {
+                "text": "",
+                "voiceover_path": "",
+                "instant_send": False
+            },
+            "meta": {
+                "blocked": True,
+                "reason": reason,
+                "event_type": event_type,
+                "character": character
+            }
+        }
+
+        await self.send_json(writer, {"task_uid": stub_uid, "blocked": True})
+
+        await self.send_json(writer, {
+            "type": "task_update",
+            "uid": stub_uid,
+            "status": TaskStatus.SUCCESS.value,
+            "body": self.stub_tasks[stub_uid]
+        })
+
+        logger.info(f"Заблокировано событие '{event_type}' для персонажа '{character}', uid={stub_uid}")
+    
     async def handle_create_task(self, request: Dict[str, Any], client_id: str):
         event_type = request.get('type', 'answer')
         character = request.get('character', 'Mita')
@@ -132,9 +179,6 @@ class ChatServerNew:
             'actualInfo': context.get('currentInfo', '')
         })
         
-        # -----------------------------------------------------------
-        # 1. ANSWER: отправляем накопленный system_info в LLM
-        # -----------------------------------------------------------
         if event_type == 'answer':
             user_input = data.get('message', '')
 
@@ -146,7 +190,6 @@ class ChatServerNew:
                     'emotion': ''
                 })
             
-            # ★ NEW: забираем накопленные sysinfo-строки
             collected_sys = "\n".join(self.pending_sysinfo.pop(character, []))
             
             task_result = self.event_bus.emit_and_wait(Events.Task.CREATE_TASK, {
@@ -154,7 +197,7 @@ class ChatServerNew:
                 'data': {
                     'character': character,
                     'user_input': user_input,
-                    'system_input': collected_sys,  # ★ MOD: передаем накопленные system_info
+                    'system_input': collected_sys,
                     'system_info': context.get('currentInfo', ''),
                     'client_id': client_id,
                     'event_type': event_type
@@ -164,7 +207,7 @@ class ChatServerNew:
             task = task_result[0] if task_result else None
             
             if task:
-                self.client_tasks[client_id].add(task.uid)  # Отслеживаем задачи клиента
+                self.client_tasks[client_id].add(task.uid)
                 
                 response = {
                     "task_uid": task.uid
@@ -173,7 +216,7 @@ class ChatServerNew:
                 
                 self.event_bus.emit(Events.Chat.SEND_MESSAGE, {
                     'user_input': user_input,
-                    'system_input': collected_sys,  # ★ MOD
+                    'system_input': collected_sys,
                     'image_data': context.get('image_base64_list', []),
                     'task_uid': task.uid
                 })
@@ -181,6 +224,10 @@ class ChatServerNew:
                 await self.send_error(self.active_connections[client_id], "Failed to create task")
                 
         elif event_type == 'idle_timeout':
+            if self._should_block_event(event_type):
+                await self._send_blocked_stub(client_id, event_type, character)
+                return
+
             last_idle_uid = self.last_idle_tasks.get(character)
             if last_idle_uid:
                 last_task_result = self.event_bus.emit_and_wait(Events.Task.GET_TASK, {
@@ -196,7 +243,6 @@ class ChatServerNew:
                     await self.send_json(self.active_connections[client_id], response)
                     return
             
-            # ★ NEW: забираем накопленные sysinfo-строки для idle_timeout
             collected_sys = "\n".join(self.pending_sysinfo.pop(character, []))
             
             task_result = self.event_bus.emit_and_wait(Events.Task.CREATE_TASK, {
@@ -204,7 +250,7 @@ class ChatServerNew:
                 'data': {
                     'character': character,
                     'message': data.get('message', 'Player idle for 90 seconds'),
-                    'system_input': collected_sys,  # ★ NEW
+                    'system_input': collected_sys,
                     'client_id': client_id,
                     'event_type': event_type
                 }
@@ -213,7 +259,7 @@ class ChatServerNew:
             task = task_result[0] if task_result else None
             
             if task:
-                self.client_tasks[client_id].add(task.uid)  # Отслеживаем задачи клиента
+                self.client_tasks[client_id].add(task.uid)
                 
                 self.last_idle_tasks[character] = task.uid
                 
@@ -223,7 +269,6 @@ class ChatServerNew:
                 await self.send_json(self.active_connections[client_id], response)
                 
                 idle_prompt = "The player has been silent for 90 seconds. React naturally to this silence."
-                # ★ MOD: добавляем накопленные system_info к idle промпту
                 if collected_sys:
                     idle_prompt += f"\n\nAdditional context:\n{collected_sys}"
                 
@@ -244,26 +289,18 @@ class ChatServerNew:
             }
             await self.send_json(self.active_connections[client_id], response)
             
-        # -----------------------------------------------------------
-        # 2. SYSTEM_INFO: просто копим, Task НЕ создаём
-        # -----------------------------------------------------------
         elif event_type == 'system_info':
             msg = data.get('message', '')
             if msg:
                 self.pending_sysinfo.setdefault(character, []).append(msg)
                 logger.info(f"Buffered system_info for {character}: {msg[:60]}...")
             
-            # отвечаем клиенту «ok», чтобы он знал, что сообщение принято
             await self.send_json(self.active_connections[client_id], {
                 "task_uid": f"sys_{uuid.uuid4()}",
                 "stored": len(self.pending_sysinfo.get(character, []))
             })
             
-        # -----------------------------------------------------------
-        # 3. SYSTEM_INFO_FLUSH: заставляем LLM отреагировать на буфер
-        # -----------------------------------------------------------
-        elif event_type == 'system_info_flush':  # ★ NEW
-            # забираем всё накопленное
+        elif event_type == 'system_info_flush':
             collected_sys = "\n".join(self.pending_sysinfo.pop(character, []))
             
             if not collected_sys:
@@ -292,7 +329,6 @@ class ChatServerNew:
                     "task_uid": task.uid
                 })
                 
-                # сразу запускаем генерацию
                 self.event_bus.emit(Events.Chat.SEND_MESSAGE, {
                     'user_input': '',
                     'system_input': collected_sys,
@@ -310,6 +346,11 @@ class ChatServerNew:
         
         if not task_uid:
             await self.send_error(self.active_connections[client_id], "Missing task_uid")
+            return
+
+        if task_uid in self.stub_tasks:
+            response = self.stub_tasks.pop(task_uid)
+            await self.send_json(self.active_connections[client_id], response)
             return
             
         task_result = self.event_bus.emit_and_wait(Events.Task.GET_TASK, {
@@ -350,18 +391,16 @@ class ChatServerNew:
         character  = task.data.get('character')
         event_type = task.data.get('event_type')
 
-        # отправляем апдейт клиенту, как и было
         if client_id and client_id in self.active_connections:
             asyncio.run_coroutine_threadsafe(
                 self.send_task_update(client_id, task),
                 self._loop
             )
 
-        # --- чистим last_idle_tasks ---
         if event_type in ('idle', 'idle_timeout') and character:
             if task.status in (TaskStatus.SUCCESS,
                             TaskStatus.FAILED,
-                            TaskStatus.CANCELLED):          # финальные статусы
+                            TaskStatus.CANCELLED):
                 if self.last_idle_tasks.get(character) == task.uid:
                     del self.last_idle_tasks[character]
     
@@ -404,30 +443,25 @@ class ChatServerNew:
         await self.send_json(writer, {"type": "error", "error": error})
     
     def stop(self):
-        """Завершает работу сервера и освобождает порт"""
         self.running = False
         
         if self._loop and self._loop.is_running():
-            # Планируем остановку сервера в event loop
             future = asyncio.run_coroutine_threadsafe(self._async_stop(), self._loop)
             try:
                 future.result(timeout=5)
             except Exception as e:
                 logger.warning(f"Ошибка при остановке сервера: {e}")
         
-        # Ждем завершения потока
         if hasattr(self, '_server_thread') and self._server_thread:
             self._server_thread.join(timeout=5)
             if self._server_thread.is_alive():
                 logger.warning("Server thread did not stop in time")
 
     async def _async_stop(self):
-        """Асинхронная остановка сервера"""
         if hasattr(self, 'server'):
             self.server.close()
             await self.server.wait_closed()
 
-        # Закрываем все активные соединения
         for writer in list(self.active_connections.values()):
             try:
                 writer.close()

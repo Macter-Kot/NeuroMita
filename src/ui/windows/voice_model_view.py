@@ -159,13 +159,14 @@ class ModelDetailView(QWidget):
 
     # ---- utils ----
     def _clear_layout(self, layout):
+        """Утилита для рекурсивной очистки любого QLayout."""
         while layout.count():
-            it = layout.takeAt(0)
-            w = it.widget()
+            item = layout.takeAt(0)
+            w = item.widget()
             if w:
                 w.deleteLater()
-            elif it.layout():
-                self._clear_layout(it.layout())
+            elif item.layout():
+                self._clear_layout(item.layout())
 
     def _make_tag(self, text: str) -> QLabel:
         lab = QLabel(text)
@@ -788,7 +789,11 @@ class VoiceModelSettingsView(QWidget):
         deps_title.setObjectName("TitleLabel")
         dl.addWidget(deps_title)
 
-        self._build_dependencies_panel(dl)
+        # Контейнер для динамической пересборки панели зависимостей
+        self.deps_container = QVBoxLayout()
+        dl.addLayout(self.deps_container)
+        self._build_dependencies_panel(self.deps_container)
+
         dl.addStretch()
         self.tabs.addTab(self.tab_deps, _("Зависимости", "Dependencies"))
 
@@ -818,6 +823,9 @@ class VoiceModelSettingsView(QWidget):
         self._populate_list()
         if self.list.count():
             self.list.setCurrentRow(0)
+
+        # Обновим панель зависимостей актуальными данными при первом показе
+        self.refresh_dependencies_panel()
 
         # Pass GPU info and RTX checker to detail
         vendor = self._cached_dependencies_status.get('detected_gpu_vendor')
@@ -851,7 +859,8 @@ class VoiceModelSettingsView(QWidget):
 
     # ---------- Dependencies tab ----------
     def _build_dependencies_panel(self, layout: QVBoxLayout):
-        st = self._cached_dependencies_status or {}
+        # Если кэш ещё пуст при первой отрисовке — подтянем статус напрямую
+        st = self._cached_dependencies_status or self._get_dependencies_status() or {}
 
         if st.get("show_triton_checks", False):
             row = QHBoxLayout()
@@ -887,7 +896,7 @@ class VoiceModelSettingsView(QWidget):
                 layout.addLayout(warn)
         elif not st.get("triton_installed", False):
             warn = QLabel(_("Triton не установлен (нужен для Fish Speech+ / +RVC).",
-                             "Triton not installed (required for Fish Speech+ / +RVC)."))
+                            "Triton not installed (required for Fish Speech+ / +RVC)."))
             warn.setStyleSheet("color: orange;")
             layout.addWidget(warn)
         else:
@@ -1049,6 +1058,8 @@ class VoiceModelSettingsView(QWidget):
     def _on_refresh_settings(self):
         self._cached_dependencies_status = self._get_dependencies_status()
         self.detail.set_gpu_info(vendor=self._cached_dependencies_status.get('detected_gpu_vendor'))
+        # Пересобрать вкладку "Зависимости" с актуальными данными
+        self.refresh_dependencies_panel()
         self._on_selection_changed()
 
     # ---------- API for controller compatibility ----------
@@ -1110,6 +1121,24 @@ class VoiceModelSettingsView(QWidget):
         )
         return reply == QMessageBox.StandardButton.Yes
     
+    def _clear_layout(self, layout):
+        """Утилита для рекурсивной очистки любого QLayout."""
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
+
+    
+    def refresh_dependencies_panel(self):
+        """Пересобирает панель зависимостей с актуальным статусом."""
+        self._cached_dependencies_status = self._get_dependencies_status()
+        if hasattr(self, 'deps_container') and self.deps_container is not None:
+            self._clear_layout(self.deps_container)
+            self._build_dependencies_panel(self.deps_container)
+
     # ---------- Deps Windows ----------
     @pyqtSlot(object)
     def _slot_open_vc_redist_dialog(self, result_holder: dict):

@@ -10,17 +10,13 @@ from _version import __version__
 def create_startup_banner(title: str, version: str) -> str:
     version_info = f"Version {version}"
     
-    # Настройки отступов
     padding = 6
     
-    # Рассчитываем ширину на основе самой длинной строки (название или версия)
     content_width = max(len(title), len(version_info)) + padding
     
-    # Делаем ширину четной для идеального центрирования
     if content_width % 2 != 0:
         content_width += 1
         
-    # Собираем части баннера с символами псевдографики
     top_border = f"╔{'═' * content_width}╗"
     bottom_border = f"╚{'═' * content_width}╝"
     

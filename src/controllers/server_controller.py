@@ -12,6 +12,8 @@ class ServerController:
         self.ConnectedToGame = False
         self._destroyed = False
 
+        self.settings_to_send = ['ACTION_MENU', 'MITAS_MENU', 'IGNORE_GAME_REQUESTS', 'GAME_BLOCK_LEVEL']
+
         self._subscribe_to_events()
         self._init_server()
 
@@ -143,8 +145,7 @@ class ServerController:
         elif key == 'GM_VOICE':
             self.server.set_game_master_voice(bool(value))
 
-        # Пушим loaded_settings только для этих 4 ключей
-        if key in ('MITAS_MENU', 'EMOTION_MENU', 'IGNORE_GAME_REQUESTS', 'GAME_BLOCK_LEVEL'):
+        if key in self.settings_to_send:
             try:
                 body = self._prepare_loaded_settings_body()
                 self.server.broadcast_loaded_settings(body)
@@ -152,7 +153,6 @@ class ServerController:
                 logger.warning(f"Не удалось отправить обновлённые настройки клиентам ({key}): {e}")
 
     def _on_load_server_settings(self, event: Event):
-        # Любая часть модели/GUI может вызвать это событие — тут же собираем и шлём всем
         if self._destroyed or not self.server:
             return
         try:
@@ -162,14 +162,12 @@ class ServerController:
             logger.warning(f"LOAD_SERVER_SETTINGS broadcast failed: {e}")
 
     def _prepare_loaded_settings_body(self) -> Dict[str, Any]:
-        # Возвращаем только 4 ключа, которые нужны Unity
+        settings = {}
+        for setting in self.settings_to_send:
+            settings[str(setting)] = self._get_setting(setting)
+
         return {
-            "settings": {
-                "MITAS_MENU": bool(self._get_setting('MITAS_MENU', False)),
-                "EMOTION_MENU": bool(self._get_setting('EMOTION_MENU', False)),
-                "IGNORE_GAME_REQUESTS": bool(self._get_setting('IGNORE_GAME_REQUESTS', False)),
-                "GAME_BLOCK_LEVEL": str(self._get_setting('GAME_BLOCK_LEVEL', 'Idle events')),
-            }
+            "settings": settings
         }
 
     def _get_setting(self, key: str, default=None):
@@ -179,6 +177,7 @@ class ServerController:
                 {'key': key, 'default': default},
                 timeout=1.0
             )
+            
             return result[0] if result else default
         except Exception:
             return default

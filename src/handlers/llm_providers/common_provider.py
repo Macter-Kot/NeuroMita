@@ -49,7 +49,6 @@ class CommonProvider(BaseProvider):
         if req.stream:
             return self._handle_common_stream(response, req.stream_cb)
         try:
-            logger.info(response.text)
             resp_json = response.json()
             message = resp_json.get("choices", [{}])[0].get("message", {}) or {}
             tool_calls = message.get("tool_calls") or []
